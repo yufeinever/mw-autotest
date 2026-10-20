@@ -1,0 +1,160 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {meetingText,meetingAssertions,meetingSource} from './case002-meeting-data.mjs';
+import {readSessionLog} from '../local-console/session-log.mjs';
+import {normalizeConfig} from '../local-console/policy.mjs';
+import {chromium} from 'playwright-core';
+import {readRunConfig,selectModel,handleConfiguredDialog} from './mobilework-run-policy.mjs';
+import {appendComposerText,containsComposerText} from './mobilework-composer.mjs';
+import {saveRunTrace} from './mobilework-trace.mjs';
+import {testEnvironment} from '../local-console/environment.mjs';
+import {createTaskControl} from './mobilework-task-control.mjs';
+const runConfig=readRunConfig()||normalizeConfig();
+const safeConfig=structuredClone(runConfig);if(safeConfig.provider)delete safeConfig.provider.key;
+if(runConfig?.provider?.url||runConfig?.provider?.model)throw Error('新模型配置尚未接入客户端；请先在客户端配置模型后从控制台读取选择，避免静默使用旧模型');
+
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const args=process.argv.slice(2);
+if(args.includes('--help')){console.log('node scripts/run-client-case002.mjs [--check | --resume=ses_ID]：默认完整执行；--check只读预检；--resume仅续跑指定当前会话');process.exit(0);}
+if(args.some(a=>a!=='--check'&&!/^--resume=ses_[A-Za-z0-9]+$/.test(a)))throw Error('未知参数');
+const resumeId=args.find(a=>a.startsWith('--resume='))?.slice(9);
+if(resumeId&&args.includes('--check'))throw Error('续跑与只读预检不能同时使用');
+const checkOnly=args.includes('--check'), started=new Date();
+const parts=d=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));
+const prefix=d=>{const p=parts(d);return p.month+p.day+'-'+p.hour+p.minute;};
+await fs.mkdir(path.join(root,'runs'),{recursive:true});
+let dir;
+for(let n=1;;n++){
+ dir=path.join(root,'runs',prefix(started)+'-'+(checkOnly?'第二条用例预检':'会议纪要')+'-第'+String(n).padStart(2,'0')+'次');
+ try{await fs.mkdir(dir);break;}catch(e){if(e.code!=='EEXIST')throw e;}
+}
+if(runConfig)await fs.writeFile(path.join(dir,'运行配置.json'),JSON.stringify(safeConfig,null,2));
+const checks=[],events=[],evidence=[];
+let browser,page,sessionId,result='BLOCKED',errorText='',seq=0;
+const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+prefix(new Date())+'] '+step+' '+detail);};
+const taskControl=createTaskControl({log});
+const block=message=>{const e=Error(message);e.blocked=true;throw e;};
+const assert=(name,pass,actual)=>{checks.push({name,pass:Boolean(pass),actual});if(!pass)throw Error('断言失败：'+name);};
+const button=name=>page.getByRole('button',{name,exact:true}).filter({visible:true});
+const present=async name=>(await button(name).count())>0;
+const capture=name=>taskControl?taskControl.withUI(page,'EVIDENCE',()=>captureRaw(name)):captureRaw(name);
+async function captureRaw(name){
+ const stem=prefix(new Date())+'-'+String(++seq).padStart(2,'0')+'-'+name;
+ const readState=()=>page.evaluate(()=>({url:location.href,text:(document.querySelector('main')||document.body).innerText,editors:[...document.querySelectorAll('[contenteditable="true"]')].map(e=>e.innerText)}));
+ let state=await readState(),stateFile=stem+'.json';
+ await fs.writeFile(path.join(dir,stateFile),JSON.stringify({time:new Date().toISOString(),...state},null,2));
+ try{await page.screenshot({path:path.join(dir,stem+'.png')});}
+ catch(error){
+  // Electron can stop producing capture frames. Ask its own window API to
+  // redraw and restore the original window state, without reloading the page.
+  if(!error.message.includes('Timeout'))throw error;
+  const viewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
+  log('截图超时','通过客户端窗口接口重绘并还原大小后重试一次');
+  await page.evaluate(async()=>{
+   const control=window.__OPENWORK_ELECTRON__?.windowControl;
+   if(!control?.getChromeState||!control?.toggleMaximize)throw Error('客户端不提供窗口重绘接口');
+   const before=await control.getChromeState();
+   try{await control.toggleMaximize();}
+   finally{const after=await control.getChromeState();if(after.maximized!==before.maximized)await control.toggleMaximize();}
+  });
+  await page.waitForFunction(v=>innerWidth===v.width&&innerHeight===v.height,viewport,{timeout:5000});
+  state=await readState();
+  if(state.url!==JSON.parse(await fs.readFile(path.join(dir,stateFile),'utf8')).url)block('截图重试时页面已离开当前会话');
+  stateFile=stem+'-重绘后.json';
+  await fs.writeFile(path.join(dir,stateFile),JSON.stringify({time:new Date().toISOString(),...state},null,2));
+  await page.screenshot({path:path.join(dir,stem+'.png')});
+ }
+ evidence.push({time:new Date().toISOString(),step:name,screenshot:stem+'.png',state:stateFile});return state;
+}
+try{
+ const port=Number(runConfig?.cdpPort||process.env.MW_CDP_PORT||9223),timeout=Number(process.env.MW_CASE_TIMEOUT_MS||600000);
+ if(!Number.isInteger(port)||port<1||port>65535||!Number.isFinite(timeout)||timeout<1000)block('端口或超时参数无效');
+ browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
+ const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+ if(pages.length!==1)block('MobileWork主界面数量不是1');
+ page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly});await capture('连接客户端');
+ const build=JSON.parse(await fs.readFile(testEnvironment.buildInfoPath,'utf8'));
+ await fs.writeFile(path.join(dir,'环境.json'),JSON.stringify({version:build.version,productVersion:build.productVersion,packagedCdpAllowed:build.packagedCdpAllowed,port,timezone:'Asia/Shanghai'},null,2));
+ if(resumeId&&!page.url().endsWith('/session/'+resumeId))block('续跑ID与当前会话不一致');
+ if(!resumeId&&(await present('停止')||await present('允许一次')||await present('跳过')))block('当前存在执行任务或交互，不切换会话');
+ const draft=page.locator('[contenteditable="true"]').filter({visible:true});
+ if(await draft.count()&&(await draft.first().innerText()).trim())block('当前有未发送草稿，保留草稿并停止');
+ if(checkOnly){result='CHECKED';log('只读预检通过');}
+ else{
+  if(resumeId){sessionId=resumeId;log('续跑既有会话',sessionId);}
+  else{
+  await button('新建任务').click();
+  await button('日常办公').first().waitFor();await capture('新建任务');
+  if(runConfig?.model){await selectModel(page,runConfig.model);log('模型已核对',runConfig.model);}
+  await button('日常办公').first().click();await button('会议纪要').first().click();
+  const editor=page.locator('[contenteditable="true"]').filter({visible:true});
+  await editor.locator('[data-skill-chip-label="true"]').waitFor();
+  const text=await editor.innerText();
+  assert('场景自动填充',text.includes('把这段会议记录整理成结构化纪要与待办清单。')&&await editor.locator('[data-skill-remove="meeting-and-brief"]').count()===1,text);
+  assert('发送按钮可用',await button('运行任务').isEnabled());
+  await capture('会议纪要自动填充');log('自动填充断言通过');
+  await appendComposerText(editor,meetingText);
+  assert('补充完整测试材料且保留技能',containsComposerText(await editor.innerText(),meetingText)&&await editor.locator('[data-skill-remove="meeting-and-brief"]').count()===1);
+  await fs.writeFile(path.join(dir,'会议测试材料.txt'),meetingText);
+  await fs.writeFile(path.join(dir,'会议材料来源.json'),JSON.stringify(meetingSource,null,2));
+  await capture('补充会议测试材料');log('补充内嵌公开会议文字',meetingSource.title);
+  await button('运行任务').click();
+  await page.waitForURL(/\/session\/ses_[^/?#]+/,{timeout:30000});
+  sessionId=page.url().match(/\/session\/(ses_[^/?#]+)/)?.[1];
+  assert('新会话创建',Boolean(sessionId),sessionId);
+  await capture('发送成功');log('任务已发送',sessionId);
+  const sentLog=await page.evaluate(readSessionLog,sessionId);
+  const userText=sentLog.messages.filter(m=>m.info?.role==='user').flatMap(m=>(m.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'')).join('\n');
+  assert('会话用户消息包含完整会议材料',containsComposerText(userText,meetingText));
+  await fs.writeFile(path.join(dir,'发送消息核对-session-log.json'),JSON.stringify(sentLog,null,2));
+  log('发送消息已核对','完整会议文字材料已进入本次会话，未使用附件');
+  }
+  const deadline=Date.now()+timeout;let done=false,approvals=0,answered=new Set(),lastLog=0,interactions=0;
+  if(taskControl){await taskControl.submitted(page,sessionId);await taskControl.wait(page,runConfig,{timeoutMs:timeout,capture,log});done=true;}
+  else{
+  while(Date.now()<deadline){
+   if(!page.url().endsWith('/session/'+sessionId))block('页面已离开本次会话，停止自动操作');
+   const body=await page.locator('main').last().innerText();let handled=false;
+   if(runConfig){
+    try{handled=await handleConfiguredDialog(page,runConfig,capture,log);}catch(e){block(e.message);}
+    if(handled){interactions++;await page.waitForTimeout(1500);continue;}
+   }
+   if(/等待确认/.test(body)&&await present('发送'))block('出现未配置的人工交互问题，保留现场');
+   if(await page.getByText('执行成功',{exact:true}).filter({visible:true}).count()&&!await present('停止')){done=true;break;}
+   if(await page.getByText('执行失败',{exact:true}).filter({visible:true}).count())throw Error('客户端显示执行失败');
+   if(Date.now()-lastLog>30000){log('等待任务完成');lastLog=Date.now();}
+   await page.waitForTimeout(2000);
+  }
+  }
+  if(!done)block('等待超时；保留运行中的任务，不自动中止');
+  assert('任务完成',done);
+  const sessionLog=taskControl?await taskControl.readLog():await page.evaluate(readSessionLog,sessionId);
+  await fs.writeFile(path.join(dir,sessionId+'-session-log.json'),JSON.stringify(sessionLog,null,2));
+  const assistants=sessionLog.messages.filter(m=>m.info?.role==='assistant'&&!(m.parts||[]).some(p=>p.type==='tool'));
+  const output=(assistants.at(-1)?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
+  assert('会话日志存在最终助手回复',Boolean(output.trim()));
+  await fs.writeFile(path.join(dir,'助手最终回复.txt'),output);
+  const contentChecks=meetingAssertions(output);checks.push(...contentChecks);
+  if(contentChecks.some(c=>!c.pass))throw Error('会议纪要内容断言失败，请查看逐项结果和助手最终回复');
+  await capture('执行完成');
+  result=resumeId?'RESUMED':'PASS';log('场景功能检查完成',checks.length+'项断言；最终结论还需核验 Skill 调用');
+ }
+}catch(e){
+ errorText=e.message;result=e.blocked||!sessionId&&checks.length===0?'BLOCKED':'FAIL';
+ log(result,errorText);if(page)await capture('异常现场').catch(()=>{});
+}finally{
+ const trace=page&&sessionId?await saveRunTrace({page,sessionId,number:2,dir,checks,log,...(taskControl?.connection?{readLog:children=>taskControl.readLog(children)}:{})}):null;
+ if(['PASS','RESUMED'].includes(result)&&checks.some(c=>!c.pass)){result='FAIL';errorText='Skill 实际调用或 Trace 证据断言失败，请查看 Trace 记录';log('用例失败',errorText);}
+ else if(['PASS','RESUMED'].includes(result))log('用例通过',checks.length+'项断言，已包含 Skill 调用核验');
+ const summary={result,caseId:'MW-CLIENT-002',sheet:'测试案例（客户端-多端兼容）',row:3,title:'日程办公02-会议纪要自动填充内容，执行会话',startedAt:started.toISOString(),endedAt:new Date().toISOString(),sessionId,checks,events,evidence,trace,error:errorText,meetingSource,scope:'内嵌公开会议摘要文字；核对决议、分工及未明确的截止时间，不测试附件读取'};
+ summary.runConfig=safeConfig;
+ if(runConfig)summary.scope+='；交互及模型参数见运行配置.json';
+ await fs.writeFile(path.join(dir,'执行结果.json'),JSON.stringify(summary,null,2));
+ const lines=['# 第二条用例执行报告','','- 结论：'+result,'- 用例：'+summary.title,'- 会话：'+(sessionId||'未创建'),'- 时间：'+started.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})+'（北京时间）','- 控制：CDP + Playwright，配置见环境.json','- 范围：'+summary.scope,'- 错误或阻塞：'+(errorText||'无'),'','## 断言','',...checks.map(c=>'- '+(c.pass?'通过':'失败')+'：'+c.name),'','## 执行记录','',...events.map(e=>'- '+e.time+' '+e.step+' '+e.detail),'','## 截图证据','',...evidence.map(e=>'- ['+e.step+']('+e.screenshot+')')];
+ if(trace)lines.push('','## Trace 记录','','- 调用证据：[trace.json](trace.json)','- 核验规则：'+trace.ruleVersion);
+ await fs.writeFile(path.join(dir,'执行报告.md'),lines.join('\n')+'\n');
+ await taskControl?.close(page).catch(e=>log('交还页面操作未完成',e.message));
+ await browser?.close().catch(()=>{});
+ console.log('报告：'+path.join(dir,'执行报告.md'));process.exitCode=['PASS','CHECKED','RESUMED'].includes(result)?0:result==='BLOCKED'?2:1;
+}
