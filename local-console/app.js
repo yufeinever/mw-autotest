@@ -502,6 +502,12 @@ if (traceId) {
     e.hidden = false;
     e.textContent = text;
     e.className = error ? "error" : "";
+  }, showExecutionLog = function(job) {
+    logJobId = job.id;
+    logHeading.textContent = job.name + " \xB7 \u6267\u884C\u65E5\u5FD7";
+    logMeta.textContent = "";
+    logDialog.showModal();
+    readExecutionLog();
   }, renderScripts = function() {
     const size = Number($("#scriptPageSize").value), total = state.scripts.length, pages = Math.max(1, Math.ceil(total / size));
     scriptPage = Math.max(1, Math.min(scriptPage, pages));
@@ -515,16 +521,26 @@ if (traceId) {
       title.title = script.path;
       name.append(title);
       const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
-      tr.append(el2("td", String(start + offset + 1).padStart(2, "0")), name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), el2("td", job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C", resultClass(job?.status)));
-      const actions = el2("td"), run = el2("button", "\u6267\u884C", "primary"), stop = el2("button", "\u5F3A\u5236\u505C\u6B62", "result-fail"), remove = el2("button", "\u79FB\u9664");
+      const status = el2("td"), statusText = job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
+      status.append(el2("span", statusText, "script-status " + resultClass(job?.status)));
+      tr.append(el2("td", String(start + offset + 1).padStart(2, "0")), name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), status);
+      const recent = el2("td", void 0, "script-recent"), actions = el2("td"), actionGroup = el2("div", void 0, "script-row-actions"), run = el2("button", "\u6267\u884C", "primary"), stop = el2("button", "\u5F3A\u5236\u505C\u6B62", "danger"), remove = el2("button", "\u79FB\u9664", "script-remove");
       if (job) {
-        const status = tr.lastElementChild, failed = (job.result?.checks || []).filter((c) => !c.pass);
+        const failed = (job.result?.checks || []).filter((c) => !c.pass);
         status.title = failed.map((c) => c.name).join("\uFF1B") || job.result?.error || "";
         if (failed.length && failed.every((c) => c.category === "skill-invocation")) status.append(el2("small", "Skill \u8C03\u7528\u65AD\u8A00\u672A\u901A\u8FC7"));
-        const traceLink = el2("a", "Trace \u8BB0\u5F55");
-        traceLink.href = "/?trace=" + encodeURIComponent(job.id);
-        actions.append(traceLink);
-      }
+        recent.append(el2("span", job.startedAt ? batchDate(job.startedAt) : job.queuedAt ? "\u6392\u961F\u4E8E " + batchDate(job.queuedAt) : "\u65F6\u95F4\u672A\u8BB0\u5F55", "script-time"));
+        const evidence = el2("div", void 0, "script-evidence"), log = el2("button", "\u6267\u884C\u65E5\u5FD7", "script-link");
+        log.onclick = () => showExecutionLog(job);
+        evidence.append(log);
+        if (job.sessionId || job.result?.sessionId) {
+          const traceLink = el2("a", "Trace \u8BB0\u5F55", "script-link");
+          traceLink.href = "/?trace=" + encodeURIComponent(job.id);
+          evidence.append(traceLink);
+        }
+        recent.append(evidence);
+      } else recent.append(el2("span", "\u2014", "hint"));
+      tr.append(recent);
       run.disabled = state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
       run.onclick = () => startScripts([script], "\u6267\u884C\u6B64\u811A\u672C");
       stop.disabled = stopAllBusy || !job || !!job.stopRequested || !canStopJob(job);
@@ -548,13 +564,15 @@ if (traceId) {
           notice(e.message, true);
         }
       };
-      actions.append(run, stop, remove);
+      actionGroup.append(run, stop, remove);
+      actions.append(actionGroup);
       tr.append(actions);
+      ["\u5E8F\u53F7", "\u811A\u672C", "\u53C2\u6570\u63A5\u5165", "\u6700\u8FD1\u7ED3\u679C", "\u6700\u8FD1\u6267\u884C\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09", "\u64CD\u4F5C"].forEach((label, i) => tr.children[i].dataset.label = label);
       $("#scripts").append(tr);
     }
     if (!total) {
       const tr = el2("tr"), td = el2("td", "\u6682\u65E0\u811A\u672C\uFF0C\u8BF7\u5148\u6DFB\u52A0\u3002", "hint");
-      td.colSpan = 5;
+      td.colSpan = 6;
       tr.append(td);
       $("#scripts").append(tr);
     }
@@ -685,6 +703,34 @@ if (traceId) {
     renderScripts();
     renderHistory();
   }
+  const logDialog = el2("dialog", void 0, "execution-log-dialog"), logHeading = el2("h2", "\u6267\u884C\u65E5\u5FD7"), logMeta = el2("p"), logBody = el2("pre"), logClose = el2("button", "\u5173\u95ED"), logRefresh = el2("button", "\u5237\u65B0\u65E5\u5FD7"), logHeader = el2("div", void 0, "heading"), logControls = el2("div", void 0, "log-controls");
+  let logJobId = null, logRequest = 0;
+  logHeading.id = "executionLogTitle";
+  logDialog.setAttribute("aria-labelledby", logHeading.id);
+  logBody.tabIndex = 0;
+  logControls.append(logRefresh, logClose);
+  logHeader.append(logHeading, logControls);
+  logDialog.append(logHeader, logMeta, logBody);
+  document.body.append(logDialog);
+  logClose.onclick = () => logDialog.close();
+  logDialog.addEventListener("close", () => {
+    logJobId = null;
+    logRequest++;
+  });
+  async function readExecutionLog() {
+    const id = logJobId, request = ++logRequest;
+    logBody.textContent = "\u6B63\u5728\u8BFB\u53D6\u65E5\u5FD7\u2026";
+    try {
+      const job = await api("/api/jobs/" + encodeURIComponent(id));
+      if (request !== logRequest || !logDialog.open) return;
+      logHeading.textContent = job.name + " \xB7 \u6267\u884C\u65E5\u5FD7";
+      logMeta.textContent = `\u5F00\u59CB\uFF1A${batchDate(job.startedAt)}\u3000\u7ED3\u675F\uFF1A${batchDate(job.endedAt)}\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09 \xB7 ${labels[job.status] || job.status}`;
+      logBody.textContent = job.log || job.error || "\u672C\u6B21\u8FD0\u884C\u5C1A\u672A\u4EA7\u751F\u6267\u884C\u65E5\u5FD7\u3002";
+    } catch (e) {
+      if (request === logRequest && logDialog.open) logBody.textContent = "\u8BFB\u53D6\u5931\u8D25\uFF1A" + e.message;
+    }
+  }
+  logRefresh.onclick = readExecutionLog;
   async function startScripts(scripts, label, batch = false) {
     if (state.capabilities?.taskIsolation !== 2) {
       batchNotice("\u8BF7\u5148\u91CD\u542F\u672C\u9879\u76EE18888\u63A7\u5236\u53F0\u52A0\u8F7D\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\uFF0C\u672A\u63D0\u4EA4\u65B0\u4EFB\u52A1\u3002", true);

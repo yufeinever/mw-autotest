@@ -14,7 +14,7 @@ import {getClientCase,caseSheet,caseWorkbook} from './client-case-catalog.mjs';
 import {clientCaseInput} from './client-case-inputs.mjs';
 import {textChecks,fileChecks,expectedArtifacts,readArtifact} from './client-case-checks.mjs';
 import {previewChecks} from './client-case-preview.mjs';
-import {createRunDirectory,createEvidenceRecorder,beijingPrefix} from './mobilework-evidence.mjs';
+import {createRunDirectory,createEvidenceRecorder,beijingLogTime} from './mobilework-evidence.mjs';
 import {createTaskControl} from './mobilework-task-control.mjs';
 
 const projectRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -157,7 +157,7 @@ export async function runScenarioCase(number,inputConfig){
  if(await dispatchStandalone({number,args,config}))return;
  const started=new Date(),dir=await createRunDirectory(path.join(projectRoot,'runs'),definition.label+(checkOnly?'预检':fillOnly?'填充检查':''),started);
  const checks=[],events=[],outputs=[];let browser,page,sessionId=resumeId,result='BLOCKED',errorText='',owned,submitted=false,environment;
- const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+beijingPrefix()+'] '+step+' '+detail);};
+ const log=(step,detail='')=>{const now=new Date();events.push({time:now.toISOString(),step,detail});console.log('['+beijingLogTime(now)+'] '+step+' '+detail);};
  const taskControl=createTaskControl({log});
  const recorder=createEvidenceRecorder(dir,log),captureRaw=async step=>{
   if(sessionId&&page&&!page.url().endsWith('/session/'+sessionId))throw blocked('截图或弹窗操作前页面已离开本次会话');

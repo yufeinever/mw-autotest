@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {beijingLogTime} from './mobilework-evidence.mjs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {meetingText,meetingAssertions,meetingSource} from './case002-meeting-data.mjs';
@@ -36,7 +37,7 @@ for(let n=1;;n++){
 if(runConfig)await fs.writeFile(path.join(dir,'运行配置.json'),JSON.stringify(safeConfig,null,2));
 const checks=[],events=[],evidence=[];
 let browser,page,sessionId,result='BLOCKED',errorText='',seq=0,owned,submitted=false;
-const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+prefix(new Date())+'] '+step+' '+detail);};
+const log=(step,detail='')=>{const now=new Date();events.push({time:now.toISOString(),step,detail});console.log('['+beijingLogTime(now)+'] '+step+' '+detail);};
 const taskControl=createTaskControl({log});
 const block=message=>{const e=Error(message);e.blocked=true;throw e;};
 const assert=(name,pass,actual)=>{checks.push({name,pass:Boolean(pass),actual});if(!pass)throw Error('断言失败：'+name);};

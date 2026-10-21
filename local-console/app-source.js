@@ -39,6 +39,20 @@ async function refresh(){
 }
 function resultClass(status){return ['FAIL','BLOCKED','STOPPED','INTERRUPTED'].includes(status)?'result-fail':['PASS','CHECKED','RESUMED'].includes(status)?'result-pass':'';}
 function batchNotice(text,error=false){const e=$('#batchMessage');e.hidden=false;e.textContent=text;e.className=error?'error':'';}
+const logDialog=el('dialog',undefined,'execution-log-dialog'),logHeading=el('h2','执行日志'),logMeta=el('p'),logBody=el('pre'),logClose=el('button','关闭'),logRefresh=el('button','刷新日志'),logHeader=el('div',undefined,'heading'),logControls=el('div',undefined,'log-controls');
+let logJobId=null,logRequest=0;
+logHeading.id='executionLogTitle';logDialog.setAttribute('aria-labelledby',logHeading.id);logBody.tabIndex=0;
+logControls.append(logRefresh,logClose);logHeader.append(logHeading,logControls);logDialog.append(logHeader,logMeta,logBody);document.body.append(logDialog);
+logClose.onclick=()=>logDialog.close();logDialog.addEventListener('close',()=>{logJobId=null;logRequest++;});
+async function readExecutionLog(){
+ const id=logJobId,request=++logRequest;logBody.textContent='正在读取日志…';
+ try{const job=await api('/api/jobs/'+encodeURIComponent(id));if(request!==logRequest||!logDialog.open)return;
+  logHeading.textContent=job.name+' · 执行日志';logMeta.textContent=`开始：${batchDate(job.startedAt)}　结束：${batchDate(job.endedAt)}（北京时间） · ${labels[job.status]||job.status}`;
+  logBody.textContent=job.log||job.error||'本次运行尚未产生执行日志。';
+ }catch(e){if(request===logRequest&&logDialog.open)logBody.textContent='读取失败：'+e.message;}
+}
+logRefresh.onclick=readExecutionLog;
+function showExecutionLog(job){logJobId=job.id;logHeading.textContent=job.name+' · 执行日志';logMeta.textContent='';logDialog.showModal();readExecutionLog();}
 function renderScripts(){
  const size=Number($('#scriptPageSize').value),total=state.scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
  const start=(scriptPage-1)*size;$('#scripts').replaceChildren();
@@ -46,9 +60,16 @@ function renderScripts(){
   const tr=el('tr');tr.dataset.scriptId=script.id;tr.dataset.scriptNumber=start+offset+1;
   const name=el('td'),title=el('span',script.name,'script-title');title.title=script.path;name.append(title);
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
-  tr.append(el('td',String(start+offset+1).padStart(2,'0')),name,el('td',!script.exists?'文件不存在':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),el('td',job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行',resultClass(job?.status)));
-  const actions=el('td'),run=el('button','执行','primary'),stop=el('button','强制停止','result-fail'),remove=el('button','移除');
-  if(job){const status=tr.lastElementChild,failed=(job.result?.checks||[]).filter(c=>!c.pass);status.title=failed.map(c=>c.name).join('；')||job.result?.error||'';if(failed.length&&failed.every(c=>c.category==='skill-invocation'))status.append(el('small','Skill 调用断言未通过'));const traceLink=el('a','Trace 记录');traceLink.href='/?trace='+encodeURIComponent(job.id);actions.append(traceLink);}
+  const status=el('td'),statusText=job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
+  status.append(el('span',statusText,'script-status '+resultClass(job?.status)));
+  tr.append(el('td',String(start+offset+1).padStart(2,'0')),name,el('td',!script.exists?'文件不存在':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),status);
+  const recent=el('td',undefined,'script-recent'),actions=el('td'),actionGroup=el('div',undefined,'script-row-actions'),run=el('button','执行','primary'),stop=el('button','强制停止','danger'),remove=el('button','移除','script-remove');
+  if(job){const failed=(job.result?.checks||[]).filter(c=>!c.pass);status.title=failed.map(c=>c.name).join('；')||job.result?.error||'';if(failed.length&&failed.every(c=>c.category==='skill-invocation'))status.append(el('small','Skill 调用断言未通过'));
+   recent.append(el('span',job.startedAt?batchDate(job.startedAt):job.queuedAt?'排队于 '+batchDate(job.queuedAt):'时间未记录','script-time'));
+   const evidence=el('div',undefined,'script-evidence'),log=el('button','执行日志','script-link');log.onclick=()=>showExecutionLog(job);evidence.append(log);
+   if(job.sessionId||job.result?.sessionId){const traceLink=el('a','Trace 记录','script-link');traceLink.href='/?trace='+encodeURIComponent(job.id);evidence.append(traceLink);}recent.append(evidence);
+  }else recent.append(el('span','—','hint'));
+  tr.append(recent);
   run.disabled=state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||state.readingModels||cdpBusy||pendingScripts.has(script.id)||!script.exists||!script.integrated;
   run.onclick=()=>startScripts([script],'执行此脚本');
   stop.disabled=stopAllBusy||!job||!!job.stopRequested||!canStopJob(job);
@@ -56,9 +77,10 @@ function renderScripts(){
   stop.onclick=async()=>{stop.disabled=true;try{const r=await api('/api/jobs/'+job.id+'/stop',{});notice(r.message);await refresh();}catch(e){notice(e.message,true);}};
   remove.disabled=!!state.active||batchBusy||pendingScripts.has(script.id);
   remove.onclick=async()=>{try{await api('/api/scripts/'+script.id,{},'DELETE');await refresh();}catch(e){notice(e.message,true);}};
-  actions.append(run,stop,remove);tr.append(actions);$('#scripts').append(tr);
+  actionGroup.append(run,stop,remove);actions.append(actionGroup);tr.append(actions);
+  ['序号','脚本','参数接入','最近结果','最近执行（北京时间）','操作'].forEach((label,i)=>tr.children[i].dataset.label=label);$('#scripts').append(tr);
  }
- if(!total){const tr=el('tr'),td=el('td','暂无脚本，请先添加。','hint');td.colSpan=5;tr.append(td);$('#scripts').append(tr);}
+ if(!total){const tr=el('tr'),td=el('td','暂无脚本，请先添加。','hint');td.colSpan=6;tr.append(td);$('#scripts').append(tr);}
  $('#scriptPageInfo').textContent=`共 ${total} 条 · ${total?start+1:0}–${Math.min(start+size,total)} 条 · 第 ${scriptPage} / ${pages} 页`;
  $('#scriptPrevPage').disabled=scriptPage===1;$('#scriptNextPage').disabled=scriptPage===pages;
  $('#runAll').disabled=$('#runRange').disabled=state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||pendingScripts.size>0||state.readingModels||cdpBusy||!total;
