@@ -41,7 +41,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  let state;
  try{state=JSON.parse(await fs.readFile(settingsPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;state={config:normalizeConfig(),scripts:[]};}
  state.scripts=withClientCases(state.scripts,projectRoot);
- const jobs=[],batches=[];const active=new Set(),batchStarting=new Set(),taskTokens=new Map(),taskRuntimes=new Map();let readingModels=false,editingCdp=false;
+ const jobs=[],batches=[];const active=new Set(),batchStarting=new Set(),taskTokens=new Map(),taskRuntimes=new Map();let readingModels=false,editingCdp=false,unlocking=false;
  const token=randomBytes(24).toString('hex');
  const persist=()=>fs.writeFile(settingsPath,JSON.stringify(state,null,2));
  await persist();
@@ -82,6 +82,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   }
  };
  const reconcileHandoff=async(job,{allowAbort=false}={})=>{
+  if(unlocking)return false;
   if(recovering.has(job.id))return false;
   if(!scheduler.reserveRecovery(job)){job.handoff={ready:false,reason:'等待其他任务交还页面，尚未检查交接'};job.schedulingHold=true;return false;}
   recovering.add(job.id);
@@ -96,7 +97,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   finally{recovering.delete(job.id);scheduler.releaseRecovery(job);}
  };
  // Rebuild holds after a restart without resuming or rewriting historical runs.
- for(const job of jobs.filter(j=>j.isolationVersion===2&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
+ for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
   for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested)){
    if(await reconcileHandoff(job,{allowAbort:false}))scheduler.finish(job.id);
@@ -160,6 +161,35 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
    if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='POST'&&url.pathname==='/api/locks/release'){
+    if(body.confirm!==true||!Array.isArray(body.jobIds)||!body.jobIds.length)return send(400,{error:'请先确认占锁任务和解除影响'});
+    if(unlocking||recovering.size||batchStarting.size||readingModels||editingCdp||jobs.some(j=>j.status==='RUNNING'||j.stopRequested)||[...active].some(id=>jobs.find(j=>j.id===id)?.status!=='QUEUED'))return send(409,{error:'仍有执行、停止或恢复操作，请先强制停止全部并等待结束，再解除锁定'});
+    const holders=jobs.filter(j=>j.schedulingHold);
+    if(holders.length!==body.jobIds.length||holders.some(j=>!body.jobIds.includes(j.id)))return send(409,{error:'占锁任务已变化，请刷新后重新确认'});
+    for(const j of holders)if(Number.isInteger(j.pid)&&j.pid>0){
+     try{process.kill(j.pid,0);return send(409,{error:'占锁记录的脚本PID仍存在，请先核实并停止脚本，未解除锁定'});}catch(e){if(e.code!=='ESRCH')return send(409,{error:'无法确认占锁脚本已经退出，未解除锁定'});}
+    }
+    unlocking=true;
+    try{
+     const at=new Date().toISOString(),queued=jobs.filter(j=>j.status==='QUEUED');
+     // Cancel every queued entry before releasing any hold: never launch a
+     // forgotten task as a side effect of this administrative operation.
+     for(const j of queued){j.status='STOPPED';j.phase='FINISHED';j.endedAt=at;j.error='强制解除锁定时取消排队，未发送客户端任务';active.delete(j.id);}
+     for(const j of queued){scheduler.finish(j.id);await writeJob(j);}
+     for(const j of holders){
+      j.forcedUnlock={at,previousHandoff:j.handoff,previousSubmissionPending:Boolean(j.submissionPending),sessionStopped:false};
+      j.schedulingHold=false;j.submissionPending=false;
+      j.handoff={ready:false,releasedByUser:true,reason:'用户强制解除控制台锁；未确认客户端任务结束，新执行仍检查草稿及交互'};
+      // Do not let a future recovery clear the original draft after a forced release.
+      delete j.ownedDraft;taskTokens.delete(j.id);taskRuntimes.delete(j.id);active.delete(j.id);
+      const message='用户强制解除控制台调度锁；未停止MobileWork会话，原测试结论保留。';
+      append(j,'\n['+at+'] '+message+'\n');await fs.appendFile(path.join(dataDir,'jobs',j.id,'执行日志.txt'),'\n['+at+'] '+message+'\n');
+      await writeJob(j);scheduler.finish(j.id);
+     }
+     updateQueueHolds();return send(200,{message:`已解除 ${holders.length} 条调度锁，取消 ${queued.length} 条排队。未终止客户端任务；重新执行仍会检查草稿和交互。`,released:holders.length,cancelled:queued.length});
+    }finally{unlocking=false;}
+   }
+   if(req.method==='POST'&&unlocking)return send(409,{error:'正在解除调度锁，请稍后再试'});
    if(req.method==='POST'&&url.pathname==='/api/batches'){
     if(readingModels||editingCdp)return send(409,{error:'正在读取模型或重启客户端，请等待完成'});
     const batch=await createBatch(body);return send(201,{id:batch.id});

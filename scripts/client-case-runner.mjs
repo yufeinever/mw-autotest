@@ -45,7 +45,10 @@ export async function waitCreatedSession(page,sourceUrl,{timeoutMs=180000,log=()
   if(id)return id;
   if(url!==sourceUrl)throw blocked('任务准备期间页面切换，停止等待，未重发任务');
   const body=await page.locator('body').innerText();
-  if(/工作区准备失败|Workspace model runtime is unreachable/.test(body))throw blocked('客户端工作区准备失败：'+(body.match(/Workspace model runtime[^\n]*/)?.[0]||'请查看客户端准备步骤；未创建Session'));
+  if(/工作区准备失败|Workspace model runtime is unreachable/.test(body)){
+   const detail=body.match(/工作区准备失败\s*([\s\S]*?)(?:第\s*\d+\s*步|重试|返回编辑|$)/)?.[1]?.trim()||body.match(/Workspace model runtime[^\n]*/)?.[0]||'请查看客户端准备步骤';
+   throw blocked('客户端工作区准备失败：'+detail.slice(0,700)+'；未创建Session');
+  }
   if(body.includes('立即终止并生效'))throw blocked('任务准备触发引擎重载确认；未终止已有会话');
   if(Date.now()-lastLog>20000){log('等待客户端准备并创建会话',body.match(/第\s*\d+\s*步[^\n]*/)?.[0]||'未取得Session ID；不重复发送');lastLog=Date.now();}
   await page.waitForTimeout(500);

@@ -80,6 +80,7 @@
 !/scripts/mobilework-isolation.test.mjs
 !/scripts/mobilework-standalone.mjs
 !/local-console/task-recovery.mjs
+!/local-console/lock-recovery.test.mjs
 !/local-console/task-isolation.test.mjs
 !/scripts/mobilework-question-no-send.test.mjs
 !/scripts/mobilework-run-policy.mjs

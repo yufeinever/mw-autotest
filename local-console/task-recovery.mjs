@@ -3,6 +3,15 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {inspectPageHandoff} from '../scripts/mobilework-isolation.mjs';
 import {waitStep} from '../scripts/mobilework-run-policy.mjs';
 
+// Only the runner's explicit pre-session failure is evidence that submission
+// did not reach the model. A timeout, empty session ID or clean page is not.
+export function failedBeforeSession(job){
+ const r=job.result;
+ return Boolean(job.submissionPending&&!job.sessionId&&!r?.sessionId&&r?.result==='BLOCKED'&&
+  typeof r.error==='string'&&r.error.startsWith('客户端工作区准备失败：')&&
+  r.events?.some(e=>e.step==='BLOCKED'&&e.detail===r.error));
+}
+
 export async function settleSession(page,job,connection,{allowAbort=false}={}){
  if(!job.sessionId)return !job.submissionPending;
  if(job.modelCompleted||job.sessionSettled)return true;
@@ -60,7 +69,23 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
 }
 
 export async function recoverJobPage(page,job,{connection,allowAbort=false,otherManagedSession=false}={}){
+ if(failedBeforeSession(job)){
+  // Preserve the historical failure and only retire its pending submission.
+  job.submissionPending=false;
+  job.submissionFailureConfirmed=true;
+  job.recoveryAction='原报告确认创建Session前工作区准备失败，撤销本次待提交标记；未停止其他会话';
+ }
  if(!await settleSession(page,job,connection,{allowAbort}))return {ready:false,reason:job.submissionPending&&!job.sessionId?'发送已尝试但Session归属未确认，暂停后续任务':'本条会话尚未确认结束'};
+ if(job.submissionFailureConfirmed&&page.url()===job.ownedDraft?.url){
+  const body=await page.locator('body').innerText();
+  if(body.includes('工作区准备失败')){
+   if(await page.getByRole('dialog').filter({visible:true}).count())return {ready:false,reason:'失败页仍有弹窗，保留现场'};
+   const back=page.getByRole('button',{name:'返回编辑',exact:true}).filter({visible:true});
+   if(await back.count()!==1)return {ready:false,reason:'请在客户端返回编辑，未找到唯一返回入口'};
+   await waitStep(page,job.config||{});await back.click({timeout:3000});
+   await page.locator('[contenteditable="true"]').filter({visible:true}).waitFor({timeout:5000});
+  }
+ }
  let handoff=await inspectPageHandoff(page,{owned:job.ownedDraft,allowRunning:otherManagedSession,stepInterval:job.config?.stepInterval});
  // Some clients leave the permission card rendered after an acknowledged
  // abort. Only leave that exact, independently confirmed stopped session.

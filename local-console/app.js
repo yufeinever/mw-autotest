@@ -509,6 +509,11 @@ if (traceId) {
     logDialog.showModal();
     readExecutionLog();
   }, renderScripts = function() {
+    const holders = state.jobs.filter((j) => j.schedulingHold);
+    const running = state.jobs.filter((j) => j.status === "RUNNING");
+    lockState.textContent = running.length ? "\u9501\u5B9A MW \xB7 " + running.map((j) => j.name).join("\u3001") + " \u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u52FF\u624B\u52A8\u64CD\u4F5C MobileWork\u3002" : holders.length ? "\u8C03\u5EA6\u5DF2\u6682\u505C \xB7 " + holders.map((j) => j.name + "\uFF1A" + (j.handoff?.reason || "\u7B49\u5F85\u6062\u590D")).join("\uFF1B") : "\u8C03\u5EA6\u6B63\u5E38 \xB7 \u65E0\u9501\u5B9A";
+    lockState.className = running.length ? "mw-lock-banner" : holders.length ? "lock-warning" : "hint";
+    unlockButton.disabled = !holders.length || stopAllBusy || batchBusy || submissions.size > 0 || state.jobs.some((j) => j.status === "RUNNING" || j.stopRequested);
     const size = Number($("#scriptPageSize").value), total = state.scripts.length, pages = Math.max(1, Math.ceil(total / size));
     scriptPage = Math.max(1, Math.min(scriptPage, pages));
     const start = (scriptPage - 1) * size;
@@ -521,8 +526,15 @@ if (traceId) {
       title.title = script.path;
       name.append(title);
       const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
+      if (state.jobs.some((j) => j.scriptId === script.id && j.status === "RUNNING")) {
+        tr.classList.add("script-running");
+        const locked = el2("span", "\u9501\u5B9A MW", "mw-lock-badge");
+        locked.title = "\u81EA\u52A8\u5316\u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u52FF\u624B\u52A8\u64CD\u4F5C MobileWork";
+        name.append(locked);
+      }
       const status = el2("td"), statusText = job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
       status.append(el2("span", statusText, "script-status " + resultClass(job?.status)));
+      if (job?.queueHold) status.append(el2("small", "\u7B49\u5F85\u6062\u590D\uFF1A" + job.queueHold));
       tr.append(el2("td", String(start + offset + 1).padStart(2, "0")), name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), status);
       const recent = el2("td", void 0, "script-recent"), actions = el2("td"), actionGroup = el2("div", void 0, "script-row-actions"), run = el2("button", "\u6267\u884C", "primary"), stop = el2("button", "\u5F3A\u5236\u505C\u6B62", "danger"), remove = el2("button", "\u79FB\u9664", "script-remove");
       if (job) {
@@ -705,6 +717,31 @@ if (traceId) {
   }
   const logDialog = el2("dialog", void 0, "execution-log-dialog"), logHeading = el2("h2", "\u6267\u884C\u65E5\u5FD7"), logMeta = el2("p"), logBody = el2("pre"), logClose = el2("button", "\u5173\u95ED"), logRefresh = el2("button", "\u5237\u65B0\u65E5\u5FD7"), logHeader = el2("div", void 0, "heading"), logControls = el2("div", void 0, "log-controls");
   let logJobId = null, logRequest = 0;
+  const unlockButton = el2("button", "\u5F3A\u5236\u89E3\u9664\u9501\u5B9A", "danger"), lockState = el2("p", void 0, "hint");
+  unlockButton.id = "forceUnlock";
+  lockState.id = "lockState";
+  $("#stopAll").after(unlockButton);
+  $("#scriptSection .heading").after(lockState);
+  unlockButton.onclick = async () => {
+    await refresh();
+    const holders = state.jobs.filter((j) => j.schedulingHold);
+    if (!holders.length) {
+      batchNotice("\u5F53\u524D\u6CA1\u6709\u8C03\u5EA6\u9501\uFF0C\u65E0\u9700\u89E3\u9664\u3002");
+      return;
+    }
+    const ids = holders.map((j) => j.id);
+    if (!window.confirm("\u5F3A\u5236\u89E3\u9664\u4EE5\u4E0B\u63A7\u5236\u53F0\u8C03\u5EA6\u9501\uFF1F\n" + holders.map((j) => j.name + "\uFF1A" + (j.handoff?.reason || j.error || "\u7B49\u5F85\u6062\u590D")).join("\n") + "\n\n\u5C06\u53D6\u6D88\u5C1A\u672A\u542F\u52A8\u7684\u6392\u961F\u4EFB\u52A1\uFF0C\u4FDD\u7559\u539F\u62A5\u544A\u548C\u65E5\u5FD7\u3002\u4E0D\u4F1A\u7EC8\u6B62MobileWork\u91CC\u7684\u4EFB\u52A1\uFF0C\u4E5F\u4E0D\u4F1A\u6E05\u9664\u7528\u6237\u8349\u7A3F\u3002\u8BF7\u5148\u6838\u5BF9\u5BA2\u6237\u7AEF\uFF1B\u518D\u6B21\u6267\u884C\u4ECD\u9700\u901A\u8FC7\u5B89\u5168\u68C0\u67E5\u3002")) return;
+    unlockButton.disabled = true;
+    try {
+      const r = await api("/api/locks/release", { confirm: true, jobIds: ids });
+      batchNotice(r.message);
+      notice(r.message);
+    } catch (e) {
+      batchNotice("\u89E3\u9664\u672A\u5B8C\u6210\uFF1A" + e.message, true);
+    } finally {
+      await refresh();
+    }
+  };
   logHeading.id = "executionLogTitle";
   logDialog.setAttribute("aria-labelledby", logHeading.id);
   logBody.tabIndex = 0;

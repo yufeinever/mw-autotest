@@ -52,3 +52,10 @@ input[type=checkbox]{width:auto!important;accent-color:#267e63}.history-table{ma
  #scriptSection .script-table td[colspan]{grid-column:1 / -1}
 }
 @media(max-width:540px){.execution-log-dialog .heading{flex-wrap:wrap}#scriptSection .script-pagination{flex-wrap:wrap}#scriptSection .script-pagination span{flex-basis:100%}}
+#scriptSection .lock-warning{padding:10px 12px;margin:12px 0;border:1px solid #ead9b6;border-radius:7px;background:#fffaf0;color:#805c22;font-size:12px;overflow-wrap:anywhere}
+#scriptSection #lockState.hint{margin:10px 0;color:#6b7889}
+#scriptSection .mw-lock-banner{margin:12px 0;padding:12px 14px;border:1px solid #e7a5a5;border-left:4px solid #c52828;border-radius:7px;background:#fff0f0;color:#a71919;font-size:13px;font-weight:600;line-height:1.7;overflow-wrap:anywhere}
+#scriptSection .mw-lock-badge{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:4px 9px;border-radius:5px;background:#c52828;color:#fff;font-size:12px;font-weight:700;line-height:1.5;white-space:nowrap}
+#scriptSection .mw-lock-badge:before{content:'';width:6px;height:6px;background:#fff;border-radius:50%}
+#scriptSection .script-table tr.script-running{background:#fff8f8;box-shadow:inset 3px 0 #c52828}
+#scriptSection .script-table tr.script-running:hover{background:#fff2f2}

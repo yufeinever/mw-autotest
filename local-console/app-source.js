@@ -41,6 +41,16 @@ function resultClass(status){return ['FAIL','BLOCKED','STOPPED','INTERRUPTED'].i
 function batchNotice(text,error=false){const e=$('#batchMessage');e.hidden=false;e.textContent=text;e.className=error?'error':'';}
 const logDialog=el('dialog',undefined,'execution-log-dialog'),logHeading=el('h2','执行日志'),logMeta=el('p'),logBody=el('pre'),logClose=el('button','关闭'),logRefresh=el('button','刷新日志'),logHeader=el('div',undefined,'heading'),logControls=el('div',undefined,'log-controls');
 let logJobId=null,logRequest=0;
+const unlockButton=el('button','强制解除锁定','danger'),lockState=el('p',undefined,'hint');unlockButton.id='forceUnlock';lockState.id='lockState';
+$('#stopAll').after(unlockButton);$('#scriptSection .heading').after(lockState);
+unlockButton.onclick=async()=>{
+ await refresh();const holders=state.jobs.filter(j=>j.schedulingHold);
+ if(!holders.length){batchNotice('当前没有调度锁，无需解除。');return;}
+ const ids=holders.map(j=>j.id);
+ if(!window.confirm('强制解除以下控制台调度锁？\n'+holders.map(j=>j.name+'：'+(j.handoff?.reason||j.error||'等待恢复')).join('\n')+'\n\n将取消尚未启动的排队任务，保留原报告和日志。不会终止MobileWork里的任务，也不会清除用户草稿。请先核对客户端；再次执行仍需通过安全检查。'))return;
+ unlockButton.disabled=true;
+ try{const r=await api('/api/locks/release',{confirm:true,jobIds:ids});batchNotice(r.message);notice(r.message);}catch(e){batchNotice('解除未完成：'+e.message,true);}finally{await refresh();}
+};
 logHeading.id='executionLogTitle';logDialog.setAttribute('aria-labelledby',logHeading.id);logBody.tabIndex=0;
 logControls.append(logRefresh,logClose);logHeader.append(logHeading,logControls);logDialog.append(logHeader,logMeta,logBody);document.body.append(logDialog);
 logClose.onclick=()=>logDialog.close();logDialog.addEventListener('close',()=>{logJobId=null;logRequest++;});
@@ -54,14 +64,23 @@ async function readExecutionLog(){
 logRefresh.onclick=readExecutionLog;
 function showExecutionLog(job){logJobId=job.id;logHeading.textContent=job.name+' · 执行日志';logMeta.textContent='';logDialog.showModal();readExecutionLog();}
 function renderScripts(){
+ const holders=state.jobs.filter(j=>j.schedulingHold);
+ const running=state.jobs.filter(j=>j.status==='RUNNING');
+ lockState.textContent=running.length?'锁定 MW · '+running.map(j=>j.name).join('、')+' 正在执行，请勿手动操作 MobileWork。':holders.length?'调度已暂停 · '+holders.map(j=>j.name+'：'+(j.handoff?.reason||'等待恢复')).join('；'):'调度正常 · 无锁定';
+ lockState.className=running.length?'mw-lock-banner':holders.length?'lock-warning':'hint';
+ unlockButton.disabled=!holders.length||stopAllBusy||batchBusy||submissions.size>0||state.jobs.some(j=>j.status==='RUNNING'||j.stopRequested);
  const size=Number($('#scriptPageSize').value),total=state.scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
  const start=(scriptPage-1)*size;$('#scripts').replaceChildren();
  for(const [offset,script] of state.scripts.slice(start,start+size).entries()){
   const tr=el('tr');tr.dataset.scriptId=script.id;tr.dataset.scriptNumber=start+offset+1;
   const name=el('td'),title=el('span',script.name,'script-title');title.title=script.path;name.append(title);
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
+  if(state.jobs.some(j=>j.scriptId===script.id&&j.status==='RUNNING')){
+   tr.classList.add('script-running');const locked=el('span','锁定 MW','mw-lock-badge');locked.title='自动化正在执行，请勿手动操作 MobileWork';name.append(locked);
+  }
   const status=el('td'),statusText=job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
   status.append(el('span',statusText,'script-status '+resultClass(job?.status)));
+  if(job?.queueHold)status.append(el('small','等待恢复：'+job.queueHold));
   tr.append(el('td',String(start+offset+1).padStart(2,'0')),name,el('td',!script.exists?'文件不存在':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),status);
   const recent=el('td',undefined,'script-recent'),actions=el('td'),actionGroup=el('div',undefined,'script-row-actions'),run=el('button','执行','primary'),stop=el('button','强制停止','danger'),remove=el('button','移除','script-remove');
   if(job){const failed=(job.result?.checks||[]).filter(c=>!c.pass);status.title=failed.map(c=>c.name).join('；')||job.result?.error||'';if(failed.length&&failed.every(c=>c.category==='skill-invocation'))status.append(el('small','Skill 调用断言未通过'));
