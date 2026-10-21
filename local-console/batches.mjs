@@ -4,7 +4,7 @@ export const assertionRate=checks=>checks.total?`${checks.passed}/${checks.total
 export const batchDate=value=>value?new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'—';
 batchLabels.QUEUED='排队中';
 export const phaseLabels={QUEUED:'排队中',PREPARING:'提交任务',WAITING_MODEL:'等待模型',INTERACTING:'处理交互',EVIDENCE:'记录截图',VERIFYING:'核验结果',FINISHED:'已结束'};
-export function publicJob({log,ownedDraft,...job}){return {...job,sessionId:job.result?.sessionId||job.sessionId||log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1]};}
+export function publicJob({log,ownedDraft,releasedDraft,...job}){return {...job,sessionId:job.result?.sessionId||job.sessionId||log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1]};}
 export function summarizeBatch(batch,jobs){
  const own=jobs.filter(j=>batch.legacy?!j.batchId:j.batchId===batch.id);
  const entries=batch.legacy?own.map((job,i)=>({scriptId:job.scriptId,name:job.name,path:job.path,number:i+1,job:publicJob(job)})):batch.scripts.map(script=>({...script,job:own.find(j=>j.scriptId===script.scriptId)?publicJob(own.find(j=>j.scriptId===script.scriptId)):null}));

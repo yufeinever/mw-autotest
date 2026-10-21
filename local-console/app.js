@@ -258,7 +258,7 @@ var assertionRate = (checks) => checks.total ? `${checks.passed}/${checks.total}
 var batchDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "\u2014";
 batchLabels.QUEUED = "\u6392\u961F\u4E2D";
 var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINISHED: "\u5DF2\u7ED3\u675F" };
-function publicJob({ log, ownedDraft, ...job }) {
+function publicJob({ log, ownedDraft, releasedDraft, ...job }) {
   return { ...job, sessionId: job.result?.sessionId || job.sessionId || log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1] };
 }
 function summarizeBatch(batch, jobs) {
@@ -730,7 +730,7 @@ if (traceId) {
       return;
     }
     const ids = holders.map((j) => j.id);
-    if (!window.confirm("\u5F3A\u5236\u89E3\u9664\u4EE5\u4E0B\u63A7\u5236\u53F0\u8C03\u5EA6\u9501\uFF1F\n" + holders.map((j) => j.name + "\uFF1A" + (j.handoff?.reason || j.error || "\u7B49\u5F85\u6062\u590D")).join("\n") + "\n\n\u5C06\u53D6\u6D88\u5C1A\u672A\u542F\u52A8\u7684\u6392\u961F\u4EFB\u52A1\uFF0C\u4FDD\u7559\u539F\u62A5\u544A\u548C\u65E5\u5FD7\u3002\u4E0D\u4F1A\u7EC8\u6B62MobileWork\u91CC\u7684\u4EFB\u52A1\uFF0C\u4E5F\u4E0D\u4F1A\u6E05\u9664\u7528\u6237\u8349\u7A3F\u3002\u8BF7\u5148\u6838\u5BF9\u5BA2\u6237\u7AEF\uFF1B\u518D\u6B21\u6267\u884C\u4ECD\u9700\u901A\u8FC7\u5B89\u5168\u68C0\u67E5\u3002")) return;
+    if (!window.confirm("\u5F3A\u5236\u89E3\u9664\u4EE5\u4E0B\u63A7\u5236\u53F0\u8C03\u5EA6\u9501\uFF1F\n" + holders.map((j) => j.name + "\uFF1A" + (j.handoff?.reason || j.error || "\u7B49\u5F85\u6062\u590D")).join("\n") + "\n\n\u5C06\u53D6\u6D88\u5C1A\u672A\u542F\u52A8\u7684\u6392\u961F\u4EFB\u52A1\uFF0C\u4FDD\u7559\u539F\u62A5\u544A\u548C\u65E5\u5FD7\u3002\u6838\u5BF9\u540E\u4EC5\u6E05\u7406\u5F52\u5C5E\u5B8C\u6574\u5339\u914D\u7684\u672C\u6B21\u6D4B\u8BD5\u8349\u7A3F\uFF1B\u7528\u6237\u8349\u7A3F\u548C\u672A\u77E5\u5185\u5BB9\u4FDD\u7559\u3002\u4E0D\u4F1A\u7EC8\u6B62MobileWork\u91CC\u7684\u4EFB\u52A1\uFF1B\u89E3\u9664\u540E\u4F1A\u5206\u522B\u62A5\u544A\u8C03\u5EA6\u9501\u4E0E\u5BA2\u6237\u7AEF\u5C31\u7EEA\u72B6\u6001\u3002")) return;
     unlockButton.disabled = true;
     try {
       const r = await api("/api/locks/release", { confirm: true, jobIds: ids });

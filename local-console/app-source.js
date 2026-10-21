@@ -47,7 +47,7 @@ unlockButton.onclick=async()=>{
  await refresh();const holders=state.jobs.filter(j=>j.schedulingHold);
  if(!holders.length){batchNotice('当前没有调度锁，无需解除。');return;}
  const ids=holders.map(j=>j.id);
- if(!window.confirm('强制解除以下控制台调度锁？\n'+holders.map(j=>j.name+'：'+(j.handoff?.reason||j.error||'等待恢复')).join('\n')+'\n\n将取消尚未启动的排队任务，保留原报告和日志。不会终止MobileWork里的任务，也不会清除用户草稿。请先核对客户端；再次执行仍需通过安全检查。'))return;
+ if(!window.confirm('强制解除以下控制台调度锁？\n'+holders.map(j=>j.name+'：'+(j.handoff?.reason||j.error||'等待恢复')).join('\n')+'\n\n将取消尚未启动的排队任务，保留原报告和日志。核对后仅清理归属完整匹配的本次测试草稿；用户草稿和未知内容保留。不会终止MobileWork里的任务；解除后会分别报告调度锁与客户端就绪状态。'))return;
  unlockButton.disabled=true;
  try{const r=await api('/api/locks/release',{confirm:true,jobIds:ids});batchNotice(r.message);notice(r.message);}catch(e){batchNotice('解除未完成：'+e.message,true);}finally{await refresh();}
 };

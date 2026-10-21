@@ -153,7 +153,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(action==='completed'){job.modelCompleted=true;job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});}
     if(action==='checkpoint'){
      if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
-     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!d.url.includes('MobileWork/resources/app-dist/index.html')||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;}
+     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!d.url.includes('MobileWork/resources/app-dist/index.html')||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
      if(body.submitting)job.submissionPending=true;
      if(body.sessionId){if(!/^ses_[A-Za-z0-9]+$/.test(body.sessionId)||!body.sessionUrl?.endsWith('/session/'+body.sessionId)||job.sessionId&&job.sessionId!==body.sessionId)throw Error('会话登记不一致');job.sessionId=body.sessionId;job.sessionUrl=body.sessionUrl;job.submissionPending=false;if(job.ownedDraft)job.submittedSelection=job.ownedDraft.selection;delete job.ownedDraft;}
      await writeJob(job);return send(200,{ok:true});
@@ -177,16 +177,27 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      for(const j of queued){j.status='STOPPED';j.phase='FINISHED';j.endedAt=at;j.error='强制解除锁定时取消排队，未发送客户端任务';active.delete(j.id);}
      for(const j of queued){scheduler.finish(j.id);await writeJob(j);}
      for(const j of holders){
-      j.forcedUnlock={at,previousHandoff:j.handoff,previousSubmissionPending:Boolean(j.submissionPending),sessionStopped:false};
+      const previousHandoff=j.handoff,previousSubmissionPending=Boolean(j.submissionPending);
+      // Keep provenance for diagnosis, but never automatically reuse an archived
+      // signature after release. Only the live task-owned draft may be cleared.
+      if(j.ownedDraft)j.releasedDraft=structuredClone(j.ownedDraft);
+      let clientRecovery={ready:false,reason:'没有本任务草稿归属，未清理客户端'};
+      if(j.ownedDraft){
+       try{clientRecovery=await recovery(j,{connection:taskRuntimes.get(j.id),allowAbort:false,jobs});}
+       catch(e){clientRecovery={ready:false,reason:e.message};}
+      }
+      j.forcedUnlock={at,previousHandoff,previousSubmissionPending,sessionStopped:false,clientRecovery};
       j.schedulingHold=false;j.submissionPending=false;
-      j.handoff={ready:false,releasedByUser:true,reason:'用户强制解除控制台锁；未确认客户端任务结束，新执行仍检查草稿及交互'};
+      j.handoff={...clientRecovery,releasedByUser:true,reason:clientRecovery.ready?'本次草稿及页面交接已核对，调度锁已解除':'调度锁已解除，但客户端尚未就绪：'+clientRecovery.reason};
+      if(clientRecovery.ready&&clientRecovery.url)scheduler.renderer(j.config.cdpPort).expectedUrl=clientRecovery.url;
       // Do not let a future recovery clear the original draft after a forced release.
       delete j.ownedDraft;taskTokens.delete(j.id);taskRuntimes.delete(j.id);active.delete(j.id);
       const message='用户强制解除控制台调度锁；未停止MobileWork会话，原测试结论保留。';
       append(j,'\n['+at+'] '+message+'\n');await fs.appendFile(path.join(dataDir,'jobs',j.id,'执行日志.txt'),'\n['+at+'] '+message+'\n');
       await writeJob(j);scheduler.finish(j.id);
      }
-     updateQueueHolds();return send(200,{message:`已解除 ${holders.length} 条调度锁，取消 ${queued.length} 条排队。未终止客户端任务；重新执行仍会检查草稿和交互。`,released:holders.length,cancelled:queued.length});
+     const notReady=holders.filter(j=>!j.handoff.ready);
+     updateQueueHolds();return send(200,{message:`已解除 ${holders.length} 条调度锁，取消 ${queued.length} 条排队。`+(notReady.length?'客户端尚未就绪：'+notReady.map(j=>j.name+'：'+j.forcedUnlock.clientRecovery.reason).join('；'):'本次草稿及页面交接已核对。')+' 未终止客户端会话，未自动重发。',released:holders.length,cancelled:queued.length,clientReady:notReady.length===0});
     }finally{unlocking=false;}
    }
    if(req.method==='POST'&&unlocking)return send(409,{error:'正在解除调度锁，请稍后再试'});
