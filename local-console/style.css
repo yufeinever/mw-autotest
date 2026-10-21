@@ -24,6 +24,9 @@ input[type=checkbox]{width:auto!important;accent-color:#267e63}.history-table{ma
 #scriptSection .script-row-actions button:disabled{opacity:1;color:#9ba5b1;background:#f6f8fa;border-color:#e9edf1;font-weight:400}
 #scriptSection .script-remove{border-color:transparent;color:#7a8796;background:transparent}
 #scriptSection .script-remove:hover{background:#fff3f1;color:#b73e37}
+#scriptSection .execute-next{color:#215b9d;background:#eef5ff;border-color:#bfd3ed}
+#scriptSection .execute-next:hover:not(:disabled){background:#dfeeff;border-color:#7fa7d9}
+#scriptSection .script-row-actions.has-next{display:grid;grid-template-columns:repeat(2,max-content);justify-content:start}
 #scriptSection .script-status{display:inline-block;padding:4px 9px;border-radius:5px;background:#f1f4f7;color:#6b7889;font-size:12px;line-height:1.5}
 #scriptSection .script-status.result-pass{color:#216c53;background:#eaf5ef}
 #scriptSection .script-status.result-fail{color:#a63b35;background:#fff0ed;font-weight:500}

@@ -20,6 +20,32 @@ export class TaskScheduler {
   }}finally{this.pumping=false;}
  }
  entry(id){const entry=this.entries.find(e=>e.job.id===id);if(!entry?.running)throw Error('任务没有在执行，不能操作客户端');return entry;}
+ nextStatus(id){
+  const source=this.entries.find(e=>e.job.id===id),job=source?.job;
+  if(!source?.running||job.status!=='RUNNING'||!source.cooperative)return {ready:false,reason:'当前脚本未在执行或未接入会话调度'};
+  if(job.manualNext)return {ready:false,reason:'本次运行已经执行下条'};
+  const port=job.config.cdpPort,r=this.renderer(port),live=this.entries.filter(e=>e.running&&e.job.config.cdpPort===port);
+  if(r.unresolved.size)return {ready:false,reason:'客户端存在未恢复的调度锁'};
+  if(r.owner||r.waiting.length)return {ready:false,reason:'客户端正在提交、截图或处理交互，请稍后再试'};
+  if(live.some(e=>!e.cooperative||e.preparing||e.job.status!=='RUNNING'||e.job.phase!=='WAITING_MODEL'||!e.job.sessionId||e.job.stopRequested||e.job.submissionPending||e.job.modelCompleted))return {ready:false,reason:'需要当前任务已提交并处于等待模型阶段'};
+  if(live.length>=Math.max(2,Math.min(...live.map(e=>e.job.config.maxParallel))))return {ready:false,reason:'已达到同时运行数量上限，请等待一条结束'};
+  const next=this.entries.find(e=>!e.running&&e.job.status==='QUEUED'&&e.job.config.cdpPort===port);
+  if(next&&!next.cooperative)return {ready:false,reason:'下一条脚本未接入会话调度，不能与当前任务同时运行'};
+  return {ready:true,nextId:next?.job.id};
+ }
+ advance(id,targetId){
+  const state=this.nextStatus(id);if(!state.ready)throw Error(state.reason);
+  if(!state.nextId||state.nextId!==targetId)throw Error('排队的下一条已变化，请刷新后重试');
+  const source=this.entry(id),next=this.entries.find(e=>e.job.id===targetId);
+  if(this.entries.filter(e=>e.running&&e.job.config.cdpPort===next.job.config.cdpPort).length>=Math.max(2,next.job.config.maxParallel))throw Error('下一条的同时运行数量已达上限');
+  source.job.manualNext={at:new Date().toISOString(),jobId:targetId};next.job.manualPrevious=id;
+  // One explicit admission, not a change to the batch strategy. Keep the
+  // current runner alive so it still collects its own result and trace.
+  next.running=true;next.job.status='RUNNING';next.job.phase='PREPARING';next.job.startedAt=new Date().toISOString();
+  this.changed(source.job);this.changed(next.job);
+  Promise.resolve().then(()=>next.start()).catch(error=>{next.job.status='FAIL';next.job.error=error.message;next.job.endedAt=new Date().toISOString();this.finish(next.job.id);this.changed(next.job);});
+  return next.job;
+ }
  reserveRecovery(job){
   this.locations.set(job.id,job.config.cdpPort);
   const r=this.renderer(job.config.cdpPort);

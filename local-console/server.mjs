@@ -21,6 +21,7 @@ import {observatoryDocument} from './observatory-view.mjs';
 import {collectBatches,publicJob} from './batches.mjs';
 import {TaskScheduler} from './task-scheduler.mjs';
 import {recoverJob} from './task-recovery.mjs';
+import {verifyNextSession} from './execute-next.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot=path.resolve(here,'..');
@@ -73,7 +74,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   jobWrites.set(job.id,write);return write;
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
- const recovering=new Set();
+ const recovering=new Set(),advancing=new Set();
  const updateQueueHolds=()=>{
   for(const job of jobs.filter(j=>j.status==='QUEUED')){
    const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
@@ -160,7 +161,40 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,executeNext:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(j=>({...publicJob(j),nextExecution:j.status==='RUNNING'?scheduler.nextStatus(j.id):undefined})),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   const nextMatch=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/next$/);
+   if(req.method==='POST'&&nextMatch){
+    const job=jobs.find(j=>j.id===nextMatch[1]);if(!job)return send(404,{error:'运行记录不存在'});
+    if(job.manualNext)return send(200,{id:job.manualNext.jobId,message:'本次已执行下条，未重复启动'});
+    if(advancing.size||unlocking||recovering.size||readingModels||editingCdp||batchStarting.size||jobs.some(j=>j.stopRequested))return send(409,{error:'正在执行其他控制操作，请稍后再试'});
+    let nextState=scheduler.nextStatus(job.id);if(!nextState.ready)return send(409,{error:nextState.reason});
+    advancing.add(job.id);
+    try{
+     await verifyNextSession(job,taskRuntimes.get(job.id));
+     nextState=scheduler.nextStatus(job.id);if(!nextState.ready)return send(409,{error:nextState.reason});
+     let nextId=nextState.nextId,created=false;
+     if(!nextId){
+      // A single-case run has no queue: submit the adjacent registered script
+      // with the original config using the same validated run endpoint.
+      const index=state.scripts.findIndex(s=>s.id===job.scriptId),item=index>=0?state.scripts[index+1]:null;
+      if(!item)return send(409,{error:'已是最后一条脚本，没有下一条'});
+      const info=await scriptInfo(item);if(!info.exists||!info.integrated||!info.cooperative)return send(409,{error:'下一条脚本不存在或未接入会话调度'});
+      const rechecked=scheduler.nextStatus(job.id);if(!rechecked.ready||rechecked.nextId)return send(409,{error:rechecked.reason||'队列已变化，请刷新后重试'});
+      if(jobs.some(j=>j.scriptId===item.id&&['RUNNING','QUEUED'].includes(j.status)))return send(409,{error:'下一条已在执行或排队，未重复提交'});
+      const response=await fetch(`http://${expectedHost}/api/run`,{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify({scriptId:item.id,config:job.config})});
+      const result=await response.json();if(!response.ok)throw Error(result.error);nextId=result.id;created=true;
+     }
+     const next=jobs.find(j=>j.id===nextId);
+     // A normal completion/parallel pump may have admitted it while I/O ran.
+     if(next?.status==='RUNNING')job.manualNext={at:new Date().toISOString(),jobId:nextId};
+     else{
+      try{scheduler.advance(job.id,nextId);}catch(error){return send(409,{error:error.message+(created?'；下条已加入普通队列，未强行启动':''),queuedId:created?nextId:undefined});}
+     }
+     const at=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Shanghai',hour12:false}),message='已执行下条：'+next.name+'；当前任务继续运行并独立记录结果';
+     append(job,'\n['+at+'] '+message+'\n');await fs.appendFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'\n['+at+'] '+message+'\n');await writeJob(job);await writeJob(next);
+     return send(200,{id:nextId,message});
+    }catch(error){return send(409,{error:error.message});}finally{advancing.delete(job.id);}
+   }
    if(req.method==='POST'&&url.pathname==='/api/locks/release'){
     if(body.confirm!==true||!Array.isArray(body.jobIds)||!body.jobIds.length)return send(400,{error:'请先确认占锁任务和解除影响'});
     if(unlocking||recovering.size||batchStarting.size||readingModels||editingCdp||jobs.some(j=>j.status==='RUNNING'||j.stopRequested)||[...active].some(id=>jobs.find(j=>j.id===id)?.status!=='QUEUED'))return send(409,{error:'仍有执行、停止或恢复操作，请先强制停止全部并等待结束，再解除锁定'});

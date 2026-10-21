@@ -576,8 +576,33 @@ if (traceId) {
           notice(e.message, true);
         }
       };
-      actionGroup.append(run, stop, remove);
-      actions.append(actionGroup);
+      actionGroup.append(run, stop);
+      const runningJob = state.jobs.filter((j) => j.scriptId === script.id && j.status === "RUNNING").at(-1);
+      if (runningJob) {
+        actionGroup.classList.add("has-next");
+        const next = el2("button", runningJob.manualNext ? "\u5DF2\u6267\u884C\u4E0B\u6761" : "\u6267\u884C\u4E0B\u6761", "execute-next");
+        next.title = "\u5F53\u524D\u6A21\u578B\u6B63\u5E38\u957F\u6D41\u7A0B\uFF0C\u4E0D\u7B49\u5F85\u7ED3\u675F\uFF0C\u76F4\u63A5\u6267\u884C\u4E0B\u4E00\u6761";
+        next.disabled = state.capabilities?.executeNext !== 1 || stopAllBusy || batchBusy || cdpBusy || state.readingModels || pendingNext.size > 0 || !runningJob.nextExecution?.ready;
+        next.onclick = async () => {
+          if (pendingNext.size) return;
+          pendingNext.add(runningJob.id);
+          next.disabled = true;
+          try {
+            const r = await api("/api/jobs/" + runningJob.id + "/next", {});
+            batchNotice(r.message);
+            notice(r.message);
+          } catch (e) {
+            batchNotice("\u6267\u884C\u4E0B\u6761\u672A\u5B8C\u6210\uFF1A" + e.message, true);
+          } finally {
+            pendingNext.delete(runningJob.id);
+            await refresh();
+          }
+        };
+        actionGroup.append(next);
+        if (state.capabilities?.executeNext !== 1) actions.append(el2("small", "\u91CD\u542F\u6D4B\u8BD5\u63A7\u5236\u53F0\u540E\u542F\u7528\u6267\u884C\u4E0B\u6761", "hint"));
+      }
+      actionGroup.append(remove);
+      actions.prepend(actionGroup);
       tr.append(actions);
       ["\u5E8F\u53F7", "\u811A\u672C", "\u53C2\u6570\u63A5\u5165", "\u6700\u8FD1\u7ED3\u679C", "\u6700\u8FD1\u6267\u884C\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09", "\u64CD\u4F5C"].forEach((label, i) => tr.children[i].dataset.label = label);
       $("#scripts").append(tr);
@@ -623,7 +648,7 @@ if (traceId) {
   };
   const $ = (s) => document.querySelector(s);
   let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false;
-  const pendingScripts = /* @__PURE__ */ new Set();
+  const pendingScripts = /* @__PURE__ */ new Set(), pendingNext = /* @__PURE__ */ new Set();
   const submissions = /* @__PURE__ */ new Set();
   let stopAllBusy = false, stopGeneration = 0;
   const labels = { QUEUED: "\u6392\u961F\u4E2D", RUNNING: "\u6267\u884C\u4E2D", PASS: "\u901A\u8FC7", FAIL: "\u5931\u8D25", BLOCKED: "\u963B\u585E", EXITED: "\u5DF2\u9000\u51FA\uFF08\u672A\u58F0\u660E\u65AD\u8A00\u7ED3\u679C\uFF09", INTERRUPTED: "\u63A7\u5236\u53F0\u5DF2\u4E2D\u65AD", CHECKED: "\u9884\u68C0\u901A\u8FC7", RESUMED: "\u7EED\u8DD1\u5B8C\u6210" };

@@ -6,7 +6,7 @@ const params=new URLSearchParams(location.search),traceId=params.get('trace'),ba
 if(traceId){await showBrowserTrace(traceId);}else if(batchId){await showBatch(batchId);}else{
 const $=s=>document.querySelector(s);
 let token='',state,selectedJob,parentDir,initialized=false,historyPage=1,scriptPage=1,batchBusy=false;
-const pendingScripts=new Set();
+const pendingScripts=new Set(),pendingNext=new Set();
 const submissions=new Set();let stopAllBusy=false,stopGeneration=0;
 const labels={QUEUED:'排队中',RUNNING:'执行中',PASS:'通过',FAIL:'失败',BLOCKED:'阻塞',EXITED:'已退出（未声明断言结果）',INTERRUPTED:'控制台已中断',CHECKED:'预检通过',RESUMED:'续跑完成'};
 labels.STOPPED='已强制停止';
@@ -96,7 +96,23 @@ function renderScripts(){
   stop.onclick=async()=>{stop.disabled=true;try{const r=await api('/api/jobs/'+job.id+'/stop',{});notice(r.message);await refresh();}catch(e){notice(e.message,true);}};
   remove.disabled=!!state.active||batchBusy||pendingScripts.has(script.id);
   remove.onclick=async()=>{try{await api('/api/scripts/'+script.id,{},'DELETE');await refresh();}catch(e){notice(e.message,true);}};
-  actionGroup.append(run,stop,remove);actions.append(actionGroup);tr.append(actions);
+  actionGroup.append(run,stop);
+  const runningJob=state.jobs.filter(j=>j.scriptId===script.id&&j.status==='RUNNING').at(-1);
+  if(runningJob){
+   actionGroup.classList.add('has-next');
+   const next=el('button',runningJob.manualNext?'已执行下条':'执行下条','execute-next');
+   next.title='当前模型正常长流程，不等待结束，直接执行下一条';
+   next.disabled=state.capabilities?.executeNext!==1||stopAllBusy||batchBusy||cdpBusy||state.readingModels||pendingNext.size>0||!runningJob.nextExecution?.ready;
+   next.onclick=async()=>{
+    if(pendingNext.size)return;pendingNext.add(runningJob.id);next.disabled=true;
+    try{const r=await api('/api/jobs/'+runningJob.id+'/next',{});batchNotice(r.message);notice(r.message);}
+    catch(e){batchNotice('执行下条未完成：'+e.message,true);}
+    finally{pendingNext.delete(runningJob.id);await refresh();}
+   };
+   actionGroup.append(next);
+   if(state.capabilities?.executeNext!==1)actions.append(el('small','重启测试控制台后启用执行下条','hint'));
+  }
+  actionGroup.append(remove);actions.prepend(actionGroup);tr.append(actions);
   ['序号','脚本','参数接入','最近结果','最近执行（北京时间）','操作'].forEach((label,i)=>tr.children[i].dataset.label=label);$('#scripts').append(tr);
  }
  if(!total){const tr=el('tr'),td=el('td','暂无脚本，请先添加。','hint');td.colSpan=6;tr.append(td);$('#scripts').append(tr);}
