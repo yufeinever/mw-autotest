@@ -91,7 +91,7 @@ test('只有补丁审批序列化错误允许重试，错误正文不进入日�
  }finally{await new Promise(r=>server.close(r));}
 });
 
-test('两个模型任务重叠等待；真实DOM按会话轮流回答和审批；外部切换不误操作',async()=>{
+test('两个模型任务串行等待；真实DOM独立回答和审批；外部切换不误操作',async()=>{
  const jobs=['A','B'].map(id=>({id,status:'QUEUED',config:normalizeConfig({executionStrategy:'parallel',maxParallel:2})}));
  const scheduler=new TaskScheduler(),sessions=new Map(),actions=[],turns=[];
  const user=id=>'本次独立测试任务 '+id+'，保留这条完整消息用于回读核验。';
@@ -103,7 +103,7 @@ test('两个模型任务重叠等待；真实DOM按会话轮流回答和审批�
   if(route.pathname==='/MobileWork/resources/app-dist/index.html'){
    res.setHeader('content-type','text/html; charset=utf-8');res.end(`<!doctype html><meta charset="utf-8"><button onclick="location.hash='/workspace/demo/session'">新建任务</button><main></main><script>
    let fingerprint='';const root=document.querySelector('main');
-   async function render(){const id=location.hash.match(/ses_([AB])$/)?.[1];if(!id){root.innerHTML='<div contenteditable="true"></div>';fingerprint='';return;}
+   async function render(){const id=location.hash.match(/ses_([AB])$/)?.[1];if(!id){root.innerHTML='<button>日常办公</button><div contenteditable="true"></div>';fingerprint='';return;}
     const data=await(await fetch('/view/'+id)).json();if(!location.hash.endsWith('ses_'+id))return;const next=JSON.stringify(data);if(fingerprint===next)return;fingerprint=next;
     root.replaceChildren();const message=document.createElement('p');message.textContent=data.user;root.append(message);
     if(data.pending==='question'){const card=document.createElement('div'),q=document.createElement('p');card.className='border-[var(--mw-question-panel-border)]';q.textContent=id+' 选择方案';card.append(q);
@@ -145,17 +145,20 @@ test('两个模型任务重叠等待；真实DOM按会话轮流回答和审批�
   for(const j of jobs)scheduler.enqueue(j,{cooperative:true,start:()=>{}});
   assert.equal(jobs[1].status,'QUEUED');
   await controls[0].begin(page);await page.evaluate(()=>location.hash='/workspace/demo/session/ses_A');await page.waitForURL(/ses_A$/);await controls[0].submitted(page,'ses_A');
-  assert.equal(jobs[1].status,'RUNNING');assert.equal(sessions.get('A').done,false);
+  assert.equal(jobs[1].status,'QUEUED');assert.equal(sessions.get('A').done,false);
+  sessions.get('A').pending='question';
+  const logs=[await controls[0].wait(page,normalizeConfig({question:'first',approval:'session'}),{timeoutMs:20000,capture:async()=>assert.ok(page.url().endsWith('/ses_A')),log:()=>{}})];
+  scheduler.finish('A');assert.equal(jobs[1].status,'RUNNING');
   await controls[1].begin(page);await page.evaluate(()=>location.hash='/workspace/demo/session/ses_B');await page.waitForURL(/ses_B$/);await controls[1].submitted(page,'ses_B');
-  assert.equal(sessions.get('A').done,false,'B已经提交时A仍在模型处理阶段');assert.equal(sessions.get('B').done,false);
-  sessions.get('A').pending='question';sessions.get('B').pending='permission';
-  const logs=await Promise.all(controls.map((control,index)=>control.wait(page,normalizeConfig({question:'first',approval:'session'}),{timeoutMs:20000,capture:async()=>assert.ok(page.url().endsWith('/ses_'+jobs[index].id)),log:()=>{}})));
+  assert.equal(sessions.get('A').done,true,'A完成后才提交B');assert.equal(sessions.get('B').done,false);
+  sessions.get('B').pending='permission';
+  logs.push(await controls[1].wait(page,normalizeConfig({question:'first',approval:'session'}),{timeoutMs:20000,capture:async()=>assert.ok(page.url().endsWith('/ses_B')),log:()=>{}}));
   assert.deepEqual(actions,[{id:'A',action:'选项1'},{id:'B',action:'在会话期间允许'}]);
   assert.deepEqual(logs.map(d=>d.sessionId),['ses_A','ses_B']);assert.ok(jobs.every(j=>j.modelCompleted));
   assert.deepEqual(turns.filter(t=>t.phase==='INTERACTING').map(t=>t.id),['A','B']);
   assert.ok(!JSON.stringify(logs).includes('isolated-engine-secret'));
   await page.evaluate(()=>location.hash='/workspace/demo/session/ses_foreign');await page.waitForURL(/ses_foreign$/);
-  let clicked=false;await assert.rejects(()=>controls[0].withUI(page,'EVIDENCE',async()=>{clicked=true;}),/调度之外/);assert.equal(clicked,false);
+  let clicked=false;await assert.rejects(()=>controls[1].withUI(page,'EVIDENCE',async()=>{clicked=true;}),/调度之外/);assert.equal(clicked,false);
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 });
 

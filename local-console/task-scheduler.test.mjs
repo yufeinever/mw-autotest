@@ -26,19 +26,18 @@ test('停止后重新执行：最后任务退出后新任务不继承旧页面�
  }
 });
 
-test('停止后重新执行：仍有并行任务或未确认停止的会话时保留页面保护',()=>{
+test('停止后重新执行：未确认停止的会话保留页面保护，恢复后串行推进',()=>{
  const s=new TaskScheduler(),a=job('A'),b=job('B'),queued=job('C');
  for(const j of [a,b,queued])s.enqueue(j,{cooperative:true,start:()=>{}});
- handoff(s,'A');handoff(s,'B');
+ handoff(s,'A');assert.equal(b.status,'QUEUED');
  queued.status='STOPPED';s.finish('C');
  s.finish('A',{unresolved:true});
- assert.equal(s.acquire('B','INTERACTING').expectedUrl,base+'ses_B');
- s.release('B',{url:base+'ses_B',sessionId:'ses_B'});s.finish('B');
- assert.equal(s.renderer(9223).expectedUrl,base+'ses_B');
+ assert.equal(b.status,'QUEUED');assert.equal(s.renderer(9223).expectedUrl,base+'ses_A');
+ b.status='STOPPED';s.finish('B');
  const next=job('next');s.enqueue(next,{cooperative:true,start:()=>{}});assert.equal(next.status,'QUEUED');
  const other=job('other','serial',9224);s.enqueue(other,{cooperative:true,start:()=>{}});handoff(s,'other');
- s.finish('A');assert.equal(next.status,'RUNNING');assert.equal(s.acquire('next','PREPARING').expectedUrl,null);
- assert.equal(s.renderer(9224).expectedUrl,base+'ses_other','只清理本端口，其他客户端状态不变');
+ s.finish('A');assert.equal(next.status,'QUEUED','另一客户端用例也须串行');s.finish('other');assert.equal(next.status,'RUNNING');assert.equal(s.acquire('next','PREPARING').expectedUrl,null);
+ assert.equal(s.renderer(9224).expectedUrl,null,'最后任务结束后清理本端口状态');
 });
 
 test('停止后重新执行：真实服务停止已登记会话的脚本后无需重启即可再次执行',async()=>{
@@ -99,26 +98,26 @@ setInterval(()=>{},1000);
  }
 });
 
-test('串行等待前条结束；并行按顺序提交、等待模型重叠、限制任务数',async()=>{
+test('串行与旧并行参数均等待前条结束后按顺序推进',async()=>{
  for(const strategy of ['serial','parallel']){
   const s=new TaskScheduler(),started=[];
   for(const id of ['A','B','C'])s.enqueue(job(id,strategy),{cooperative:true,start:()=>started.push(id)});
   await tick();assert.deepEqual(started,['A']);handoff(s,'A');await tick();
-  assert.deepEqual(started,strategy==='serial'?['A']:['A','B']);
-  if(strategy==='serial'){s.finish('A');await tick();assert.deepEqual(started,['A','B']);}
+  assert.deepEqual(started,['A']);
+  s.finish('A');await tick();assert.deepEqual(started,['A','B']);
   handoff(s,'B');await tick();assert.deepEqual(started,['A','B'],'串行前条未结束/并行达到上限时，第三条仍排队');
-  s.finish(strategy==='serial'?'B':'A');await tick();assert.deepEqual(started,['A','B','C']);
+  s.finish('B');await tick();assert.deepEqual(started,['A','B','C']);
  }
 });
 
-test('页面操作轮流进行，交互完成交还页面；不同客户端不互相阻塞',async()=>{
+test('交还页面不会提前放行排队任务，不同客户端也只运行一条',async()=>{
  const s=new TaskScheduler();for(const id of ['A','B'])s.enqueue(job(id),{cooperative:true,start:()=>{}});
- handoff(s,'A');handoff(s,'B');
- assert.equal(s.acquire('A','INTERACTING').granted,true);assert.equal(s.acquire('B','EVIDENCE').granted,false);
+ handoff(s,'A');
+ assert.equal(s.acquire('A','INTERACTING').granted,true);assert.throws(()=>s.acquire('B','EVIDENCE'),/没有在执行/);
  s.release('A',{url:base+'ses_A',sessionId:'ses_A'});
- assert.equal(s.acquire('B','EVIDENCE').granted,true);assert.equal(s.acquire('A','INTERACTING').granted,false);
- const c=job('C','serial',9224);s.enqueue(c,{cooperative:true,start:()=>{}});assert.equal(c.status,'RUNNING');
- s.finish('B');assert.equal(s.acquire('A','INTERACTING').granted,true);
+ const c=job('C','serial',9224);s.enqueue(c,{cooperative:true,start:()=>{}});assert.equal(c.status,'QUEUED');
+ s.finish('A');handoff(s,'B');assert.equal(s.acquire('B','EVIDENCE').granted,true);
+ s.finish('B');assert.equal(c.status,'RUNNING');
 });
 
 test('未接入分阶段调度的自定义脚本不会与其他脚本抢页面；取消排队与未结束会话暂停',async()=>{

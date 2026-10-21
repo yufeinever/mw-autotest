@@ -21,11 +21,13 @@ async function filesUnder(dir){
  }return result.sort();
 }
 export async function selectedFiles(){
- const selected=['AGENTS.md','打包与迁移说明.md','启动测试平台.cmd','环境检查.cmd','package.json','package-lock.json','config/environment.json'];
+ const selected=['README.md','AGENTS.md','需求文档.md','版本迭代说明.md','打包与迁移说明.md','启动测试平台.cmd','环境检查.cmd','package.json','package-lock.json','config/environment.json'];
+ for(const name of await fs.readdir(path.join(root,'需求文档')))if(/^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.md$/.test(name))selected.push('需求文档/'+name);
  for(const item of await fs.readdir(path.join(root,'local-console'),{withFileTypes:true}))if(item.isFile()&&/\.(?:mjs|js|html|css|md)$/.test(item.name))selected.push('local-console/'+item.name);
  selected.push('local-console/fixtures/long-running.mjs','scripts/fixtures/case002-synthetic-meeting.mjs');
  selected.push(...clientCases.map(c=>c.entry));
  selected.push('scripts/mobilework-initialize.mjs','scripts/mobilework-initialize.test.mjs');
+ selected.push('scripts/mobilework-permission-events.mjs','scripts/mobilework-permission-recovery.test.mjs');
  selected.push('scripts/mobilework-model-selection.test.mjs');
  selected.push('scripts/mobilework-task-control.mjs','scripts/mobilework-task-control.test.mjs','scripts/mobilework-question-no-send.test.mjs','scripts/mobilework-isolation.mjs','scripts/mobilework-standalone.mjs','scripts/mobilework-isolation.test.mjs','scripts/mobilework-full-access.test.mjs');
  selected.push(...['client-case-catalog.mjs','client-case-inputs.mjs','client-case-runner.mjs','client-case-checks.mjs','client-case-preview.mjs','client-cases.test.mjs','mobilework-run-policy.mjs','mobilework-run-policy.test.mjs','mobilework-composer.mjs','mobilework-evidence.mjs','mobilework-trace.mjs','case002-meeting-data.mjs','case002-meeting.test.mjs','build-console-app.mjs','node-runner.cmd','check-package.mjs','package-windows.mjs'].map(s=>'scripts/'+s));

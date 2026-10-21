@@ -22,7 +22,6 @@ import {observatoryDocument} from './observatory-view.mjs';
 import {collectBatches,publicJob} from './batches.mjs';
 import {TaskScheduler} from './task-scheduler.mjs';
 import {recoverJob} from './task-recovery.mjs';
-import {verifyNextSession} from './execute-next.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot=path.resolve(here,'..');
@@ -43,6 +42,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  let state;
  try{state=JSON.parse(await fs.readFile(settingsPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;state={config:normalizeConfig(),scripts:[]};}
  state.scripts=withClientCases(state.scripts,projectRoot);
+ state.config=normalizeConfig(state.config);
  const jobs=[],batches=[];const active=new Set(),batchStarting=new Set(),taskTokens=new Map(),taskRuntimes=new Map();let readingModels=false,editingCdp=false,unlocking=false;
  const token=randomBytes(24).toString('hex');
  const persist=()=>fs.writeFile(settingsPath,JSON.stringify(state,null,2));
@@ -75,7 +75,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   jobWrites.set(job.id,write);return write;
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
- const recovering=new Set(),advancing=new Set();
+ const recovering=new Set();
  const updateQueueHolds=()=>{
   for(const job of jobs.filter(j=>j.status==='QUEUED')){
    const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
@@ -119,12 +119,13 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  const createBatch=async body=>{
   const ids=body.scriptIds,mode=body.mode||'single';
   if(!Array.isArray(ids)||!ids.length||ids.length>1000||ids.some(id=>typeof id!=='string')||new Set(ids).size!==ids.length)throw Error('批次需要不重复的脚本 ID 列表');
-  if(!['single','all','range'].includes(mode)||mode==='single'&&ids.length!==1)throw Error('批次执行方式无效');
+  if(!['single','all','range','selected'].includes(mode)||mode==='single'&&ids.length!==1)throw Error('批次执行方式无效');
   const scripts=[];
   for(const id of ids){const index=state.scripts.findIndex(s=>s.id===id);if(index<0)throw Error('批次包含不存在的脚本');const script=await scriptInfo(state.scripts[index]);if(!script.exists||!script.integrated)throw Error(script.name+'：文件不存在或未接入参数');scripts.push({scriptId:id,name:script.name,path:script.path,number:index+1});}
   if(mode==='all'&&(ids.length!==state.scripts.length||scripts.some((s,i)=>s.scriptId!==state.scripts[i].id)))throw Error('全部执行必须包含当前全部脚本并按列表排序');
   if(mode==='range'&&scripts.some((s,i)=>s.number!==scripts[0].number+i))throw Error('范围执行序号必须连续并按列表排序');
-  const startedAt=new Date().toISOString(),label=mode==='all'?'全部执行':mode==='range'?`序号 ${scripts[0].number}-${scripts.at(-1).number}`:'单条执行';
+  if(mode==='selected')scripts.sort((a,b)=>a.number-b.number);
+  const startedAt=new Date().toISOString(),label=mode==='all'?'全部执行':mode==='range'?`序号 ${scripts[0].number}-${scripts.at(-1).number}`:mode==='selected'?'勾选序号 '+scripts.map(s=>s.number).join('、'):'单条执行';
   const stamp=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()).replace(/\//g,'').replace(/:/g,'');
   const batch={id:randomUUID(),name:stamp+' · '+label,mode,scope:mode==='single'?`序号 ${scripts[0].number} · ${scripts[0].name}`:label+`（${scripts.length} 条）`,startedAt,submission:'SUBMITTING',scripts,config:safeConfig(normalizeConfig(body.config))};
   await writeBatch(batch);batches.push(batch);return batch;
@@ -137,7 +138,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.headers.host!==expectedHost)return send(403,{error:'仅接受本机127.0.0.1访问'});
    if(req.headers.origin&&req.headers.origin!==`http://${expectedHost}`)return send(403,{error:'拒绝跨站请求'});
    res.setHeader('X-Content-Type-Options','nosniff');
-   res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'");
+   res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'self'");
    const url=new URL(req.url,`http://${expectedHost}`);
    let body={};
    const controlMatch=url.pathname.match(/^\/api\/task-control\/([\w-]+)\/(acquire|release|is-managed|completed|checkpoint)$/);
@@ -162,39 +163,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,executeNext:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(j=>({...publicJob(j),nextExecution:j.status==='RUNNING'?scheduler.nextStatus(j.id):undefined})),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSource:1,detailPreview:1,executeNext:0},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   const sourceMatch=url.pathname.match(/^\/api\/scripts\/([\w-]+)\/source$/);
+   if(req.method==='GET'&&sourceMatch){
+    if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
+    const script=state.scripts.find(s=>s.id===sourceMatch[1]);if(!script)return send(404,{error:'脚本未登记或已移除'});
+    const real=await fs.realpath(script.path),stat=await fs.stat(real);
+    if(!stat.isFile()||!extensions.has(path.extname(real).toLowerCase()))return send(400,{error:'不支持的脚本文件'});
+    if(stat.size>1024*1024)return send(413,{error:'脚本超过1MB，请在本地编辑器查看'});
+    return send(200,{name:script.name,path:real,content:await fs.readFile(real,'utf8')});
+   }
    const nextMatch=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/next$/);
    if(req.method==='POST'&&nextMatch){
-    const job=jobs.find(j=>j.id===nextMatch[1]);if(!job)return send(404,{error:'运行记录不存在'});
-    if(job.manualNext)return send(200,{id:job.manualNext.jobId,message:'本次已执行下条，未重复启动'});
-    if(advancing.size||unlocking||recovering.size||readingModels||editingCdp||batchStarting.size||jobs.some(j=>j.stopRequested))return send(409,{error:'正在执行其他控制操作，请稍后再试'});
-    let nextState=scheduler.nextStatus(job.id);if(!nextState.ready)return send(409,{error:nextState.reason});
-    advancing.add(job.id);
-    try{
-     await verifyNextSession(job,taskRuntimes.get(job.id));
-     nextState=scheduler.nextStatus(job.id);if(!nextState.ready)return send(409,{error:nextState.reason});
-     let nextId=nextState.nextId,created=false;
-     if(!nextId){
-      // A single-case run has no queue: submit the adjacent registered script
-      // with the original config using the same validated run endpoint.
-      const index=state.scripts.findIndex(s=>s.id===job.scriptId),item=index>=0?state.scripts[index+1]:null;
-      if(!item)return send(409,{error:'已是最后一条脚本，没有下一条'});
-      const info=await scriptInfo(item);if(!info.exists||!info.integrated||!info.cooperative)return send(409,{error:'下一条脚本不存在或未接入会话调度'});
-      const rechecked=scheduler.nextStatus(job.id);if(!rechecked.ready||rechecked.nextId)return send(409,{error:rechecked.reason||'队列已变化，请刷新后重试'});
-      if(jobs.some(j=>j.scriptId===item.id&&['RUNNING','QUEUED'].includes(j.status)))return send(409,{error:'下一条已在执行或排队，未重复提交'});
-      const response=await fetch(`http://${expectedHost}/api/run`,{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify({scriptId:item.id,config:job.config})});
-      const result=await response.json();if(!response.ok)throw Error(result.error);nextId=result.id;created=true;
-     }
-     const next=jobs.find(j=>j.id===nextId);
-     // A normal completion/parallel pump may have admitted it while I/O ran.
-     if(next?.status==='RUNNING')job.manualNext={at:new Date().toISOString(),jobId:nextId};
-     else{
-      try{scheduler.advance(job.id,nextId);}catch(error){return send(409,{error:error.message+(created?'；下条已加入普通队列，未强行启动':''),queuedId:created?nextId:undefined});}
-     }
-     const at=new Date().toLocaleString('sv-SE',{timeZone:'Asia/Shanghai',hour12:false}),message='已执行下条：'+next.name+'；当前任务继续运行并独立记录结果';
-     append(job,'\n['+at+'] '+message+'\n');await fs.appendFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'\n['+at+'] '+message+'\n');await writeJob(job);await writeJob(next);
-     return send(200,{id:nextId,message});
-    }catch(error){return send(409,{error:error.message});}finally{advancing.delete(job.id);}
+    return send(409,{error:'已取消并行和执行下条，请等待当前用例及收尾完成'});
    }
    if(req.method==='POST'&&url.pathname==='/api/locks/release'){
     if(body.confirm!==true||!Array.isArray(body.jobIds)||!body.jobIds.length)return send(400,{error:'请先确认占锁任务和解除影响'});

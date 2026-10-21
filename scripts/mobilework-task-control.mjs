@@ -1,6 +1,7 @@
 import {setTimeout as delay} from 'node:timers/promises';
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
+import {PermissionEvents} from './mobilework-permission-events.mjs';
 import {initializeTestPage} from './mobilework-initialize.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -107,15 +108,34 @@ export class TaskControl {
   finally{if(!alreadyHeld&&!this.faulted)await this.release(page,phase==='EVIDENCE'?'VERIFYING':'WAITING_MODEL');}
  }
  async pendingInteractions(){
-  const questions=await this.get('/question'),permissions=await this.get('/permission');
+  const questions=await this.get('/question'),since=this.permissionEvents?.checkpoint()??null;
+  let permissions,permissionApiUnavailable=false;
+  try{
+   permissions=await this.get('/permission');
+   if(this.permissionEvents?.seed(permissions,since))permissions=this.permissionEvents.snapshot()??permissions;
+  }
+  catch(error){
+   if(!error?.patchPermissionError)throw error;
+   permissions=this.permissionEvents?.snapshot();
+   // An empty event cache cannot prove that an unreadable listing is empty.
+   if(!permissions?.length)throw error;
+   permissionApiUnavailable=true;
+  }
   if(!Array.isArray(questions)||!Array.isArray(permissions))throw blocked('引擎待处理交互格式不支持，保留会话');
-  return [...questions.map(q=>({...q,kind:'question'})),...permissions.map(q=>({...q,kind:'permission'}))]
+  const result=[...questions.map(q=>({...q,kind:'question'})),...permissions.map(q=>({...q,kind:'permission'}))]
    .filter(q=>q.sessionID===this.sessionId).map(q=>{
     if(typeof q.id!=='string'||!q.id)throw blocked('待处理交互缺少请求ID，不能核对归属');
-    return {...q,key:q.kind+':'+q.id};
+    return {...q,key:q.kind+':'+q.id,permissionEventFallback:permissionApiUnavailable&&q.kind==='permission'};
    });
+  result.permissionApiUnavailable=permissionApiUnavailable;
+  return result;
  }
  async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000}){
+  if(this.connection&&this.directory&&!this.permissionEvents){
+   this.permissionEvents=new PermissionEvents({connection:this.connection,directory:this.directory,sessionId:this.sessionId});
+   const ready=await this.permissionEvents.start();
+   log('审批事件订阅',ready?'已连接本会话引擎；等待审批列表建立基线':'不可用，继续使用审批列表；不使用过期事件');
+  }
   const deadline=Date.now()+timeoutMs,observed=new Map();let lastLog=0,permissionErrorSince=null;
   const reconcile=pending=>{
    const keys=new Set(pending.map(q=>q.key));
@@ -125,6 +145,7 @@ export class TaskControl {
   while(Date.now()<deadline){
    try{
    const [states,pending]=await Promise.all([this.get('/session/status'),this.pendingInteractions(page)]);
+   if(pending.permissionApiUnavailable&&!this.permissionFallbackLogged){log('审批列表400，使用本会话实时审批事件','已核对有效基线与连续连接；仍按真实请求ID和原DOM审批');this.permissionFallbackLogged=true;}
    reconcile(pending);
    if(pending.length){
     await this.withUI(page,'INTERACTING',async()=>{
@@ -134,18 +155,25 @@ export class TaskControl {
      if(!current.length)return;
      const kind=current.some(q=>q.kind==='permission')?'permission':'question';
      const targets=current.filter(q=>q.kind===kind);
+     let eventFallback=targets.some(q=>q.permissionEventFallback);
+     if(eventFallback&&targets.length!==1)throw blocked('审批列表异常且本会话有多个审批，无法唯一匹配页面，保留现场');
      const expected=targets.flatMap(q=>q.questions||[]).map(q=>q.question).filter(Boolean);
      if(kind==='question'&&!expected.length)throw blocked('待回答问题缺少可核对正文');
      const canAct=async()=>{
       if(page.url()!==this.sessionUrl)throw blocked('页面已离开本任务会话');
       const latest=await this.pendingInteractions(page);reconcile(latest);
+      if(latest.permissionApiUnavailable){
+       if(targets.length!==1)throw blocked('审批列表在操作前异常，无法唯一匹配原请求，保留现场');
+       eventFallback=true;
+      }
       return targets.every(q=>latest.some(item=>item.key===q.key));
      };
      // Successful permissions are not clicked again while engine state settles.
      // Questions may contain several cards under one request ID.
      let handled=false;
      if(!targets.some(q=>observed.get(q.key)?.clicked)){
-      handled=await handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions:expected,canAct});
+      handled=await handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions:expected,canAct,
+       expectedPermission:()=>eventFallback?{id:targets[0].id,sessionID:this.sessionId}:undefined});
       if(handled)for(const q of targets){const state=observed.get(q.key);if(state){state.since=Date.now();state.clicked=kind==='permission';}log('交互已点击，等待引擎确认',q.key);}
      }
      const latest=await this.pendingInteractions(page);reconcile(latest);
@@ -161,16 +189,17 @@ export class TaskControl {
     const text=(last?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
     if(last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool')&&text.trim()){await this.call('completed');return data;}
    }
-   if(permissionErrorSince!==null){log('审批接口已恢复','已重新核对本会话交互状态');permissionErrorSince=null;}
+   if(this.permissionFallbackLogged&&!pending.permissionApiUnavailable){log('审批接口已恢复','已重新核对本会话交互状态');this.permissionFallbackLogged=false;}
+   permissionErrorSince=null;
    }catch(error){
     if(!error.patchPermissionError)throw error;
     if(permissionErrorSince===null){permissionErrorSince=Date.now();log('客户端补丁审批数据暂不可解析','/permission HTTP 400；限时重试，期间不点击、不判定完成');}
-    if(Date.now()-permissionErrorSince>=permissionRecoveryMs)throw blocked('客户端补丁审批数据持续无法解析：/permission HTTP 400；限时重试未恢复，不能确认待审批状态，保留会话');
+    if(Date.now()-permissionErrorSince>=permissionRecoveryMs)throw blocked('客户端补丁审批数据持续无法解析：/permission HTTP 400；也无可靠实时审批事件，不能确认待审批状态，保留会话');
    }
    if(Date.now()-lastLog>30000){log('等待本次模型完成',this.sessionId+'；未占用客户端页面');lastLog=Date.now();}
    await delay(1000);
   }
   throw blocked('等待会话超时；保留运行任务和证据，可强制停止本次会话');
  }
- async close(page){if(this.held&&page&&!this.faulted)await this.release(page,'VERIFYING');}
+ async close(page){this.permissionEvents?.stop();if(this.held&&page&&!this.faulted)await this.release(page,'VERIFYING');}
 }

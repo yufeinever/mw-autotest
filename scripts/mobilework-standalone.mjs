@@ -15,6 +15,7 @@ export async function dispatchStandalone({number,args=[],config}){
  }
  if(!s||path.resolve(s.projectRoot||'').toLowerCase()!==root.toLowerCase())throw Error('未连接到本项目控制台，未直接操作客户端；请启动18888测试平台'+(lastConnectionError?'；连接原因：'+(lastConnectionError.cause?.code||lastConnectionError.cause?.message||lastConnectionError.message):''));
  if(s.capabilities?.taskIsolation!==2)throw Error('控制台需重启加载任务隔离升级，未绕过调度执行');
+ if(s.capabilities?.serialOnly!==1)throw Error('控制台需在空闲后重启加载串行调度，未向旧服务提交任务');
  const script=s.scripts.find(x=>path.resolve(x.path)===path.join(root,'scripts',`run-client-case${String(number).padStart(3,'0')}.mjs`));
  if(!script)throw Error('控制台缺少本条脚本入口');
  const response=await fetch(base+'/api/run',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:JSON.stringify({scriptId:script.id,args,config})});

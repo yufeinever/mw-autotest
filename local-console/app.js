@@ -117,6 +117,8 @@ function renderTrace(job, trace, error) {
 }
 
 // scripts/client-case-catalog.mjs
+var caseWorkbook = "\u7075\u7280\u901A\u7528\u667A\u80FD\u4F53\xB7 MobileWork Demo \u529F\u80FD\u70B9\u4E0E\u6D4B\u8BD5\u6848\u4F8B-v1.8-1014.xlsx";
+var caseSheet = "\u6D4B\u8BD5\u6848\u4F8B\uFF08\u5BA2\u6237\u7AEF-\u591A\u7AEF\u517C\u5BB9\uFF09";
 var definitions = [
   ["\u65E5\u5E38\u529E\u516C01-\u65E5\u7A0B\u7BA1\u7406\u81EA\u52A8\u586B\u5145\u5185\u5BB9\uFF0C\u6267\u884C\u4F1A\u8BDD", "\u65E5\u5E38\u529E\u516C", "\u65E5\u7A0B\u7BA1\u7406", "\u5E2E\u6211\u89C4\u5212\u672C\u5468\u7684\u5DE5\u4F5C\u65E5\u7A0B\u4E0E\u4F18\u5148\u7EA7\u3002", "workday-calendar"],
   ["\u65E5\u7A0B\u529E\u516C02-\u4F1A\u8BAE\u7EAA\u8981\u81EA\u52A8\u586B\u5145\u5185\u5BB9\uFF0C\u6267\u884C\u4F1A\u8BDD", "\u65E5\u5E38\u529E\u516C", "\u4F1A\u8BAE\u7EAA\u8981", "\u628A\u8FD9\u6BB5\u4F1A\u8BAE\u8BB0\u5F55\u6574\u7406\u6210\u7ED3\u6784\u5316\u7EAA\u8981\u4E0E\u5F85\u529E\u6E05\u5355\u3002", "meeting-and-brief"],
@@ -199,6 +201,13 @@ async function loadTraceData(job, { readSaved, readLive }) {
 
 // local-console/trace-browser.mjs
 async function showBrowserTrace(id) {
+  const nav = document.createElement("nav");
+  nav.className = "detail-return";
+  const back = document.createElement("a");
+  back.href = "/#scriptSection";
+  back.textContent = "\u2190 \u8FD4\u56DE\u811A\u672C\u5217\u8868";
+  nav.append(back);
+  document.body.prepend(nav);
   document.querySelector("main").textContent = "\u6B63\u5728\u8BFB\u53D6 Trace \u8BB0\u5F55\u2026";
   let job = { id, name: "\u8FD0\u884C\u8BB0\u5F55" }, trace, error;
   const read = async (route) => {
@@ -220,6 +229,7 @@ async function showBrowserTrace(id) {
   const doc = new DOMParser().parseFromString(renderTrace(job, trace, error), "text/html");
   document.title = doc.title;
   document.body.replaceChildren(...doc.body.childNodes);
+  document.body.prepend(nav);
   if (trace) {
     const main = document.querySelector("main");
     main.style.maxWidth = "none";
@@ -358,6 +368,7 @@ async function showBatch(id) {
   main.replaceChildren();
   const header = el("header"), heading = el("div");
   heading.append(el("small", "MOBILEWORK \xB7 EXECUTION BATCH"), el("h1", "\u6267\u884C\u6279\u6B21\u8BE6\u60C5"));
+  header.className = "detail-return";
   header.append(heading, link("\u8FD4\u56DE\u6267\u884C\u6279\u6B21", "/#batchSection"));
   main.append(header);
   const error = el("p", void 0, "result-fail"), content = el("div");
@@ -467,6 +478,145 @@ async function showBatch(id) {
   window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
 }
 
+// local-console/detail-preview.mjs
+var normalizedPath = (value) => {
+  const parts = [];
+  for (const part of String(value || "").replaceAll("\\", "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part.toLowerCase());
+  }
+  return parts.join("/");
+};
+function findScriptCase(script, projectRoot) {
+  if (!projectRoot || !script?.path) return null;
+  return clientCases.find((item) => normalizedPath(projectRoot + "/" + item.entry) === normalizedPath(script.path)) || null;
+}
+function installDetailPreview(readCase, canPreview = () => true) {
+  if (window.top !== window) return { openScript: () => {
+  } };
+  const dialog = document.createElement("dialog");
+  dialog.className = "detail-preview";
+  dialog.setAttribute("aria-label", "\u8BE6\u60C5\u9884\u89C8");
+  const bar = document.createElement("div");
+  bar.className = "detail-preview-bar";
+  const back = document.createElement("button"), title = document.createElement("strong"), close = document.createElement("button");
+  back.textContent = "\u2190 \u8FD4\u56DE";
+  close.textContent = "\u5173\u95ED \xB7 \u8FD4\u56DE\u5217\u8868";
+  bar.append(back, title, close);
+  const body = document.createElement("div");
+  body.className = "detail-preview-body";
+  dialog.append(bar, body);
+  document.body.append(dialog);
+  let current = null, generation = 0, anchor = null, scrollY = 0;
+  const previewUrl = (href) => {
+    const u = new URL(href, location.href);
+    return u.origin === location.origin && (/^\/reports\/[\w-]+$/.test(u.pathname) || /^\/traces\/[\w-]+$/.test(u.pathname) || u.pathname === "/" && (u.searchParams.has("trace") || u.searchParams.has("batch"))) ? u.pathname + u.search : null;
+  };
+  function closeToList() {
+    const depth = history.state?.mwPreview?.depth;
+    if (depth) history.go(-depth);
+    else hide();
+  }
+  function hide() {
+    generation++;
+    current = null;
+    body.replaceChildren();
+    if (dialog.open) dialog.close();
+    window.scrollTo(0, scrollY);
+    if (anchor?.isConnected) anchor.focus({ preventScroll: true });
+  }
+  function intercept(event) {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const a = event.target.closest("a[href]");
+    if (!a || a.hasAttribute("download") || a.target === "_blank") return;
+    const href = new URL(a.href, location.href), target = previewUrl(href.href);
+    if (target && canPreview()) {
+      event.preventDefault();
+      open({ kind: "page", url: target, title: a.textContent.trim() || "\u8BE6\u60C5" });
+    } else if (current && href.origin === location.origin && href.pathname === "/" && !href.search) {
+      event.preventDefault();
+      closeToList();
+    }
+  }
+  async function show(entry) {
+    const request = ++generation;
+    current = entry;
+    title.textContent = entry.title;
+    body.replaceChildren();
+    if (!dialog.open) {
+      anchor = document.activeElement;
+      scrollY = window.scrollY;
+      dialog.showModal();
+    }
+    if (entry.kind === "case" || entry.kind === "source") {
+      const description = document.createElement("article");
+      description.className = "case-description";
+      body.append(description);
+      try {
+        const data = await readCase(entry.id);
+        if (request !== generation) return;
+        if (!data) {
+          description.textContent = "\u6B64\u811A\u672C\u5C1A\u672A\u5173\u8054\u7528\u4F8B\u63CF\u8FF0\u3002\u5F53\u524D\u652F\u6301\u9879\u76EE\u5185\u7F6E\u7684\u524D16\u6761\u7528\u4F8B\u3002";
+          return;
+        }
+        const heading = document.createElement("h2");
+        heading.textContent = data.title;
+        description.append(heading);
+        const fields = [["\u7528\u4F8B\u7F16\u53F7", data.id], ["\u573A\u666F\u5165\u53E3", data.category + " \u2192 " + data.button], ["\u9A8C\u8BC1\u76EE\u7684", "\u9A8C\u8BC1\u573A\u666F\u5165\u53E3\u81EA\u52A8\u586B\u5145\u63D0\u793A\u8BCD\u548C\u9884\u671F\u6280\u80FD\uFF0C\u5E76\u5B8C\u6210\u72EC\u7ACB\u4F1A\u8BDD\uFF0C\u68C0\u67E5\u672C\u4F1A\u8BDD\u56DE\u590D\u3001\u4EA7\u7269\u53CA\u5B9E\u9645 Skill \u8C03\u7528\u3002"], ["\u64CD\u4F5C\u6B65\u9AA4", "1. \u65B0\u5EFA\u72EC\u7ACB\u4F1A\u8BDD\uFF0C\u8FDB\u5165\u4E0A\u8FF0\u573A\u666F\u3002\n2. \u68C0\u67E5\u81EA\u52A8\u586B\u5145\u7684\u63D0\u793A\u8BCD\u53CA\u6280\u80FD\u9009\u62E9\u3002\n3. \u53D1\u9001\u811A\u672C\u5185\u7F6E\u6D4B\u8BD5\u7D20\u6750\uFF0C\u6309\u6267\u884C\u53C2\u6570\u5904\u7406\u9009\u9879\u4E0E\u5BA1\u6279\u5F39\u6846\u3002\n4. \u7B49\u5F85\u4EFB\u52A1\u7ED3\u675F\uFF0C\u68C0\u67E5\u4E1A\u52A1\u7ED3\u679C\u5E76\u4FDD\u5B58\u622A\u56FE\u3001\u65E5\u5FD7\u3001Trace\u548C\u62A5\u544A\u3002"], ["\u5165\u53E3\u81EA\u52A8\u586B\u5145\u63D0\u793A\u8BCD", data.prompt], ["\u9884\u671F Skill", data.skills.length ? data.skills.join("\u3001") : "\u672C\u7528\u4F8B\u672A\u6307\u5B9A\u56FA\u5B9A Skill"], ["\u7528\u4F8B\u6765\u6E90", caseWorkbook + "\n\u7B2C\u4E8C\u5F20\u5DE5\u4F5C\u8868\uFF1A" + caseSheet + " \xB7 \u7B2C " + data.row + " \u884C"], ["\u811A\u672C\u5165\u53E3", data.entry]];
+        if (data.note) fields.push(["\u5DEE\u5F02\u8BF4\u660E", data.note]);
+        const note = document.createElement("p");
+        note.className = "hint";
+        note.textContent = "\u6839\u636E\u5F53\u524D\u811A\u672C\u7528\u4F8B\u5B9A\u4E49\u5C55\u793A\uFF1B\u5165\u53E3\u63D0\u793A\u8BCD\u4E0D\u542B\u6267\u884C\u65F6\u8FFD\u52A0\u7684\u6D4B\u8BD5\u7D20\u6750\uFF0C\u4E0D\u4EE3\u8868\u539F\u8868\u5168\u6587\u6216\u67D0\u6B21\u6267\u884C\u7ED3\u679C\u3002";
+        description.append(note);
+        const list = document.createElement("dl");
+        for (const [label, value] of fields) {
+          const dt = document.createElement("dt"), dd = document.createElement("dd");
+          dt.textContent = label;
+          dd.textContent = value;
+          list.append(dt, dd);
+        }
+        description.append(list);
+      } catch (e) {
+        if (request === generation) description.textContent = "\u8BFB\u53D6\u5931\u8D25\uFF1A" + e.message;
+      }
+      return;
+    }
+    const frame = document.createElement("iframe");
+    frame.title = entry.title;
+    body.append(frame);
+    frame.addEventListener("load", () => {
+      if (request !== generation) return;
+      try {
+        frame.contentDocument.addEventListener("click", intercept);
+      } catch {
+      }
+    });
+    frame.contentWindow.location.replace(entry.url);
+  }
+  function open(entry) {
+    const depth = (history.state?.mwPreview?.depth || 0) + 1;
+    history.pushState({ ...history.state, mwPreview: { ...entry, depth } }, "", location.href);
+    show({ ...entry, depth });
+  }
+  back.onclick = () => history.back();
+  close.onclick = closeToList;
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeToList();
+  });
+  window.addEventListener("popstate", () => {
+    const entry = history.state?.mwPreview;
+    if (entry) show(entry);
+    else hide();
+  });
+  document.addEventListener("click", intercept);
+  if (history.state?.mwPreview) show(history.state.mwPreview);
+  return { openScript(script) {
+    open({ kind: "case", id: script.id, title: script.name + " \xB7 \u7528\u4F8B\u63CF\u8FF0" });
+  } };
+}
+
 // local-console/app-source.js
 var params = new URLSearchParams(location.search);
 var traceId = params.get("trace");
@@ -481,15 +631,11 @@ if (traceId) {
     $("#message").className = error ? "error" : "";
   }, config = function() {
     const interval = $("#stepInterval").value.trim();
-    return { executionStrategy: $("[name=executionStrategy]:checked").value, maxParallel: Number($("#maxParallel").value), question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
+    return { executionStrategy: "serial", maxParallel: 1, question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
   }, modelOption = function(name) {
     if (![...$("#model").options].some((o) => o.value === name)) $("#model").add(new Option(name, name));
   }, syncCustom = function() {
     $("#customText").disabled = $("[name=question]:checked").value !== "custom";
-  }, syncStrategy = function() {
-    const parallel = $("[name=executionStrategy]:checked").value === "parallel";
-    $("#maxParallel").disabled = !parallel;
-    $("#strategyHint").textContent = parallel ? "\u4F9D\u6B21\u63D0\u4EA4\u72EC\u7ACB\u4EFB\u52A1\uFF0C\u4E0D\u7B49\u4E0A\u4E00\u6761\u6A21\u578B\u5904\u7406\u7ED3\u675F\u5373\u53EF\u63D0\u4EA4\u4E0B\u4E00\u6761\uFF1B\u5F39\u7A97\u3001\u5BA1\u6279\u4E0E\u622A\u56FE\u6309\u4F1A\u8BDD\u8F6E\u6D41\u5904\u7406\u3002\u81EA\u5B9A\u4E49\u811A\u672C\u672A\u63A5\u5165\u4EFB\u52A1\u8C03\u5EA6\u65F6\u4F9D\u6B21\u6267\u884C\u3002" : "\u4E0A\u4E00\u6761\u7528\u4F8B\u7ED3\u675F\u540E\u518D\u6267\u884C\u4E0B\u4E00\u6761\u3002";
   }, el2 = function(tag, text, cls) {
     const e = document.createElement(tag);
     if (text !== void 0) e.textContent = text;
@@ -522,8 +668,9 @@ if (traceId) {
       const tr = el2("tr");
       tr.dataset.scriptId = script.id;
       tr.dataset.scriptNumber = start + offset + 1;
-      const name = el2("td"), title = el2("span", script.name, "script-title");
-      title.title = script.path;
+      const name = el2("td"), title = el2("button", script.name, "script-title script-source");
+      title.title = "\u67E5\u770B\u7528\u4F8B\u63CF\u8FF0";
+      title.onclick = () => preview.openScript(script);
       name.append(title);
       const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
       if (state.jobs.some((j) => j.scriptId === script.id && j.status === "RUNNING")) {
@@ -535,14 +682,28 @@ if (traceId) {
       const status = el2("td"), statusText = job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
       status.append(el2("span", statusText, "script-status " + resultClass(job?.status)));
       if (job?.queueHold) status.append(el2("small", "\u7B49\u5F85\u6062\u590D\uFF1A" + job.queueHold));
-      tr.append(el2("td", String(start + offset + 1).padStart(2, "0")), name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), status);
+      const number = el2("td"), choice = el2("input");
+      choice.type = "checkbox";
+      choice.className = "script-choice";
+      choice.setAttribute("aria-label", "\u9009\u62E9\u7528\u4F8B " + (start + offset + 1) + " " + script.name);
+      choice.checked = selectedScripts.has(script.id);
+      choice.disabled = $("[name=selectionMode]:checked").value !== "selected" || batchBusy || !script.exists || !script.integrated;
+      choice.onchange = () => {
+        if (choice.checked) selectedScripts.add(script.id);
+        else selectedScripts.delete(script.id);
+        renderScripts();
+      };
+      number.append(choice, document.createTextNode(String(start + offset + 1).padStart(2, "0")));
+      tr.append(number, name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), status);
       const recent = el2("td", void 0, "script-recent"), actions = el2("td"), actionGroup = el2("div", void 0, "script-row-actions"), run = el2("button", "\u6267\u884C", "primary"), stop = el2("button", "\u5F3A\u5236\u505C\u6B62", "danger"), remove = el2("button", "\u79FB\u9664", "script-remove");
       if (job) {
         const failed = (job.result?.checks || []).filter((c) => !c.pass);
         status.title = failed.map((c) => c.name).join("\uFF1B") || job.result?.error || "";
         if (failed.length && failed.every((c) => c.category === "skill-invocation")) status.append(el2("small", "Skill \u8C03\u7528\u65AD\u8A00\u672A\u901A\u8FC7"));
         recent.append(el2("span", job.startedAt ? batchDate(job.startedAt) : job.queuedAt ? "\u6392\u961F\u4E8E " + batchDate(job.queuedAt) : "\u65F6\u95F4\u672A\u8BB0\u5F55", "script-time"));
-        const evidence = el2("div", void 0, "script-evidence"), log = el2("button", "\u6267\u884C\u65E5\u5FD7", "script-link");
+        const evidence = el2("div", void 0, "script-evidence"), report = el2("a", "\u622A\u56FE\u62A5\u544A", "script-link"), log = el2("button", "\u6267\u884C\u65E5\u5FD7", "script-link");
+        report.href = "/reports/" + encodeURIComponent(job.id);
+        evidence.append(report);
         log.onclick = () => showExecutionLog(job);
         evidence.append(log);
         if (job.sessionId || job.result?.sessionId) {
@@ -553,7 +714,7 @@ if (traceId) {
         recent.append(evidence);
       } else recent.append(el2("span", "\u2014", "hint"));
       tr.append(recent);
-      run.disabled = state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
+      run.disabled = state.capabilities?.serialOnly !== 1 || state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
       run.onclick = () => startScripts([script], "\u6267\u884C\u6B64\u811A\u672C");
       stop.disabled = stopAllBusy || !job || !!job.stopRequested || !canStopJob(job);
       stop.title = "\u505C\u6B62\u672C\u6B21\u811A\u672C\u8FDB\u7A0B\u53CA\u5176\u4F1A\u8BDD\uFF0C\u4FDD\u7559\u65E5\u5FD7\u548C\u622A\u56FE";
@@ -577,30 +738,6 @@ if (traceId) {
         }
       };
       actionGroup.append(run, stop);
-      const runningJob = state.jobs.filter((j) => j.scriptId === script.id && j.status === "RUNNING").at(-1);
-      if (runningJob) {
-        actionGroup.classList.add("has-next");
-        const next = el2("button", runningJob.manualNext ? "\u5DF2\u6267\u884C\u4E0B\u6761" : "\u6267\u884C\u4E0B\u6761", "execute-next");
-        next.title = "\u5F53\u524D\u6A21\u578B\u6B63\u5E38\u957F\u6D41\u7A0B\uFF0C\u4E0D\u7B49\u5F85\u7ED3\u675F\uFF0C\u76F4\u63A5\u6267\u884C\u4E0B\u4E00\u6761";
-        next.disabled = state.capabilities?.executeNext !== 1 || stopAllBusy || batchBusy || cdpBusy || state.readingModels || pendingNext.size > 0 || !runningJob.nextExecution?.ready;
-        next.onclick = async () => {
-          if (pendingNext.size) return;
-          pendingNext.add(runningJob.id);
-          next.disabled = true;
-          try {
-            const r = await api("/api/jobs/" + runningJob.id + "/next", {});
-            batchNotice(r.message);
-            notice(r.message);
-          } catch (e) {
-            batchNotice("\u6267\u884C\u4E0B\u6761\u672A\u5B8C\u6210\uFF1A" + e.message, true);
-          } finally {
-            pendingNext.delete(runningJob.id);
-            await refresh();
-          }
-        };
-        actionGroup.append(next);
-        if (state.capabilities?.executeNext !== 1) actions.append(el2("small", "\u91CD\u542F\u6D4B\u8BD5\u63A7\u5236\u53F0\u540E\u542F\u7528\u6267\u884C\u4E0B\u6761", "hint"));
-      }
       actionGroup.append(remove);
       actions.prepend(actionGroup);
       tr.append(actions);
@@ -616,7 +753,18 @@ if (traceId) {
     $("#scriptPageInfo").textContent = `\u5171 ${total} \u6761 \xB7 ${total ? start + 1 : 0}\u2013${Math.min(start + size, total)} \u6761 \xB7 \u7B2C ${scriptPage} / ${pages} \u9875`;
     $("#scriptPrevPage").disabled = scriptPage === 1;
     $("#scriptNextPage").disabled = scriptPage === pages;
-    $("#runAll").disabled = $("#runRange").disabled = state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || pendingScripts.size > 0 || state.readingModels || cdpBusy || !total;
+    const unavailable = state.capabilities?.serialOnly !== 1 || state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || pendingScripts.size > 0 || state.readingModels || cdpBusy || !total;
+    const selecting = $("[name=selectionMode]:checked").value === "selected";
+    for (const id of selectedScripts) if (!state.scripts.some((s) => s.id === id && s.exists && s.integrated)) selectedScripts.delete(id);
+    $("#selectionControls").hidden = !selecting;
+    $("#rangeControls").hidden = selecting;
+    $("#scriptRange").disabled = selecting || batchBusy;
+    $("#selectionCount").textContent = `\u5DF2\u9009 ${selectedScripts.size} \u6761\uFF08\u8DE8\u5168\u90E8\u5206\u9875\uFF09`;
+    $("#runAll").disabled = unavailable;
+    $("#runRange").disabled = unavailable || selecting;
+    $("#runSelected").disabled = unavailable || !selecting || !selectedScripts.size;
+    for (const id of ["selectAllScripts", "invertScripts", "clearScripts"]) $("#" + id).disabled = !selecting || batchBusy;
+    document.querySelectorAll("[name=selectionMode]").forEach((e) => e.disabled = batchBusy);
     $("#stopAll").disabled = stopAllBusy || !submissions.size && !state.jobs.some(canStopJob);
     $("#stopAll").textContent = stopAllBusy ? "\u6B63\u5728\u505C\u6B62\u2026" : "\u5F3A\u5236\u505C\u6B62\u5168\u90E8";
   }, renderHistory = function() {
@@ -648,7 +796,7 @@ if (traceId) {
   };
   const $ = (s) => document.querySelector(s);
   let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false;
-  const pendingScripts = /* @__PURE__ */ new Set(), pendingNext = /* @__PURE__ */ new Set();
+  const pendingScripts = /* @__PURE__ */ new Set(), selectedScripts = /* @__PURE__ */ new Set();
   const submissions = /* @__PURE__ */ new Set();
   let stopAllBusy = false, stopGeneration = 0;
   const labels = { QUEUED: "\u6392\u961F\u4E2D", RUNNING: "\u6267\u884C\u4E2D", PASS: "\u901A\u8FC7", FAIL: "\u5931\u8D25", BLOCKED: "\u963B\u585E", EXITED: "\u5DF2\u9000\u51FA\uFF08\u672A\u58F0\u660E\u65AD\u8A00\u7ED3\u679C\uFF09", INTERRUPTED: "\u63A7\u5236\u53F0\u5DF2\u4E2D\u65AD", CHECKED: "\u9884\u68C0\u901A\u8FC7", RESUMED: "\u7EED\u8DD1\u5B8C\u6210" };
@@ -659,7 +807,7 @@ if (traceId) {
     if (!r.ok) throw Error(j.error);
     return j;
   }
-  document.querySelectorAll("[name=executionStrategy]").forEach((e) => e.onchange = syncStrategy);
+  const preview = installDetailPreview((id) => findScriptCase(state?.scripts.find((script) => script.id === id), state?.projectRoot), () => state?.capabilities?.detailPreview === 1);
   document.querySelectorAll("[name=question]").forEach((e) => e.onchange = syncCustom);
   let cdpBusy = false;
   async function refreshCdp() {
@@ -710,12 +858,6 @@ if (traceId) {
     state = await api("/api/state");
     token = state.token;
     if (!initialized) {
-      $(`[name=executionStrategy][value="${state.config.executionStrategy === "parallel" ? "parallel" : "serial"}"]`).checked = true;
-      $("#maxParallel").value = state.config.maxParallel || 3;
-      syncStrategy();
-    }
-    await refreshCdp();
-    if (!initialized) {
       const c = state.config;
       $(`[name=question][value="${c.question}"]`).checked = true;
       $(`[name=approval][value="${c.approval}"]`).checked = true;
@@ -737,6 +879,7 @@ if (traceId) {
     $("#connection").textContent = state.active ? "\u811A\u672C\u6267\u884C\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
     $("#models").disabled = !!state.active || state.readingModels;
     if (state.capabilities?.taskIsolation !== 2) batchNotice("\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF1A\u8BF7\u5148\u5173\u95ED\u65E7\u63A7\u5236\u53F0\u670D\u52A1\uFF0C\u518D\u8FD0\u884C\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\uFF1B\u4EC5\u5237\u65B0\u9875\u9762\u4E0D\u80FD\u5347\u7EA7\u670D\u52A1\u3002", true);
+    if (state.capabilities?.serialOnly !== 1) batchNotice("\u4E32\u884C\u8C03\u5EA6\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u4EFB\u52A1\u7A7A\u95F2\u540E\u91CD\u542F\u63A7\u5236\u53F0\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\u3002", true);
     renderScripts();
     renderHistory();
   }
@@ -794,6 +937,10 @@ if (traceId) {
   }
   logRefresh.onclick = readExecutionLog;
   async function startScripts(scripts, label, batch = false) {
+    if (state.capabilities?.serialOnly !== 1) {
+      batchNotice("\u8BF7\u5148\u5728\u7A7A\u95F2\u65F6\u91CD\u542F\u63A7\u5236\u53F0\u52A0\u8F7D\u4E32\u884C\u8C03\u5EA6\uFF0C\u672A\u63D0\u4EA4\u4EFB\u52A1\u3002", true);
+      return;
+    }
     if (state.capabilities?.taskIsolation !== 2) {
       batchNotice("\u8BF7\u5148\u91CD\u542F\u672C\u9879\u76EE18888\u63A7\u5236\u53F0\u52A0\u8F7D\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\uFF0C\u672A\u63D0\u4EA4\u65B0\u4EFB\u52A1\u3002", true);
       return;
@@ -828,7 +975,7 @@ if (traceId) {
     try {
       await api("/api/config", snapshot);
       checkCancelled();
-      executionBatch = await api("/api/batches", { scriptIds: scripts.map((s) => s.id), mode: !batch ? "single" : label === "\u5168\u90E8\u6267\u884C" ? "all" : "range", config: snapshot });
+      executionBatch = await api("/api/batches", { scriptIds: scripts.map((s) => s.id), mode: !batch ? "single" : label === "\u5168\u90E8\u6267\u884C" ? "all" : label === "\u6267\u884C\u52FE\u9009" ? "selected" : "range", config: snapshot });
       for (const script of scripts) {
         checkCancelled();
         const job = await api("/api/run", { scriptId: script.id, batchId: executionBatch.id, config: snapshot });
@@ -840,7 +987,7 @@ if (traceId) {
       }
       await api("/api/batches/" + executionBatch.id + "/complete", {});
       checkCancelled();
-      const text = `${label}\uFF1A\u5DF2\u52A0\u5165\u961F\u5217 ${started} \u6761\uFF0C\u6309${snapshot.executionStrategy === "parallel" ? "\u4EFB\u52A1\u5E76\u884C" : "\u4E32\u884C"}\u7B56\u7565\u6267\u884C\u3002\u6267\u884C\u7ED3\u679C\u8BF7\u67E5\u770B\u6267\u884C\u6279\u6B21\u3002`;
+      const text = `${label}\uFF1A\u5DF2\u52A0\u5165\u961F\u5217 ${started} \u6761\uFF0C\u6309\u5E8F\u53F7\u4E32\u884C\u6267\u884C\u3002\u6267\u884C\u7ED3\u679C\u8BF7\u67E5\u770B\u6267\u884C\u6279\u6B21\u3002`;
       batchNotice(text);
       notice(text);
     } catch (e) {
@@ -873,6 +1020,27 @@ if (traceId) {
     renderScripts();
   };
   $("#runAll").onclick = () => startScripts([...state.scripts], "\u5168\u90E8\u6267\u884C", true);
+  document.querySelectorAll("[name=selectionMode]").forEach((e) => e.onchange = () => {
+    selectedScripts.clear();
+    $("#scriptRange").value = "";
+    renderScripts();
+  });
+  $("#selectAllScripts").onclick = () => {
+    for (const s of state.scripts) if (s.exists && s.integrated) selectedScripts.add(s.id);
+    renderScripts();
+  };
+  $("#invertScripts").onclick = () => {
+    for (const s of state.scripts) if (s.exists && s.integrated) {
+      if (selectedScripts.has(s.id)) selectedScripts.delete(s.id);
+      else selectedScripts.add(s.id);
+    }
+    renderScripts();
+  };
+  $("#clearScripts").onclick = () => {
+    selectedScripts.clear();
+    renderScripts();
+  };
+  $("#runSelected").onclick = () => startScripts(state.scripts.filter((s) => selectedScripts.has(s.id)), "\u6267\u884C\u52FE\u9009", true);
   $("#stopAll").onclick = async () => {
     if (stopAllBusy) return;
     stopAllBusy = true;
@@ -1010,8 +1178,19 @@ if (traceId) {
     }
   };
   await refresh().catch((e) => notice(e.message, true));
-  setInterval(() => refresh().catch((e) => {
-    $("#connection").textContent = "\u670D\u52A1\u8FDE\u63A5\u65AD\u5F00";
-    notice(e.message, true);
-  }), 2e3);
+  refreshCdp();
+  setInterval(refreshCdp, 15e3);
+  let refreshing = false;
+  setInterval(async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      await refresh();
+    } catch (e) {
+      $("#connection").textContent = "\u670D\u52A1\u8FDE\u63A5\u65AD\u5F00";
+      notice(e.message, true);
+    } finally {
+      refreshing = false;
+    }
+  }, 2e3);
 }

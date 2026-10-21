@@ -5,7 +5,7 @@ import {createConsole,projectRoot} from './server.mjs';
 export async function launchConsole({port=Number(process.env.MW_CONSOLE_PORT||18888),openBrowser=true,create=createConsole}={}){
  if(!Number.isInteger(port)||port<1||port>65535)throw Error('控制台端口必须为1～65535');
   const url='http://127.0.0.1:'+port;let existing,occupied;
-  try{const r=await fetch(url+'/api/state',{signal:AbortSignal.timeout(700)});const s=await r.json();occupied=s;if(r.ok&&s.projectRoot&&path.resolve(s.projectRoot).toLowerCase()===projectRoot.toLowerCase()&&s.capabilities?.executionBatches===1&&s.capabilities?.taskScheduling===1&&s.capabilities?.taskIsolation===2)existing=s;}catch{}
+  try{const r=await fetch(url+'/api/state',{signal:AbortSignal.timeout(700)});const s=await r.json();occupied=s;if(r.ok&&s.projectRoot&&path.resolve(s.projectRoot).toLowerCase()===projectRoot.toLowerCase()&&s.capabilities?.executionBatches===1&&s.capabilities?.taskScheduling===1&&s.capabilities?.taskIsolation===2&&s.capabilities?.serialOnly===1)existing=s;}catch{}
   let app;
   if(!existing)try{app=await create({port});}catch(e){
    if(e.code==='EADDRINUSE')throw Error(`固定端口 ${port} 已被占用，未自动换端口。`+(occupied?.projectRoot&&path.resolve(occupied.projectRoot).toLowerCase()===projectRoot.toLowerCase()?'同项目旧服务需要在任务结束后正常关闭，再重新启动；原数据目录保持不变。':'请核对占用程序，未停止其他服务。'));

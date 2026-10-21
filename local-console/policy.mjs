@@ -5,6 +5,8 @@ export function normalizeConfig(input={}) {
  const c={version:1,executionStrategy:input.executionStrategy??'serial',maxParallel:Number(input.maxParallel??3),question:input.question??'first',customText:input.customText??'',approval:input.approval??'once',model:input.model??'',cdpPort:Number(input.cdpPort??9223),stepInterval:rawStepInterval===undefined||rawStepInterval===null||rawStepInterval===''?0.5:Number(rawStepInterval),provider:{url:provider.url??'',key:provider.key??'',model:provider.model??'',multimodal:Boolean(provider.multimodal),inputTokens:Number(provider.inputTokens??262144),outputTokens:Number(provider.outputTokens??65536)}};
  if(!['serial','parallel'].includes(c.executionStrategy))throw Error('执行策略无效');
  if(!Number.isInteger(c.maxParallel)||c.maxParallel<1||c.maxParallel>16)throw Error('并行任务数必须为1～16');
+ // Legacy saved parameters remain readable; all new executions are serial.
+ c.executionStrategy='serial';c.maxParallel=1;
  if(!['first','second','custom'].includes(c.question))throw Error('选项弹窗配置无效');
  if(typeof c.customText!=='string'||c.customText.length>4000)throw Error('自定义回答最多4000字');
  if(c.question==='custom'&&!c.customText.trim())throw Error('请填写自定义回答');

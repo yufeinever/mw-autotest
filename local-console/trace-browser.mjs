@@ -2,6 +2,8 @@ import {renderTrace} from './trace.mjs';
 import {loadTraceData} from './trace-data.mjs';
 
 export async function showBrowserTrace(id){
+ const nav=document.createElement('nav');nav.className='detail-return';
+ const back=document.createElement('a');back.href='/#scriptSection';back.textContent='← 返回脚本列表';nav.append(back);document.body.prepend(nav);
  document.querySelector('main').textContent='正在读取 Trace 记录…';
  let job={id,name:'运行记录'},trace,error;
  const read=async route=>{const res=await fetch(route,{cache:'no-store'});const data=await res.json();if(!res.ok)throw Error(data.error||'读取失败：HTTP '+res.status);return data;};
@@ -15,6 +17,7 @@ export async function showBrowserTrace(id){
  }catch(e){error=e.message;}
  const doc=new DOMParser().parseFromString(renderTrace(job,trace,error),'text/html');
  document.title=doc.title;document.body.replaceChildren(...doc.body.childNodes);
+ document.body.prepend(nav);
  if(trace){
   // All Trace entrances use the vendored 8770 viewer, independent of its server.
   const main=document.querySelector('main');main.style.maxWidth='none';

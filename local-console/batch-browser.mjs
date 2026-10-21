@@ -7,7 +7,7 @@ export async function showBatch(id){
  document.title='执行批次详情 · MobileWork';
  const main=document.querySelector('main');main.className='batch-detail';main.replaceChildren();
  const header=el('header'),heading=el('div');heading.append(el('small','MOBILEWORK · EXECUTION BATCH'),el('h1','执行批次详情'));
- header.append(heading,link('返回执行批次','/#batchSection'));main.append(header);
+ header.className='detail-return';header.append(heading,link('返回执行批次','/#batchSection'));main.append(header);
  const error=el('p',undefined,'result-fail'),content=el('div');error.setAttribute('role','status');main.append(error,content);
  let stopped=false,fingerprint;window.addEventListener('pagehide',()=>stopped=true,{once:true});
  async function refresh(){

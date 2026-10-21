@@ -22,12 +22,17 @@
 !/local-console/observatory.test.mjs
 !/local-console/observatory-source.md
 !/需求文档.md
+!/需求文档/
+/需求文档/*
+!/需求文档/*.md
 !/版本迭代说明.md
 !/config/environment.json
 !/local-console/README.md
 !/local-console/app-source.js
 !/local-console/app.js
 !/local-console/batch-browser.mjs
+!/local-console/detail-preview.mjs
+!/local-console/usability.test.mjs
 !/local-console/batches.mjs
 !/local-console/batches.test.mjs
 !/local-console/case-registry.mjs
@@ -90,6 +95,8 @@
 !/scripts/mobilework-run-policy.mjs
 !/scripts/mobilework-run-policy.test.mjs
 !/scripts/mobilework-model-selection.test.mjs
+!/scripts/mobilework-permission-events.mjs
+!/scripts/mobilework-permission-recovery.test.mjs
 !/scripts/mobilework-task-control.mjs
 !/scripts/mobilework-task-control.test.mjs
 !/scripts/mobilework-trace.mjs

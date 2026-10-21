@@ -126,7 +126,29 @@ function sendButton(panel){
  // Discover the real control even before selection enables it.
  return panel.locator('button').filter({hasText:/^\s*发送\s*$/}).filter({visible:true});
 }
-const questionSignature=element=>element.textContent.replace(/\s+/g,' ').trim();
+const questionSignature=element=>String(element.textContent??'').replace(/\s+/g,' ').trim();
+
+// Click timeouts describe the CDP command, not whether Electron accepted it.
+// A DOM replacement alone does not prove acceptance: require the original
+// request to disappear, or the original full-access consent to become ready.
+export async function clickApproval({page,button,canAct,checkReload,originUrl,log,timeoutMs,recoveryMs,consentReady}){
+ try{await button.click({timeout:timeoutMs});return;}
+ catch(error){
+  if(error?.name!=='TimeoutError')throw error;
+ }
+ log('审批点击超时，核对原请求结果','暂不判定失败、不重复点击');
+ const deadline=Date.now()+recoveryMs;
+ while(Date.now()<deadline){
+  await checkReload();
+  if(page.url()!==originUrl)throw Object.assign(Error('审批点击后页面已离开本任务会话，无法确认结果'),{blocked:true});
+  try{
+   if(!await canAct()){log('原审批请求已消失','点击超时未作为执行失败；继续等待模型');return;}
+   if(consentReady&&await consentReady()){log('完全访问二次确认已显示','首级点击超时，继续处理确认弹窗');return;}
+  }catch(error){if(!error?.patchPermissionError)throw error;}
+  await page.waitForTimeout(150);
+ }
+ throw Object.assign(Error('审批点击超时后仍无法确认原请求已受理；未重复点击，保留现场'),{blocked:true,approvalClickUncertain:true});
+}
 export async function questionPanel(page){
  // Current MobileWork single-choice cards omit the entire Send footer.
  // Identify the actual renderer's question shell, not arbitrary numbered
@@ -150,7 +172,7 @@ export async function questionPanel(page){
  }
  return null;
 }
-export async function handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions=[],canAct=async()=>true}={}){
+export async function handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions=[],expectedPermission,canAct=async()=>true,clickTimeoutMs=2000,clickRecoveryMs=5000}={}){
  const originUrl=page.url();
  const fail=message=>{throw Object.assign(Error(message),{blocked:true});};
  const checkReload=async()=>{
@@ -172,19 +194,39 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   const card=await panel.elementHandle(),button=await target.elementHandle();
   try{
    const signature=await card.evaluate(questionSignature);
-   const unchanged=async()=>await card.evaluate((e,s)=>e.isConnected&&e.textContent.replace(/\s+/g,' ').trim()===s,signature)&&await button.isVisible();
+   // Fallback events must match the permission actually rendered by React.
+   // Read props only: no calling private handlers, mutating state, or guessing
+   // an ID from text. Unknown renderer versions remain blocked.
+   const matchesPermission=async()=>{
+    const expected=typeof expectedPermission==='function'?expectedPermission():expectedPermission;
+    return !expected||await card.evaluate((element,expected)=>{
+    for(let host=element;host;host=host.parentElement){
+     const key=Object.keys(host).find(k=>k.startsWith('__reactFiber$'));
+     let fiber=key&&host[key];if(!fiber)continue;
+     let root=fiber;while(root.return)root=root.return;
+     if(root.stateNode?.current!==root){fiber=fiber.alternate;if(!fiber)continue;}
+     for(let depth=0;fiber&&depth<80;fiber=fiber.return,depth++){
+      const props=fiber.memoizedProps,p=props?.permission;
+      if(p&&typeof props.respondPermission==='function')return p.id===expected.id&&p.sessionID===expected.sessionID;
+     }
+    }
+    return false;
+    },expected);
+   };
+   const unchanged=async()=>await card.evaluate((e,s)=>e.isConnected&&String(e.textContent??'').replace(/\s+/g,' ').trim()===s,signature)&&await button.isVisible()&&await matchesPermission();
    await waitStep(page,config);
    if(!await canAct()||!await unchanged())return false;
    await capture('审批前-'+approvalLabels[config.approval]);
    if(!await canAct()||!await unchanged())return false;
    if(config.approval==='full'&&await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())fail('开启完全访问前存在其他弹窗，不能确认归属，保留现场');
-   try{await button.click({timeout:2000});}catch(e){await checkReload();if(!await unchanged()||!await canAct())return false;throw e;}
+   const consent=page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true})
+    .filter({has:page.getByRole('heading',{name:'确认开启完全访问权限',exact:true})});
+   await clickApproval({page,button,canAct,checkReload,originUrl,log,timeoutMs:clickTimeoutMs,recoveryMs:clickRecoveryMs,
+    consentReady:config.approval==='full'?async()=>await consent.count()===1:undefined});
    if(config.approval==='full'){
     // This click only opens consent in MobileWork; the permission request is
     // not answered until the second button is pressed. Keep the UI lease and
     // original request throughout both steps, including delayed rendering.
-    const consent=page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true})
-     .filter({has:page.getByRole('heading',{name:'确认开启完全访问权限',exact:true})});
     try{await consent.waitFor({state:'visible',timeout:5000});}
     catch{await checkReload();fail('开启完全访问后二次确认未唯一显示，未将审批标记为已处理，保留现场');}
     const confirm=consent.getByRole('button',{name:'同意并开启',exact:true});
@@ -195,13 +237,14 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
      const verify=async()=>{
       await checkReload();
       if(page.url()!==originUrl||!await canAct())fail('完全访问二次确认所属会话或审批请求已变化，未确认，保留现场');
-      if(!await modal.evaluate((e,s)=>e.isConnected&&e.textContent.replace(/\s+/g,' ').trim()===s,signature)||!await ok.isVisible()||!await ok.isEnabled())fail('完全访问二次确认已变化，未点击替换后的弹窗，保留现场');
+      if(!await matchesPermission())fail('完全访问确认与实时审批请求ID不匹配，保留现场');
+      if(!await modal.evaluate((e,s)=>e.isConnected&&String(e.textContent??'').replace(/\s+/g,' ').trim()===s,signature)||!await ok.isVisible()||!await ok.isEnabled())fail('完全访问二次确认已变化，未点击替换后的弹窗，保留现场');
      };
      await waitStep(page,config);
      await verify();
      await capture('完全访问权限-二次确认前');
      await verify();
-     await ok.click({timeout:2000});
+     await clickApproval({page,button:ok,canAct,checkReload,originUrl,log,timeoutMs:clickTimeoutMs,recoveryMs:clickRecoveryMs});
      try{await ok.waitForElementState('hidden',{timeout:5000});}
      catch{fail('已点击同意并开启，但二次确认未关闭，保留现场');}
      await checkReload();
@@ -250,9 +293,9 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
    // New cards advance/submit immediately. Legacy cards keep the same question
    // and enable Send; only submit if these exact controls still belong to it.
    await waitStep(page,config);
-   const unchanged=await card.evaluate((element,signature)=>element.isConnected&&element.textContent.replace(/\s+/g,' ').trim()===signature,before);
+   const unchanged=await card.evaluate((element,signature)=>element.isConnected&&String(element.textContent??'').replace(/\s+/g,' ').trim()===signature,before);
    if(unchanged&&send&&await send.evaluate(element=>element.isConnected&&!element.disabled)&&await send.isVisible())await send.click({timeout:2000});
-   if(unchanged&&!send)await page.waitForFunction(({element,signature})=>!element.isConnected||element.textContent.replace(/\s+/g,' ').trim()!==signature,{element:card,signature:before},{timeout:5000}).catch(()=>{throw Error('已点击所选编号，但提问卡片未推进或关闭，保留现场');});
+   if(unchanged&&!send)await page.waitForFunction(({element,signature})=>!element.isConnected||String(element.textContent??'').replace(/\s+/g,' ').trim()!==signature,{element:card,signature:before},{timeout:5000}).catch(()=>{throw Error('已点击所选编号，但提问卡片未推进或关闭，保留现场');});
   }finally{await card?.dispose();await send?.dispose();}
  }
  await capture('选项已填写');

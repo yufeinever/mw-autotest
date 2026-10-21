@@ -139,14 +139,15 @@ test('模拟真实场景自动填充、不提前发送、消息延迟落盘和�
   assert.equal(finalAssistantText({messages:[{info:{role:'user'},parts:[{type:'text',text:'不能用用户输入断言'}]},{info:{role:'assistant'},parts:[{type:'tool'},{type:'text',text:'中间工具消息'}]},{info:{role:'assistant'},parts:[{type:'text',text:'仅最终回复'}]}]}),'仅最终回复');
  }finally{await browser.close();}
 });
-test('控制台允许两个独立配置并行，不覆盖报告或会话快照',async()=>{
+test('控制台接受两个独立配置并串行排队，不覆盖报告或会话快照',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-parallel-test-'));process.env.MW_FIXTURE_DIR=dir;
  const {server,url}=await createConsole({port:0,dataDir:dir});
  try{
   const s=await fetch(url+'/api/state').then(r=>r.json()),post=(route,data)=>fetch(url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:JSON.stringify(data)});
   const entry=await post('/api/scripts',{path:path.join(projectRoot,'local-console/fixture-script.mjs')}).then(r=>r.json());
   const ids=[];for(const question of ['first','second']){const r=await post('/api/run',{scriptId:entry.id,config:{question}});assert.equal(r.status,202);ids.push((await r.json()).id);}
-  assert.equal((await fetch(url+'/api/state').then(r=>r.json())).active,2);
+  const queuedState=await fetch(url+'/api/state').then(r=>r.json());assert.equal(queuedState.active,2);
+  assert.ok(queuedState.jobs.filter(j=>j.status==='RUNNING').length<=1);
   let jobs;for(let i=0;i<50;i++){jobs=await Promise.all(ids.map(id=>fetch(url+'/api/jobs/'+id).then(r=>r.json())));if(jobs.every(j=>j.status==='PASS'))break;await new Promise(r=>setTimeout(r,100));}
   assert.ok(jobs.every(j=>j.status==='PASS'));assert.notEqual(jobs[0].reportPath,jobs[1].reportPath);assert.deepEqual(jobs.map(j=>j.result.config.question),['first','second']);
  }finally{await new Promise(r=>server.close(r));delete process.env.MW_FIXTURE_DIR;}
