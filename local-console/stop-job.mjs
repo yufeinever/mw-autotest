@@ -11,10 +11,13 @@ async function bounded(promise,ms){
 }
 export async function killScript(job){
  if(!Number.isInteger(job.pid)||job.pid<=0)throw Error('没有可核实的脚本进程，不能强制结束未知进程');
- const {stdout}=await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${job.pid}"; if($p){@{command=$p.CommandLine;created=$p.CreationDate.ToUniversalTime().ToString('o')}|ConvertTo-Json -Compress}`],{windowsHide:true,timeout:8000});
+ // Windows PowerShell defaults to a legacy code page when stdout is piped.
+ // Node decodes UTF-8: Chinese project paths would otherwise fail identity checks.
+ const {stdout}=await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',`[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $p=Get-CimInstance Win32_Process -Filter "ProcessId=${job.pid}"; if($p){@{command=$p.CommandLine;created=$p.CreationDate.ToUniversalTime().ToString('o')}|ConvertTo-Json -Compress}`],{windowsHide:true,timeout:8000,encoding:'utf8'});
  if(!stdout.trim())return;
  const p=JSON.parse(stdout);
- if(!p.command?.includes(job.path)||Math.abs(Date.parse(p.created)-Date.parse(job.startedAt))>15000)throw Error('进程身份已变化，拒绝结束可能无关的进程');
+ const created=Date.parse(p.created),started=Date.parse(job.startedAt);
+ if(!job.path||!p.command?.includes(job.path)||!Number.isFinite(created)||!Number.isFinite(started)||Math.abs(created-started)>15000)throw Error('进程身份核对不通过，未结束该进程（路径或启动时间不匹配）');
  await exec('taskkill.exe',['/PID',String(job.pid),'/T','/F'],{windowsHide:true,timeout:10000});
 }
 export async function stopSession(job,{connection}={}){

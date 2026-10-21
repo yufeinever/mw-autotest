@@ -8,6 +8,26 @@ import {createConsole,projectRoot} from './server.mjs';
 import {killScript,releaseOwnedLock} from './stop-job.mjs';
 import {canStopJob} from './stop-all.mjs';
 
+test('已收尾历史阻塞记录不再进入停止全部，直接停止也不重建页面锁',async()=>{
+ const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-settled-history-'));
+ const job={id:'settled-history',status:'BLOCKED',sessionId:'ses_history',sessionSettled:true,schedulingHold:false,isolationVersion:2,cooperative:true,startedAt:new Date().toISOString(),config:{cdpPort:1},log:'original evidence',handoff:{ready:true}};
+ assert.equal(canStopJob(job),false);
+ assert.equal(canStopJob({...job,schedulingHold:true}),true,'仍有真实交接锁时允许收尾');
+ assert.equal(canStopJob({...job,sessionSettled:false}),true,'未结束会话仍可停止');
+ await fs.mkdir(path.join(dataDir,'jobs',job.id),{recursive:true});
+ await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
+ let recoveries=0;
+ const {server,url}=await createConsole({port:0,dataDir,recovery:async()=>{recoveries++;return {ready:false};}});
+ try{
+  const s=await fetch(url+'/api/state').then(r=>r.json());
+  const r=await fetch(url+'/api/jobs/'+job.id+'/stop',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:'{}'});
+  assert.equal(r.status,409);
+  const current=await fetch(url+'/api/jobs/'+job.id).then(r=>r.json());
+  assert.equal(current.status,'BLOCKED');assert.equal(current.schedulingHold,false);
+  assert.equal(current.log,'original evidence');assert.equal(recoveries,0);
+ }finally{await new Promise(r=>server.close(r));}
+});
+
 test('FAIL会话及页面交接保护可收尾，已结束且无交接保护不能再停止',async()=>{
  const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-failed-live-'));
  const job={id:'failed-live',status:'FAIL',schedulingHold:true,sessionId:'ses_isolated',startedAt:new Date().toISOString(),config:{cdpPort:1},log:''};

@@ -14,6 +14,7 @@ import {readSessionLog} from './session-log.mjs';
 import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {killScript,stopSession,releaseOwnedLock} from './stop-job.mjs';
+import {canStopJob} from './stop-all.mjs';
 import {withClientCases} from './case-registry.mjs';
 import {loadJobTrace,jobSessionId} from './trace-store.mjs';
 import {renderTrace} from './trace.mjs';
@@ -360,7 +361,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(!job)return send(404,{error:'运行记录不存在'});
     if(job.stopRequested)return send(409,{error:'正在停止，请等待'});
     const failedWithLiveSession=Boolean(job.schedulingHold);
-    if(!['QUEUED','RUNNING','INTERRUPTED','BLOCKED'].includes(job.status)&&!failedWithLiveSession)return send(409,{error:'该脚本已经结束'});
+    if(!canStopJob(job))return send(409,{error:'该脚本和会话已结束且无待解除锁，不重复操作历史任务'});
     if(job.status==='QUEUED'){
      job.status='STOPPED';job.phase='FINISHED';job.endedAt=new Date().toISOString();job.error='用户取消排队，未启动脚本、未向客户端发送任务';active.delete(job.id);scheduler.finish(job.id);await writeJob(job);return send(200,{message:job.error});
     }

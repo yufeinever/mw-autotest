@@ -306,7 +306,7 @@ var approvalLabels = { reject: "\u62D2\u7EDD", once: "\u5141\u8BB8\u4E00\u6B21",
 
 // local-console/stop-all.mjs
 function canStopJob(job) {
-  return Boolean(job.schedulingHold) || ["QUEUED", "RUNNING"].includes(job.status) || job.status === "FAIL" && job.schedulingHold && !job.modelCompleted && Boolean(job.sessionId || job.result?.sessionId) || ["BLOCKED", "INTERRUPTED"].includes(job.status) && !job.modelCompleted && Boolean(job.sessionId || job.result?.sessionId || job.schedulingHold || job.status === "INTERRUPTED" && job.pid);
+  return Boolean(job.schedulingHold) || ["QUEUED", "RUNNING"].includes(job.status) || job.status === "FAIL" && job.schedulingHold && !job.modelCompleted && Boolean(job.sessionId || job.result?.sessionId) || ["BLOCKED", "INTERRUPTED"].includes(job.status) && !job.modelCompleted && !job.sessionSettled && Boolean(job.sessionId || job.result?.sessionId || job.schedulingHold || job.status === "INTERRUPTED" && job.pid);
 }
 async function stopAllJobs(api, progress = () => {
 }) {
