@@ -458,7 +458,8 @@ if (traceId) {
     $("#message").textContent = text;
     $("#message").className = error ? "error" : "";
   }, config = function() {
-    return { executionStrategy: $("[name=executionStrategy]:checked").value, maxParallel: Number($("#maxParallel").value), question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
+    const interval = $("#stepInterval").value.trim();
+    return { executionStrategy: $("[name=executionStrategy]:checked").value, maxParallel: Number($("#maxParallel").value), question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
   }, modelOption = function(name) {
     if (![...$("#model").options].some((o) => o.value === name)) $("#model").add(new Option(name, name));
   }, syncCustom = function() {
@@ -635,6 +636,7 @@ if (traceId) {
       $(`[name=approval][value="${c.approval}"]`).checked = true;
       $("#customText").value = c.customText;
       $("#cdpPort").value = c.cdpPort;
+      $("#stepInterval").value = c.stepInterval ?? 0.5;
       if (c.model) modelOption(c.model);
       $("#model").value = c.model;
       const p = c.provider || {};

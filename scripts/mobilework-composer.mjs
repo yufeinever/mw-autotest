@@ -1,3 +1,4 @@
+import {waitStep} from './mobilework-run-policy.mjs';
 // Append through the browser's real text input path. Enter is a submit shortcut
 // in MobileWork and must not be used to create a paragraph before insertion.
 // Chromium may expose an empty contenteditable paragraph as extra newlines.
@@ -22,7 +23,7 @@ export async function readComposerState(editor){
   return {text:[...element.childNodes].map(walk).join('').replace(/\r\n/g,'\n').replace(/\n{2,}/g,'\n').trim(),skills:[...element.querySelectorAll('[data-skill-remove]')].map(e=>e.getAttribute('data-skill-remove'))};
  });
 }
-export async function appendComposerText(editor,text,{onDraft=async()=>{}}={}){
+export async function appendComposerText(editor,text,{onDraft=async()=>{},stepInterval=0.5}={}){
  if(typeof text!=='string'||!text.trim())throw Error('补充材料不能为空');
  await editor.waitFor({state:'visible',timeout:10000});
  if(await editor.count()!==1)throw Error('没有唯一的任务输入框');
@@ -36,6 +37,7 @@ export async function appendComposerText(editor,text,{onDraft=async()=>{}}={}){
   const range=document.createRange();range.selectNodeContents(element);range.collapse(false);
   const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
  });
+ await waitStep(page,{stepInterval});
  await page.keyboard.insertText('\n\n'+text);
  if(page.url()!==url)throw Error('补充材料期间页面发生切换，未点击发送');
  const after=await readComposerState(editor);
@@ -44,13 +46,14 @@ export async function appendComposerText(editor,text,{onDraft=async()=>{}}={}){
  if(normalizeComposerText(after.text)!==normalizeComposerText(before.text+'\n\n'+text))throw Error('追加期间出现非本次预期的文字变化，保留现场，未点击发送');
  return after;
 }
-export async function clearComposerText(editor){
+export async function clearComposerText(editor,{stepInterval=0.5}={}){
  await editor.waitFor({state:'visible',timeout:10000});
  if(await editor.count()!==1)throw Error('没有唯一的任务输入框，未清理草稿');
- await editor.click();
+ const pause=()=>waitStep(editor.page(),{stepInterval});
+ await pause();await editor.click();
  if(!await editor.evaluate(element=>document.activeElement===element))throw Error('输入框未获得焦点，未清理草稿');
- await editor.page().keyboard.press('ControlOrMeta+A');
- await editor.page().keyboard.press('Backspace');
- await editor.page().waitForTimeout(500);
+ await pause();await editor.page().keyboard.press('ControlOrMeta+A');
+ await pause();await editor.page().keyboard.press('Backspace');
+ await pause();
  if((await editor.innerText()).trim()||await editor.locator('[data-skill-remove]').count())throw Error('客户端尚未清空本次草稿，保留现场');
 }

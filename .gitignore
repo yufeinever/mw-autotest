@@ -16,6 +16,8 @@
 !/scripts/fixtures/
 /scripts/fixtures/*
 !/AGENTS.md
+!/需求文档.md
+!/版本迭代说明.md
 !/config/environment.json
 !/local-console/README.md
 !/local-console/app-source.js

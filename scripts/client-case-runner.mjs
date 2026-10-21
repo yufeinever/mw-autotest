@@ -6,7 +6,7 @@ import {normalizeConfig} from '../local-console/policy.mjs';
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
-import {selectModel,handleConfiguredDialog} from './mobilework-run-policy.mjs';
+import {selectModel,handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
 import {appendComposerText,containsComposerText,readComposerState} from './mobilework-composer.mjs';
 import {clearOwnedDraft,selectionState,resetComposerPermission} from './mobilework-isolation.mjs';
 import {dispatchStandalone} from './mobilework-standalone.mjs';
@@ -52,10 +52,10 @@ export async function waitCreatedSession(page,sourceUrl,{timeoutMs=180000,log=()
  }
  throw blocked('客户端准备任务超时，尚未取得Session ID；请核对客户端准备状态后重试，不自动重复发送');
 }
-export async function guardDialogs(page,{cancelReload=false}={}){
+export async function guardDialogs(page,{cancelReload=false,stepInterval=0.5}={}){
  const text=await page.locator('body').innerText();
  if(/配置已更新[，,]?需要重新加载引擎|配置已更新，需要重新加载引擎|立即终止并生效/.test(text)){
-  if(cancelReload&&await button(page,'取消').count()===1)await button(page,'取消').click();
+  if(cancelReload&&await button(page,'取消').count()===1){await waitStep(page,{stepInterval});await button(page,'取消').click();}
   throw blocked('场景配置要求重新加载引擎；未终止已有会话。请待客户端空闲并确认配置生效后重试');
  }
  const dialogs=page.getByRole('dialog').filter({visible:true});
@@ -69,47 +69,47 @@ export async function ensureIdleComposer(page){
  if(await editor.count()&&((await editor.innerText()).trim()||await editor.locator('[data-skill-remove]').count()))throw blocked('当前有未发送草稿或技能，保留草稿');
  if((await selectionState(page)).length)throw blocked('当前输入区已有选中的专家或团队，保留用户选择');
 }
-export async function selectTestWorkspace(page){
+export async function selectTestWorkspace(page,config={}){
  const main=page.locator('main').last(),selected=main.getByRole('button',{name:'默认工作空间',exact:true}).filter({visible:true});
  if(await selected.count()===1)return;
  const trigger=main.getByRole('button',{name:'Mobilework-test',exact:true}).filter({visible:true});
  if(await trigger.count()!==1)throw blocked('请在客户端选择默认工作空间；无法确认当前工作空间选择器');
- await trigger.click();
+ await waitStep(page,config);await trigger.click();
  // 弹出列表位于侧栏之后，排除侧栏自带的同名空间按钮。
  const options=button(page,'默认工作空间');
- if(await options.count()!==1){await page.keyboard.press('Escape');throw blocked('工作空间列表中没有唯一的默认工作空间入口');}
- await options.click();await selected.waitFor({timeout:5000});
+ if(await options.count()!==1){await waitStep(page,config);await page.keyboard.press('Escape');throw blocked('工作空间列表中没有唯一的默认工作空间入口');}
+ await waitStep(page,config);await options.click();await selected.waitFor({timeout:5000});
 }
 // 返回的签名只用于清理本次生成、且从未被其他人改动的预览草稿。
 export async function fillScenario(page,definition,config,{capture=async()=>{},log=()=>{},assert=()=>{},onDraft=()=>{}}={}){
  await ensureIdleComposer(page);
  const previousSelection=await selectionState(page);
- await button(page,'新建任务').click();
+ await waitStep(page,config);await button(page,'新建任务').click();
  await button(page,definition.category).first().waitFor();
- await selectTestWorkspace(page);
- await resetComposerPermission(page);
+ await selectTestWorkspace(page,config);
+ await resetComposerPermission(page,config);
  const url=page.url();
- if(config.model){await selectModel(page,config.model);log('模型已回读核对',config.model);}
- await button(page,definition.category).first().click();
- await guardDialogs(page,{cancelReload:true});
+ if(config.model){await selectModel(page,config.model,{stepInterval:config.stepInterval});log('模型已回读核对',config.model);}
+ await waitStep(page,config);await button(page,definition.category).first().click();
+ await guardDialogs(page,{cancelReload:true,stepInterval:config.stepInterval});
  const scene=scenarioButton(page,definition.button).first();await scene.waitFor();
  if(!await scene.isEnabled())throw blocked('场景“'+definition.button+'”当前被客户端禁用（未生效），请先在客户端完成技能或配置生效');
- try{await scene.click();}catch(e){await guardDialogs(page,{cancelReload:true});throw e;}
+ try{await waitStep(page,config);await scene.click();}catch(e){await guardDialogs(page,{cancelReload:true,stepInterval:config.stepInterval});throw e;}
  // 当前客户端的技能配置弹窗可在卡片点击后异步出现。
- await page.waitForTimeout(500);
+ await waitStep(page,config);
  const candidate=editorOf(page);
  if(await candidate.count()===1&&containsComposerText(await candidate.innerText(),definition.prompt))await onDraft({editor:candidate,url,...await readComposerState(candidate),previousSelection,selection:await selectionState(page)});
- await guardDialogs(page,{cancelReload:true});
+ await guardDialogs(page,{cancelReload:true,stepInterval:config.stepInterval});
  if(page.url()!==url)throw blocked('场景选择期间页面切换，停止自动操作');
  const editor=editorOf(page);
  if(await editor.count()!==1)throw blocked('未识别到唯一的任务输入框');
  await page.waitForFunction(expected=>[...document.querySelectorAll('[contenteditable="true"]')].some(e=>e.innerText.includes(expected)),definition.prompt,{timeout:10000});
- await guardDialogs(page,{cancelReload:true});
+ await guardDialogs(page,{cancelReload:true,stepInterval:config.stepInterval});
  const {text,skills}=await readComposerState(editor);
  assert('场景真实自动填充原提示词',containsComposerText(text,definition.prompt),text);
  if(definition.skills.length)assert('场景自动选择指定技能',definition.skills.every(s=>skills.includes(s)),{expected:definition.skills,actual:skills});
  else log('此用例未配置预期 Skill','保留实际专家或团队选择，不计为 Skill 调用通过');
- try{assert('自动填充后运行按钮可用',await button(page,'运行任务').isEnabled());}catch(e){await guardDialogs(page,{cancelReload:true});throw e;}
+ try{assert('自动填充后运行按钮可用',await button(page,'运行任务').isEnabled());}catch(e){await guardDialogs(page,{cancelReload:true,stepInterval:config.stepInterval});throw e;}
  await capture('场景自动填充');log('场景自动填充已核对',definition.category+' → '+definition.button);
  return {editor,url,text,skills,previousSelection,selection:await selectionState(page)};
 }
@@ -182,7 +182,7 @@ export async function runScenarioCase(number,inputConfig){
   browser=await chromium.connectOverCDP(endpoint,{timeout:15000});
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
   if(pages.length!==1)throw blocked('MobileWork主界面数量不是1');
-  page=pages[0];page.setDefaultTimeout(10000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly});await capture('连接客户端');
+  page=pages[0];page.setDefaultTimeout(10000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:config.stepInterval});await capture('连接客户端');
   if(checkOnly){await ensureIdleComposer(page);result='CHECKED';log('只读预检通过','未点击场景，未发送会话');}
   else{
    if(resumeId){
@@ -199,14 +199,14 @@ export async function runScenarioCase(number,inputConfig){
     await fs.mkdir(outputDir);
     const input=clientCaseInput(number,{outputDir,asOfDate:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(started)});
     await fs.writeFile(path.join(dir,'内嵌测试材料.txt'),input);
-    const after=await appendComposerText(owned.editor,input,{onDraft:async value=>{owned={...owned,...value};await taskControl?.checkpointDraft(owned);}});owned={...owned,...after};
+    const after=await appendComposerText(owned.editor,input,{stepInterval:config.stepInterval,onDraft:async value=>{owned={...owned,...value};await taskControl?.checkpointDraft(owned);}});owned={...owned,...after};
     assert('完整材料追加且保留原提示词和技能',containsComposerText(after.text,input)&&containsComposerText(after.text,definition.prompt)&&definition.skills.every(s=>after.skills.includes(s)));
     await capture('完整测试材料');
     if(fillOnly){
-     if(!await clearOwnedDraft(page,owned))throw blocked('填充检查结束时草稿已变化，保留现场');
+     if(!await clearOwnedDraft(page,owned,{stepInterval:config.stepInterval}))throw blocked('填充检查结束时草稿已变化，保留现场');
      owned=null;result='CHECKED';log('自动填充与材料检查通过','已清理本次草稿；没有发送任务');
     }else{
-     await guardDialogs(page);
+     await waitStep(page,config);await guardDialogs(page);
      if(page.url()!==owned.url||(await readComposerState(owned.editor)).text!==owned.text)throw blocked('发送前页面或草稿已变化，停止发送');
      await taskControl?.markSubmitting();
      await button(page,'运行任务').click();submitted=true;
@@ -244,7 +244,7 @@ export async function runScenarioCase(number,inputConfig){
  }catch(e){
   errorText=e.message;result=e.blocked||(!sessionId&&!checks.some(c=>!c.pass))?'BLOCKED':'FAIL';log(result,errorText);
   if(page)await capture('异常现场').catch(e=>log('异常截图未完成',e.message));
-  if(!submitted&&owned&&await clearOwnedDraft(page,owned).catch(()=>false))log('已清理本次未发送草稿','原有用户草稿不会进入本步骤');
+  if(!submitted&&owned&&await clearOwnedDraft(page,owned,{stepInterval:config.stepInterval}).catch(()=>false))log('已清理本次未发送草稿','原有用户草稿不会进入本步骤');
  }finally{
   const trace=page&&sessionId?await saveRunTrace({page,sessionId,number,dir,checks,log,...(taskControl?.connection?{readLog:children=>taskControl.readLog(children)}:{})}):null;
   if(['PASS','RESUMED'].includes(result)&&checks.some(c=>!c.pass)){result='FAIL';errorText='Skill 实际调用或 Trace 证据断言失败，请查看 Trace 记录';log('用例失败',errorText);}

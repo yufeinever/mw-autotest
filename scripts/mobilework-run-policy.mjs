@@ -1,5 +1,10 @@
 import {normalizeConfig,approvalLabels} from '../local-console/policy.mjs';
 
+export async function waitStep(page,config={}){
+ const seconds=normalizeConfig({stepInterval:config.stepInterval}).stepInterval;
+ await page.waitForTimeout(Math.round(seconds*1000));
+}
+
 export function readRunConfig(){return process.env.MW_TEST_CONFIG_JSON?normalizeConfig(JSON.parse(process.env.MW_TEST_CONFIG_JSON)):null;}
 export async function modelTrigger(page){
  const candidates=page.locator('button[aria-expanded][aria-label]').filter({visible:true});
@@ -24,18 +29,18 @@ export async function modelTrigger(page){
  }
  throw Error('无法唯一定位模型选择器');
 }
-export async function readModelOptions(page){
+export async function readModelOptions(page,config={}){
  const trigger=await modelTrigger(page);
  const current=await trigger.innerText();
- await trigger.click();
+ await waitStep(page,config);await trigger.click();
  try{
   await page.getByRole('listbox').filter({visible:true}).waitFor({timeout:5000});
   return {current,models:await page.getByRole('option').filter({visible:true}).evaluateAll(es=>es.map(e=>({name:e.querySelector('span.truncate')?.textContent?.trim()||e.innerText.trim().split('\n').filter(x=>x!=='--'&&x!=='默认')[0],selected:e.getAttribute('data-checked')==='true',disabled:e.hasAttribute('data-disabled')})))};
- }finally{await page.keyboard.press('Escape');}
+ }finally{await waitStep(page,config);await page.keyboard.press('Escape');}
 }
-export async function selectModel(page,name){
+export async function selectModel(page,name,{stepInterval=0.5}={}){
  if(!name)return null;
- const trigger=await modelTrigger(page);await trigger.click();
+ const trigger=await modelTrigger(page);await waitStep(page,{stepInterval});await trigger.click();
  const options=page.getByRole('option').filter({visible:true});
  await options.first().waitFor({timeout:5000});
  let chosen;
@@ -48,9 +53,9 @@ export async function selectModel(page,name){
  }
  if(!chosen)throw Error('当前模型列表中没有：'+name);
  if(await chosen.getAttribute('data-disabled')!==null)throw Error('目标模型不可用：'+name);
- await chosen.click();
+ await waitStep(page,{stepInterval});await chosen.click();
  await page.getByRole('listbox').filter({visible:true}).waitFor({state:'hidden',timeout:5000});
- const verify=await readModelOptions(page);
+ const verify=await readModelOptions(page,{stepInterval});
  if(!verify.models.some(m=>m.name===name&&m.selected))throw Error('模型切换未生效：'+name);
  return name;
 }
@@ -113,7 +118,7 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   try{
    const signature=await card.evaluate(questionSignature);
    const unchanged=async()=>await card.evaluate((e,s)=>e.isConnected&&e.textContent.replace(/\s+/g,' ').trim()===s,signature)&&await button.isVisible();
-   await page.waitForTimeout(1000);
+   await waitStep(page,config);
    if(!await canAct()||!await unchanged())return false;
    await capture('审批前-'+approvalLabels[config.approval]);
    if(!await canAct()||!await unchanged())return false;
@@ -137,7 +142,7 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
       if(page.url()!==originUrl||!await canAct())fail('完全访问二次确认所属会话或审批请求已变化，未确认，保留现场');
       if(!await modal.evaluate((e,s)=>e.isConnected&&e.textContent.replace(/\s+/g,' ').trim()===s,signature)||!await ok.isVisible()||!await ok.isEnabled())fail('完全访问二次确认已变化，未点击替换后的弹窗，保留现场');
      };
-     await page.waitForTimeout(1000);
+     await waitStep(page,config);
      await verify();
      await capture('完全访问权限-二次确认前');
      await verify();
@@ -156,7 +161,7 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
  if(kind==='permission')return false;
  let panel=await questionPanel(page);
  if(!panel)return false;
- await page.waitForTimeout(1000);
+ await waitStep(page,config);
  panel=await questionPanel(page);
  if(!panel)return false;
  const matches=async()=>!expectedQuestions.length||expectedQuestions.some(q=>panelText.includes(q.replace(/\s+/g,' ').trim()));
@@ -170,12 +175,12 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   let field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
   if(!await field.count()){
    const custom=panel.getByRole('button',{name:/自定义|其他/}).filter({visible:true});
-   if(await custom.count()===1)await custom.click();
+   if(await custom.count()===1){await waitStep(page,config);await custom.click();}
    field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
   }
   if(await field.count()!==1)throw Error('当前提问没有唯一的自定义回答输入框');
-  await field.fill(config.customText);
-  await sendButton(panel).click();
+  await waitStep(page,config);await field.fill(config.customText);
+  await waitStep(page,config);await sendButton(panel).click();
  }else{
   const options=questionOptions(panel);
   const index=config.question==='first'?0:1;
@@ -186,10 +191,10 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   const sends=sendButton(panel),send=await sends.count()===1?await sends.elementHandle():null;
   try{
    const before=await card.evaluate(questionSignature);
-   await options.nth(index).click();
+   await waitStep(page,config);await options.nth(index).click();
    // New cards advance/submit immediately. Legacy cards keep the same question
    // and enable Send; only submit if these exact controls still belong to it.
-   await page.waitForTimeout(200);
+   await waitStep(page,config);
    const unchanged=await card.evaluate((element,signature)=>element.isConnected&&element.textContent.replace(/\s+/g,' ').trim()===signature,before);
    if(unchanged&&send&&await send.evaluate(element=>element.isConnected&&!element.disabled)&&await send.isVisible())await send.click({timeout:2000});
    if(unchanged&&!send)await page.waitForFunction(({element,signature})=>!element.isConnected||element.textContent.replace(/\s+/g,' ').trim()!==signature,{element:card,signature:before},{timeout:5000}).catch(()=>{throw Error('已点击所选编号，但提问卡片未推进或关闭，保留现场');});

@@ -7,7 +7,7 @@ test('真实提问卡片交互回归',async t=>{
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const page=await browser.newPage();page.setDefaultTimeout(3000);
-  const config={question:'first',approval:'session',customText:''};
+  const config={question:'first',approval:'session',customText:'',stepInterval:1};
   const handle=overrides=>handleConfiguredDialog(page,{...config,...overrides},async()=>{},()=>{});
   await t.test('配置重载遮挡审批时明确阻塞，不强点底层控件或终止会话',async()=>{
    await page.setContent('<button onclick="window.approved=true">允许一次</button><div role="dialog">配置已更新，需要重新加载引擎<button onclick="window.terminated=true">立即终止并生效</button></div>');

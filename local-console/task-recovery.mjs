@@ -1,6 +1,7 @@
 import {chromium} from 'playwright-core';
 import {setTimeout as delay} from 'node:timers/promises';
 import {inspectPageHandoff} from '../scripts/mobilework-isolation.mjs';
+import {waitStep} from '../scripts/mobilework-run-policy.mjs';
 
 export async function settleSession(page,job,connection,{allowAbort=false}={}){
  if(!job.sessionId)return !job.submissionPending;
@@ -60,13 +61,14 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
 
 export async function recoverJobPage(page,job,{connection,allowAbort=false,otherManagedSession=false}={}){
  if(!await settleSession(page,job,connection,{allowAbort}))return {ready:false,reason:job.submissionPending&&!job.sessionId?'发送已尝试但Session归属未确认，暂停后续任务':'本条会话尚未确认结束'};
- let handoff=await inspectPageHandoff(page,{owned:job.ownedDraft,allowRunning:otherManagedSession});
+ let handoff=await inspectPageHandoff(page,{owned:job.ownedDraft,allowRunning:otherManagedSession,stepInterval:job.config?.stepInterval});
  // Some clients leave the permission card rendered after an acknowledged
  // abort. Only leave that exact, independently confirmed stopped session.
  // Never click its stale approval or navigate away from a user draft/modal.
  const staleApproval=handoff.reason==='当前页面仍有运行任务或交互'&&job.abortAcknowledged&&job.sessionSettled;
  const ownSelection=handoff.reason==='输入区仍有专家或团队选择，不能交接'&&job.submittedSelection?.length&&(job.modelCompleted||job.sessionSettled);
  if(!handoff.ready&&(staleApproval||ownSelection)&&page.url().endsWith('/session/'+job.sessionId)){
+  await waitStep(page,job.config||{});
   const clean=await inspectPageHandoff(page,{allowRunning:staleApproval,allowedSelection:job.submittedSelection||[]});
   if(clean.ready){
    const button=page.getByRole('button',{name:'新建任务',exact:true}).filter({visible:true});

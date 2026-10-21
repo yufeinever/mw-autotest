@@ -5,7 +5,7 @@ import {meetingText,meetingAssertions,meetingSource} from './case002-meeting-dat
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 import {chromium} from 'playwright-core';
-import {readRunConfig,selectModel} from './mobilework-run-policy.mjs';
+import {readRunConfig,selectModel,waitStep} from './mobilework-run-policy.mjs';
 import {finalAssistantText,waitScenario,waitSentInput} from './client-case-runner.mjs';
 import {appendComposerText,containsComposerText} from './mobilework-composer.mjs';
 import {snapshotDraft,clearOwnedDraft,resetComposerPermission} from './mobilework-isolation.mjs';
@@ -77,7 +77,7 @@ try{
  browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
  const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
  if(pages.length!==1)block('MobileWork主界面数量不是1');
- page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly});await capture('连接客户端');
+ page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:runConfig.stepInterval});await capture('连接客户端');
  const build=JSON.parse(await fs.readFile(testEnvironment.buildInfoPath,'utf8'));
  await fs.writeFile(path.join(dir,'环境.json'),JSON.stringify({version:build.version,productVersion:build.productVersion,packagedCdpAllowed:build.packagedCdpAllowed,port,timezone:'Asia/Shanghai'},null,2));
  if(resumeId&&!page.url().endsWith('/session/'+resumeId))block('续跑ID与当前会话不一致');
@@ -88,11 +88,11 @@ try{
  else{
   if(resumeId){sessionId=resumeId;log('续跑既有会话',sessionId);}
   else{
-  await button('新建任务').click();
+  await waitStep(page,runConfig);await button('新建任务').click();
   await button('日常办公').first().waitFor();await capture('新建任务');
-  await resetComposerPermission(page);
-  if(runConfig?.model){await selectModel(page,runConfig.model);log('模型已核对',runConfig.model);}
-  await button('日常办公').first().click();await button('会议纪要').first().click();
+  await resetComposerPermission(page,runConfig);
+  if(runConfig?.model){await selectModel(page,runConfig.model,{stepInterval:runConfig.stepInterval});log('模型已核对',runConfig.model);}
+  await waitStep(page,runConfig);await button('日常办公').first().click();await waitStep(page,runConfig);await button('会议纪要').first().click();
   const editor=page.locator('[contenteditable="true"]').filter({visible:true});
   await editor.locator('[data-skill-chip-label="true"]').waitFor();
   owned=await snapshotDraft(page,editor);await taskControl?.checkpointDraft(owned);
@@ -100,12 +100,12 @@ try{
   assert('场景自动填充',text.includes('把这段会议记录整理成结构化纪要与待办清单。')&&await editor.locator('[data-skill-remove="meeting-and-brief"]').count()===1,text);
   assert('发送按钮可用',await button('运行任务').isEnabled());
   await capture('会议纪要自动填充');log('自动填充断言通过');
-  await appendComposerText(editor,meetingText,{onDraft:async value=>{owned={...owned,...value};await taskControl?.checkpointDraft(owned);}});
+  await appendComposerText(editor,meetingText,{stepInterval:runConfig.stepInterval,onDraft:async value=>{owned={...owned,...value};await taskControl?.checkpointDraft(owned);}});
   assert('补充完整测试材料且保留技能',containsComposerText(await editor.innerText(),meetingText)&&await editor.locator('[data-skill-remove="meeting-and-brief"]').count()===1);
   await fs.writeFile(path.join(dir,'会议测试材料.txt'),meetingText);
   await fs.writeFile(path.join(dir,'会议材料来源.json'),JSON.stringify(meetingSource,null,2));
   await capture('补充会议测试材料');log('补充内嵌公开会议文字',meetingSource.title);
-  await taskControl?.markSubmitting();await button('运行任务').click();submitted=true;
+  await taskControl?.markSubmitting();await waitStep(page,runConfig);await button('运行任务').click();submitted=true;
   await page.waitForURL(/\/session\/ses_[^/?#]+/,{timeout:30000});
   sessionId=page.url().match(/\/session\/(ses_[^/?#]+)/)?.[1];
   await taskControl?.registerSession(page,sessionId);
@@ -132,7 +132,7 @@ try{
 }catch(e){
  errorText=e.message;result=e.blocked||!sessionId&&checks.length===0?'BLOCKED':'FAIL';
  log(result,errorText);if(page)await capture('异常现场').catch(()=>{});
- if(!submitted&&owned&&await clearOwnedDraft(page,owned).catch(()=>false))log('已清理本次未发送草稿');
+  if(!submitted&&owned&&await clearOwnedDraft(page,owned,runConfig).catch(()=>false))log('已清理本次未发送草稿');
 }finally{
  const trace=page&&sessionId?await saveRunTrace({page,sessionId,number:2,dir,checks,log,...(taskControl?.connection?{readLog:children=>taskControl.readLog(children)}:{})}):null;
  if(['PASS','RESUMED'].includes(result)&&checks.some(c=>!c.pass)){result='FAIL';errorText='Skill 实际调用或 Trace 证据断言失败，请查看 Trace 记录';log('用例失败',errorText);}

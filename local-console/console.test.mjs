@@ -9,7 +9,7 @@ import {normalizeConfig,approvalLabels} from './policy.mjs';
 import {handleConfiguredDialog,selectModel} from '../scripts/mobilework-run-policy.mjs';
 import {renderReport} from './report.mjs';
 
-test('参数校验',()=>{assert.equal(normalizeConfig().approval,'once');assert.throws(()=>normalizeConfig({question:'custom'}));assert.throws(()=>normalizeConfig({approval:'bad'}));assert.throws(()=>normalizeConfig({cdpPort:0}));});
+test('参数校验',()=>{assert.equal(normalizeConfig().approval,'once');assert.equal(normalizeConfig().stepInterval,0.5);assert.equal(normalizeConfig({stepInterval:''}).stepInterval,0.5);assert.equal(normalizeConfig({stepInterval:0.1}).stepInterval,0.1);assert.throws(()=>normalizeConfig({stepInterval:0.09}),/执行间隔/);assert.throws(()=>normalizeConfig({question:'custom'}));assert.throws(()=>normalizeConfig({approval:'bad'}));assert.throws(()=>normalizeConfig({cdpPort:0}));});
 
 test('紧凑脚本表分页、跨页范围和全部执行、固定参数及部分提交失败',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-script-pagination-'));
@@ -38,6 +38,7 @@ test('紧凑脚本表分页、跨页范围和全部执行、固定参数及部�
    throw Error('不应访问实际接口：'+pathname);
   });
   await page.goto(url);await page.getByText('脚本执行中',{exact:true}).waitFor();
+  assert.equal(await page.locator('#stepInterval').inputValue(),'0.5');
   const serial=page.locator('#scriptSection').getByRole('radio',{name:'串行',exact:true});
   const parallel=page.locator('#scriptSection').getByRole('radio',{name:'并行（不用等模型）',exact:true});
   assert.equal(await serial.isChecked(),true,'默认勾选串行，策略位于脚本列表');assert.equal(await parallel.isChecked(),false);
@@ -147,7 +148,7 @@ test('弹窗策略和模型切换模拟验证',async()=>{
    });
    for(let repeat=0;repeat<2;repeat++){
     await page.evaluate(()=>{window.approved=null;});const began=Date.now();
-    await handleConfiguredDialog(page,normalizeConfig({approval}),capture,log);assert.equal(await page.evaluate(()=>window.approved),label);assert.ok(Date.now()-began>=1000);
+    await handleConfiguredDialog(page,normalizeConfig({approval,stepInterval:1}),capture,log);assert.equal(await page.evaluate(()=>window.approved),label);assert.ok(Date.now()-began>=1000);
    }
   }
   await page.setContent('<section><button><span>1</span><span>唯一选项</span></button><footer><button>跳过</button><button>发送</button></footer></section>');
