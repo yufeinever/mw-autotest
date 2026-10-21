@@ -89,6 +89,7 @@
 !/scripts/mobilework-question-no-send.test.mjs
 !/scripts/mobilework-run-policy.mjs
 !/scripts/mobilework-run-policy.test.mjs
+!/scripts/mobilework-model-selection.test.mjs
 !/scripts/mobilework-task-control.mjs
 !/scripts/mobilework-task-control.test.mjs
 !/scripts/mobilework-trace.mjs

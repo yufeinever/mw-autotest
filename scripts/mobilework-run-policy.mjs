@@ -29,34 +29,89 @@ export async function modelTrigger(page){
  }
  throw Error('无法唯一定位模型选择器');
 }
+// Read one DOM version per sample. Holding the actual element (not nth(i))
+// prevents async model refreshes from making one option look like two models.
+async function modelSnapshot(page,name){
+ const menu=page.getByRole('listbox').filter({visible:true});
+ return menu.evaluateHandle((root,name)=>{
+  const elements=[...root.querySelectorAll('[role="option"]')].filter(e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden');
+  const models=elements.map(e=>({
+   name:e.querySelector('span.truncate')?.textContent?.trim()||(e.innerText||'').trim().split('\n').filter(x=>x!=='--'&&x!=='默认')[0],
+   selected:e.getAttribute('data-checked')==='true',
+   disabled:e.hasAttribute('data-disabled')||e.getAttribute('aria-disabled')==='true',
+   value:e.getAttribute('data-value')??e.getAttribute('value'),
+  }));
+  const matches=models.flatMap((m,i)=>m.name===name?[i]:[]);
+  return {models,element:matches.length===1?elements[matches[0]]:null};
+ },name,{timeout:1000});
+}
+async function stableModelSnapshot(page,name,{timeoutMs=10000,stableMs=1000}={}){
+ const deadline=Date.now()+timeoutMs;
+ let signature='',since=Date.now(),last=[];
+ while(Date.now()<deadline){
+  const snapshot=await modelSnapshot(page,name);
+  let keep=false;
+  try{
+   last=await snapshot.evaluate(s=>s.models);
+   const next=JSON.stringify(last);
+   if(next!==signature){signature=next;since=Date.now();}
+   const matches=last.filter(m=>m.name===name);
+   // Missing/duplicate/disabled options may be transient while refreshing.
+   if(last.length&&(!name||(matches.length===1&&!matches[0].disabled))&&Date.now()-since>=stableMs){keep=true;return snapshot;}
+  }finally{if(!keep)await snapshot.dispose();}
+  await page.waitForTimeout(100);
+ }
+ const matches=last.filter(m=>m.name===name);
+ if(name&&Date.now()-since>=stableMs){
+  if(matches.length>1)throw Error('模型重名：稳定后的同一列表存在多个同名选项，请先在客户端确认唯一模型');
+  if(!matches.length)throw Error('等待模型列表加载后仍没有：'+name);
+  if(matches[0].disabled)throw Error('目标模型不可用：'+name);
+ }
+ throw Error('模型列表在10秒内未稳定，保留现场，请稍后重试');
+}
 export async function readModelOptions(page,config={}){
  const trigger=await modelTrigger(page);
  const current=await trigger.innerText();
  await waitStep(page,config);await trigger.click();
  try{
   await page.getByRole('listbox').filter({visible:true}).waitFor({timeout:5000});
-  return {current,models:await page.getByRole('option').filter({visible:true}).evaluateAll(es=>es.map(e=>({name:e.querySelector('span.truncate')?.textContent?.trim()||e.innerText.trim().split('\n').filter(x=>x!=='--'&&x!=='默认')[0],selected:e.getAttribute('data-checked')==='true',disabled:e.hasAttribute('data-disabled')})))};
+  const snapshot=await stableModelSnapshot(page);
+  try{return {current,models:await snapshot.evaluate(s=>s.models)};}finally{await snapshot.dispose();}
  }finally{await waitStep(page,config);await page.keyboard.press('Escape');}
 }
 export async function selectModel(page,name,{stepInterval=0.5}={}){
  if(!name)return null;
  const trigger=await modelTrigger(page);await waitStep(page,{stepInterval});await trigger.click();
- const options=page.getByRole('option').filter({visible:true});
- await options.first().waitFor({timeout:5000});
- let chosen;
- for(let i=0;i<await options.count();i++){
-  const option=options.nth(i);
-  if(await option.getByText(name,{exact:true}).count()){
-   if(chosen)throw Error('模型重名，请先在客户端确认唯一模型');
-   chosen=option;
-  }
+ await page.getByRole('listbox').filter({visible:true}).waitFor({timeout:5000});
+ await waitStep(page,{stepInterval});
+ const deadline=Date.now()+10000;
+ let clicked=false,selectedValue=null;
+ while(Date.now()<deadline&&!clicked){
+  const snapshot=await stableModelSnapshot(page,name,{timeoutMs:deadline-Date.now()});
+  const chosen=await snapshot.getProperty('element');
+  try{
+   // A detached row means React replaced the menu after the snapshot. Re-read
+   // it; never retarget another option at the previous position.
+   if(!await snapshot.evaluate((s,name)=>{
+    const e=s.element,expected=s.models.find(m=>m.name===name);
+    const label=row=>row.querySelector('span.truncate')?.textContent?.trim()||(row.innerText||'').trim().split('\n').filter(x=>x!=='--'&&x!=='默认')[0];
+    if(!e?.isConnected||!expected||label(e)!==name||e.hasAttribute('data-disabled')||e.getAttribute('aria-disabled')==='true')return false;
+    const root=e.closest('[role="listbox"]');if(!root)return false;
+    const matches=[...root.querySelectorAll('[role="option"]')].filter(row=>row.getClientRects().length&&getComputedStyle(row).visibility!=='hidden'&&label(row)===name);
+    return matches.length===1&&(e.getAttribute('data-value')??e.getAttribute('value'))===expected.value;
+   },name))continue;
+   selectedValue=await snapshot.evaluate((s,name)=>s.models.find(m=>m.name===name)?.value,name);
+   try{await chosen.asElement().click({timeout:Math.max(1,deadline-Date.now())});clicked=true;}
+   catch(error){
+    if(!/Element is not attached|Element is not connected/i.test(error.message))throw error;
+   }
+  }finally{await chosen.dispose();await snapshot.dispose();}
  }
- if(!chosen)throw Error('当前模型列表中没有：'+name);
- if(await chosen.getAttribute('data-disabled')!==null)throw Error('目标模型不可用：'+name);
- await waitStep(page,{stepInterval});await chosen.click();
+ if(!clicked)throw Error('模型选项持续刷新，未能安全选择：'+name);
  await page.getByRole('listbox').filter({visible:true}).waitFor({state:'hidden',timeout:5000});
  const verify=await readModelOptions(page,{stepInterval});
- if(!verify.models.some(m=>m.name===name&&m.selected))throw Error('模型切换未生效：'+name);
+ const matches=verify.models.filter(m=>m.name===name);
+ if(matches.length!==1||!matches[0].selected||(selectedValue!==null&&matches[0].value!==selectedValue))throw Error('模型切换未生效或目标已变化：'+name);
  return name;
 }
 // The current renderer concatenates the numbered badge and label in textContent
