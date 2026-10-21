@@ -221,6 +221,28 @@ async function showBrowserTrace(id) {
   document.title = doc.title;
   document.body.replaceChildren(...doc.body.childNodes);
   if (trace) {
+    const main = document.querySelector("main");
+    main.style.maxWidth = "none";
+    const oldTimeline = main.lastElementChild;
+    oldTimeline.remove();
+    const banner = document.createElement("p");
+    banner.textContent = "\u8FD0\u884C\u7ED3\u8BBA\uFF1A" + job.status + "\uFF1B\u5185\u5BB9\u65AD\u8A00 " + (job.result?.checks || []).filter((c) => c.category !== "skill-invocation" && c.pass).length + "/" + (job.result?.checks || []).filter((c) => c.category !== "skill-invocation").length + "\uFF1BSkill\u65AD\u8A00 " + trace.summary.passed + "/" + trace.summary.total + "\u3002\u6A21\u578B\u6B65\u9AA4\u6210\u529F\u4E0D\u7B49\u4E8E\u5168\u90E8\u9A8C\u6536\u901A\u8FC7\u3002";
+    main.prepend(banner);
+    const viewerUrl = "/traces/" + encodeURIComponent(id) + "/observatory";
+    const available = await fetch(viewerUrl, { cache: "no-store" });
+    if (available.ok) {
+      const frame = document.createElement("iframe");
+      frame.title = "Trace Observatory";
+      frame.setAttribute("sandbox", "allow-scripts allow-downloads");
+      frame.style.cssText = "width:100%;height:1100px;border:1px solid #d9e1e8";
+      frame.src = viewerUrl;
+      main.append(frame);
+    } else {
+      const warning = document.createElement("p");
+      warning.className = "result-fail";
+      warning.textContent = "Trace \u89C2\u5BDF\u53F0\u5C1A\u672A\u52A0\u8F7D\uFF1A\u8BF7\u5173\u95ED\u65E7\u6D4B\u8BD5\u63A7\u5236\u53F0\u5E76\u91CD\u65B0\u8FD0\u884C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u3002\u539F\u59CB\u65AD\u8A00\u548C Trace \u4E0B\u8F7D\u4ECD\u53EF\u67E5\u770B\u3002";
+      main.append(warning);
+    }
     const blobUrl = URL.createObjectURL(new Blob([JSON.stringify(trace, null, 2)], { type: "application/json;charset=utf-8" }));
     const download = document.querySelector("a[download]");
     download.href = blobUrl;
@@ -495,6 +517,14 @@ if (traceId) {
       const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
       tr.append(el2("td", String(start + offset + 1).padStart(2, "0")), name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), el2("td", job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C", resultClass(job?.status)));
       const actions = el2("td"), run = el2("button", "\u6267\u884C", "primary"), stop = el2("button", "\u5F3A\u5236\u505C\u6B62", "result-fail"), remove = el2("button", "\u79FB\u9664");
+      if (job) {
+        const status = tr.lastElementChild, failed = (job.result?.checks || []).filter((c) => !c.pass);
+        status.title = failed.map((c) => c.name).join("\uFF1B") || job.result?.error || "";
+        if (failed.length && failed.every((c) => c.category === "skill-invocation")) status.append(el2("small", "Skill \u8C03\u7528\u65AD\u8A00\u672A\u901A\u8FC7"));
+        const traceLink = el2("a", "Trace \u8BB0\u5F55");
+        traceLink.href = "/?trace=" + encodeURIComponent(job.id);
+        actions.append(traceLink);
+      }
       run.disabled = state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
       run.onclick = () => startScripts([script], "\u6267\u884C\u6B64\u811A\u672C");
       stop.disabled = stopAllBusy || !job || !!job.stopRequested || !canStopJob(job);

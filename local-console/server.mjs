@@ -17,6 +17,7 @@ import {killScript,stopSession,releaseOwnedLock} from './stop-job.mjs';
 import {withClientCases} from './case-registry.mjs';
 import {loadJobTrace,jobSessionId} from './trace-store.mjs';
 import {renderTrace} from './trace.mjs';
+import {observatoryDocument} from './observatory-view.mjs';
 import {collectBatches,publicJob} from './batches.mjs';
 import {TaskScheduler} from './task-scheduler.mjs';
 import {recoverJob} from './task-recovery.mjs';
@@ -303,9 +304,10 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }finally{active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved:Boolean(job.schedulingHold)});delete job.stopRequested;}
    }
    const jobMatch=url.pathname.match(/^\/api\/jobs\/([\w-]+)$/);
-   const traceMatch=url.pathname.match(/^\/traces\/([\w-]+)(\/download)?$/);
+   const traceMatch=url.pathname.match(/^\/traces\/([\w-]+)(\/download|\/observatory)?$/);
    if(req.method==='GET'&&traceMatch){
     const job=jobs.find(j=>j.id===traceMatch[1]);if(!job)return send(404,{error:'运行记录不存在'});
+    if(!traceMatch[2]){res.writeHead(302,{Location:'/?trace='+encodeURIComponent(job.id)});res.end();return;}
     let trace,error;
     try{trace=await loadJobTrace(job,traceReader||(async sessionId=>{
      const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000});
@@ -315,6 +317,11 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }finally{await browser.close();}
     }));}catch(e){error=e.message;}
     res.setHeader('Cache-Control','no-store');
+    if(traceMatch[2]==='/observatory'){
+     if(!trace)return send(400,{error});
+     res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-downloads");
+     res.setHeader('Content-Type','text/html; charset=utf-8');res.end(observatoryDocument(trace.observatory));return;
+    }
     if(traceMatch[2]){
      if(!trace)return send(400,{error});
      res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="${jobSessionId(job)}-trace.json"`);res.end(JSON.stringify(trace,null,2));return;

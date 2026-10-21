@@ -1,6 +1,6 @@
 {
   "name": "mw-autotest",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "description": "MobileWork 前16条客户端用例、本地测试控制台及自动化脚本",

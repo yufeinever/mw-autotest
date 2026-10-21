@@ -16,6 +16,11 @@
 !/scripts/fixtures/
 /scripts/fixtures/*
 !/AGENTS.md
+!/local-console/observatory-template.mjs
+!/local-console/observatory-data.mjs
+!/local-console/observatory-view.mjs
+!/local-console/observatory.test.mjs
+!/local-console/observatory-source.md
 !/需求文档.md
 !/版本迭代说明.md
 !/config/environment.json

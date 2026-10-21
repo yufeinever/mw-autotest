@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {buildTrace,traceRuleVersion} from '../local-console/trace.mjs';
 import {getClientCase} from './client-case-catalog.mjs';
+import {toObservatory} from '../local-console/observatory-data.mjs';
 
 // Always runs before the final result is persisted, including blocked/failed sessions.
 export async function saveRunTrace({page,sessionId,number,dir,checks,log=()=>{},readLog}){
@@ -13,6 +14,7 @@ export async function saveRunTrace({page,sessionId,number,dir,checks,log=()=>{},
   if(data.sessionId!==sessionId)throw Error('Trace返回的会话ID与本次执行不一致');
   await fs.writeFile(path.join(dir,sessionId+'-session-log.json'),JSON.stringify(data,null,2));
   const trace=buildTrace(data,{expectedSkills:definition.skills,caseId:definition.id,origin:'run-snapshot'});
+  trace.observatory=toObservatory(trace,data);
   trace.sourceSha256=createHash('sha256').update(JSON.stringify(data)).digest('hex');
   await fs.writeFile(path.join(dir,'trace.json'),JSON.stringify(trace,null,2));
   checks.push(...trace.checks);

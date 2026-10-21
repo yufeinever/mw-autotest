@@ -48,6 +48,7 @@ function renderScripts(){
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
   tr.append(el('td',String(start+offset+1).padStart(2,'0')),name,el('td',!script.exists?'文件不存在':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),el('td',job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行',resultClass(job?.status)));
   const actions=el('td'),run=el('button','执行','primary'),stop=el('button','强制停止','result-fail'),remove=el('button','移除');
+  if(job){const status=tr.lastElementChild,failed=(job.result?.checks||[]).filter(c=>!c.pass);status.title=failed.map(c=>c.name).join('；')||job.result?.error||'';if(failed.length&&failed.every(c=>c.category==='skill-invocation'))status.append(el('small','Skill 调用断言未通过'));const traceLink=el('a','Trace 记录');traceLink.href='/?trace='+encodeURIComponent(job.id);actions.append(traceLink);}
   run.disabled=state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||state.readingModels||cdpBusy||pendingScripts.has(script.id)||!script.exists||!script.integrated;
   run.onclick=()=>startScripts([script],'执行此脚本');
   stop.disabled=stopAllBusy||!job||!!job.stopRequested||!canStopJob(job);
