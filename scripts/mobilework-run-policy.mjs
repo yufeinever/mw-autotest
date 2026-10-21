@@ -90,26 +90,82 @@ export async function questionPanel(page){
  }
  return null;
 }
-export async function handleConfiguredDialog(page,config,capture,log){
+export async function handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions=[],canAct=async()=>true}={}){
+ const originUrl=page.url();
+ const fail=message=>{throw Object.assign(Error(message),{blocked:true});};
+ const checkReload=async()=>{
+  const modal=page.getByRole('dialog').filter({visible:true}).filter({hasText:'配置已更新，需要重新加载引擎'});
+  if(await modal.count())throw Object.assign(Error('客户端配置要求重新加载引擎，审批被弹窗遮挡；未点击立即终止并生效，保留现场'),{blocked:true});
+ };
+ await checkReload();
  const approve=page.getByRole('button',{name:'允许一次',exact:true}).filter({visible:true});
- if(await approve.count()){
-  await page.waitForTimeout(1000);
-  if(!await approve.count())return false;
+ if(kind!=='question'&&await approve.count()){
+  if(await approve.count()!==1)throw Error('存在多个审批面板，不能确定本次审批');
   let panel=approve;
   for(let i=0;i<10;i++){panel=panel.locator('..');if(await panel.getByRole('button',{name:'拒绝',exact:true}).count()&&await panel.getByRole('button',{name:'开启完全访问权限',exact:true}).count())break;}
-  await capture('审批前-'+approvalLabels[config.approval]);
   const aliases=config.approval==='session'?['在会话期间允许','在会话期间运行']:[approvalLabels[config.approval]];
   let target;
   for(const name of aliases){const b=panel.getByRole('button',{name,exact:true}).filter({visible:true});if(await b.count()===1){target=b;break;}}
   if(!target)throw Error('审批面板没有所选操作：'+approvalLabels[config.approval]);
-  await target.click();log('按运行配置处理审批',approvalLabels[config.approval]);return true;
+  // Bind the original DOM controls before the delay/capture. A locator could
+  // otherwise resolve to a replacement permission and approve the wrong one.
+  const card=await panel.elementHandle(),button=await target.elementHandle();
+  try{
+   const signature=await card.evaluate(questionSignature);
+   const unchanged=async()=>await card.evaluate((e,s)=>e.isConnected&&e.textContent.replace(/\s+/g,' ').trim()===s,signature)&&await button.isVisible();
+   await page.waitForTimeout(1000);
+   if(!await canAct()||!await unchanged())return false;
+   await capture('审批前-'+approvalLabels[config.approval]);
+   if(!await canAct()||!await unchanged())return false;
+   if(config.approval==='full'&&await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())fail('开启完全访问前存在其他弹窗，不能确认归属，保留现场');
+   try{await button.click({timeout:2000});}catch(e){await checkReload();if(!await unchanged()||!await canAct())return false;throw e;}
+   if(config.approval==='full'){
+    // This click only opens consent in MobileWork; the permission request is
+    // not answered until the second button is pressed. Keep the UI lease and
+    // original request throughout both steps, including delayed rendering.
+    const consent=page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true})
+     .filter({has:page.getByRole('heading',{name:'确认开启完全访问权限',exact:true})});
+    try{await consent.waitFor({state:'visible',timeout:5000});}
+    catch{await checkReload();fail('开启完全访问后二次确认未唯一显示，未将审批标记为已处理，保留现场');}
+    const confirm=consent.getByRole('button',{name:'同意并开启',exact:true});
+    if(await confirm.count()!==1||await consent.getByRole('button',{name:'取消',exact:true}).count()!==1)fail('完全访问二次确认控件不完整，保留现场');
+    const modal=await consent.elementHandle(),ok=await confirm.elementHandle();
+    try{
+     const signature=await modal.evaluate(questionSignature);
+     const verify=async()=>{
+      await checkReload();
+      if(page.url()!==originUrl||!await canAct())fail('完全访问二次确认所属会话或审批请求已变化，未确认，保留现场');
+      if(!await modal.evaluate((e,s)=>e.isConnected&&e.textContent.replace(/\s+/g,' ').trim()===s,signature)||!await ok.isVisible()||!await ok.isEnabled())fail('完全访问二次确认已变化，未点击替换后的弹窗，保留现场');
+     };
+     await page.waitForTimeout(1000);
+     await verify();
+     await capture('完全访问权限-二次确认前');
+     await verify();
+     await ok.click({timeout:2000});
+     try{await ok.waitForElementState('hidden',{timeout:5000});}
+     catch{fail('已点击同意并开启，但二次确认未关闭，保留现场');}
+     await checkReload();
+     if(page.url()!==originUrl)fail('完全访问确认后页面已离开本任务会话，保留现场');
+     await capture('完全访问权限-二次确认后');
+     log('完全访问权限二次确认完成','已点击同意并开启；继续等待本会话引擎确认');
+    }finally{await modal?.dispose();await ok?.dispose();}
+   }
+   log('按运行配置处理审批',approvalLabels[config.approval]);return true;
+  }finally{await card?.dispose();await button?.dispose();}
  }
+ if(kind==='permission')return false;
  let panel=await questionPanel(page);
  if(!panel)return false;
  await page.waitForTimeout(1000);
  panel=await questionPanel(page);
  if(!panel)return false;
+ const matches=async()=>!expectedQuestions.length||expectedQuestions.some(q=>panelText.includes(q.replace(/\s+/g,' ').trim()));
+ let panelText=(await panel.innerText()).replace(/\s+/g,' ').trim();
+ if(!await canAct()||!await matches())return false;
  await capture('选项弹窗');
+ panel=await questionPanel(page);if(!panel||!await canAct())return false;
+ panelText=(await panel.innerText()).replace(/\s+/g,' ').trim();
+ if(!await matches())return false;
  if(config.question==='custom'){
   let field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
   if(!await field.count()){

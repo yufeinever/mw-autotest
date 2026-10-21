@@ -6,11 +6,98 @@ import path from 'node:path';
 import {TaskScheduler} from './task-scheduler.mjs';
 import {normalizeConfig} from './policy.mjs';
 import {createConsole,projectRoot} from './server.mjs';
+import http from 'node:http';
+import {pathToFileURL} from 'node:url';
 
 const tick=()=>new Promise(r=>setImmediate(r));
 const job=(id,strategy='parallel',port=9223,maxParallel=2)=>({id,status:'QUEUED',config:normalizeConfig({executionStrategy:strategy,maxParallel,cdpPort:port})});
 const base='file:///MobileWork/resources/app-dist/index.html#/workspace/demo/session/';
 const handoff=(s,id)=>{assert.equal(s.acquire(id,'PREPARING').granted,true);s.release(id,{url:base+'ses_'+id,sessionId:'ses_'+id});};
+
+test('停止后重新执行：最后任务退出后新任务不继承旧页面，串行队列也能推进',()=>{
+ for(const queued of [false,true]){
+  const s=new TaskScheduler(),a=job('stopA','serial'),b=job('restartB','serial');
+  s.enqueue(a,{cooperative:true,start:()=>{}});handoff(s,a.id);
+  if(queued)s.enqueue(b,{cooperative:true,start:()=>{}});
+  a.status='STOPPED';s.finish(a.id);
+  if(!queued)s.enqueue(b,{cooperative:true,start:()=>{}});
+  assert.equal(b.status,'RUNNING');
+  assert.deepEqual(s.acquire(b.id,'PREPARING'),{granted:true,expectedUrl:null});
+ }
+});
+
+test('停止后重新执行：仍有并行任务或未确认停止的会话时保留页面保护',()=>{
+ const s=new TaskScheduler(),a=job('A'),b=job('B'),queued=job('C');
+ for(const j of [a,b,queued])s.enqueue(j,{cooperative:true,start:()=>{}});
+ handoff(s,'A');handoff(s,'B');
+ queued.status='STOPPED';s.finish('C');
+ s.finish('A',{unresolved:true});
+ assert.equal(s.acquire('B','INTERACTING').expectedUrl,base+'ses_B');
+ s.release('B',{url:base+'ses_B',sessionId:'ses_B'});s.finish('B');
+ assert.equal(s.renderer(9223).expectedUrl,base+'ses_B');
+ const next=job('next');s.enqueue(next,{cooperative:true,start:()=>{}});assert.equal(next.status,'QUEUED');
+ const other=job('other','serial',9224);s.enqueue(other,{cooperative:true,start:()=>{}});handoff(s,'other');
+ s.finish('A');assert.equal(next.status,'RUNNING');assert.equal(s.acquire('next','PREPARING').expectedUrl,null);
+ assert.equal(s.renderer(9224).expectedUrl,base+'ses_other','只清理本端口，其他客户端状态不变');
+});
+
+test('停止后重新执行：真实服务停止已登记会话的脚本后无需重启即可再次执行',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-stop-reexecute-')),fixture=path.join(dir,'cooperative.mjs');
+ const aborted=[];
+ const engine=http.createServer((req,res)=>{
+  res.setHeader('content-type','application/json');
+  const pathname=new URL(req.url,'http://localhost').pathname;
+  if(pathname==='/session/status'){res.end('{}');return;}
+  if(['/permission','/question'].includes(pathname)){res.end('[]');return;}
+  const match=new URL(req.url,'http://localhost').pathname.match(/^\/session\/(ses_\w+)(\/abort)?$/);
+  if(!match){res.statusCode=404;res.end('{}');return;}
+  if(match[2]){aborted.push(match[1]);res.end('true');return;}
+  res.end(JSON.stringify({id:match[1],directory:dir}));
+ });
+ await new Promise(r=>engine.listen(0,'127.0.0.1',r));
+ const controlUrl=pathToFileURL(path.join(projectRoot,'scripts','mobilework-task-control.mjs')).href;
+ await fs.writeFile(fixture,`// MW_TEST_CONFIG_JSON: isolated scheduler fixture; no MobileWork access.
+import {createTaskControl} from ${JSON.stringify(controlUrl)};
+const control=createTaskControl();
+const sessionId='ses_fixture'+process.pid;
+const page={url:()=>${JSON.stringify(base)}+sessionId};
+await control.begin(page,{openComposer:false});
+await control.checkpointDraft({url:page.url(),text:'fixture prompt',skills:[],selection:[{item:'expert',exit:'退出「模拟专家」'}]});
+await control.registerSession(page,sessionId);
+control.connection={baseUrl:'http://127.0.0.1:${engine.address().port}',opencodeUsername:'fixture',opencodePassword:'fixture'};
+await control.release(page);
+console.log('READY '+sessionId);
+setInterval(()=>{},1000);
+`);
+ const {settleSession}=await import('./task-recovery.mjs');
+ const app=await createConsole({port:0,dataDir:path.join(dir,'console'),cooperativeDetector:p=>p===fixture,recovery:async(job,{connection})=>({ready:await settleSession(null,job,connection),reason:'隔离模拟页面已交接'})});
+ let token;const ids=[];
+ const state=async()=>await(await fetch(app.url+'/api/state')).json();
+ const post=async(route,body)=>{const r=await fetch(app.url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify(body)});assert.ok(r.ok,await r.clone().text());return r.json();};
+ try{
+  token=(await state()).token;
+  const script=await post('/api/scripts',{name:'停止后重新执行隔离验证',path:fixture});
+  for(let n=0;n<2;n++){
+   const run=await post('/api/run',{scriptId:script.id,config:{executionStrategy:'serial'}});ids.push(run.id);
+   let current;
+   for(let i=0;i<100;i++){
+    current=(await state()).jobs.find(j=>j.id===run.id);
+    if(current.phase==='WAITING_MODEL'||!['RUNNING','QUEUED'].includes(current.status))break;
+    await new Promise(r=>setTimeout(r,100));
+   }
+   assert.equal(current.status,'RUNNING');assert.ok(current.sessionId,'后续任务通过页面核对并登记独立会话');
+   assert.deepEqual(current.submittedSelection,[{item:'expert',exit:'退出「模拟专家」'}]);assert.equal(current.ownedDraft,undefined);
+   await post('/api/jobs/'+run.id+'/stop',{});
+   const stopped=(await state()).jobs.find(j=>j.id===run.id);
+   assert.equal(stopped.status,'STOPPED');assert.equal(stopped.schedulingHold,false);
+   assert.ok(aborted.includes(current.sessionId));
+  }
+  assert.equal((await state()).active,0);assert.equal(aborted.length,2);
+ }finally{
+  for(const j of (await state()).jobs.filter(j=>ids.includes(j.id)&&['RUNNING','QUEUED','BLOCKED'].includes(j.status)))await post('/api/jobs/'+j.id+'/stop',{});
+  await new Promise(r=>app.server.close(r));await new Promise(r=>engine.close(r));
+ }
+});
 
 test('串行等待前条结束；并行按顺序提交、等待模型重叠、限制任务数',async()=>{
  for(const strategy of ['serial','parallel']){

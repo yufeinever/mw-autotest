@@ -19,6 +19,7 @@ import {loadJobTrace,jobSessionId} from './trace-store.mjs';
 import {renderTrace} from './trace.mjs';
 import {collectBatches,publicJob} from './batches.mjs';
 import {TaskScheduler} from './task-scheduler.mjs';
+import {recoverJob} from './task-recovery.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot=path.resolve(here,'..');
@@ -32,7 +33,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,cdpConfigFile=buildInfoPath}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,cdpConfigFile=buildInfoPath}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -71,6 +72,36 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   jobWrites.set(job.id,write);return write;
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
+ const recovering=new Set();
+ const updateQueueHolds=()=>{
+  for(const job of jobs.filter(j=>j.status==='QUEUED')){
+   const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
+   if(holders.length)job.queueHold=holders.map(j=>`${j.name}：${j.handoff?.reason||'客户端交接待恢复'}`).join('；');
+   else delete job.queueHold;
+  }
+ };
+ const reconcileHandoff=async(job,{allowAbort=false}={})=>{
+  if(recovering.has(job.id))return false;
+  if(!scheduler.reserveRecovery(job)){job.handoff={ready:false,reason:'等待其他任务交还页面，尚未检查交接'};job.schedulingHold=true;return false;}
+  recovering.add(job.id);
+  try{
+   job.handoff=await recovery(job,{connection:taskRuntimes.get(job.id),allowAbort,jobs});
+   if(job.handoff.ready&&job.handoff.url)scheduler.renderer(job.config.cdpPort).expectedUrl=job.handoff.url;
+   job.schedulingHold=!job.handoff.ready;
+   if(job.schedulingHold)job.error=(job.result?.error||job.error?.split('；页面交接：')[0]||'')+'；页面交接：'+job.handoff.reason;
+   else {delete job.ownedDraft;if(job.error?.includes('；页面交接：'))job.error=job.error.split('；页面交接：')[0];}
+   await writeJob(job);return job.handoff.ready;
+  }catch(e){job.handoff={ready:false,reason:e.message};job.schedulingHold=true;await writeJob(job);return false;}
+  finally{recovering.delete(job.id);scheduler.releaseRecovery(job);}
+ };
+ // Rebuild holds after a restart without resuming or rewriting historical runs.
+ for(const job of jobs.filter(j=>j.isolationVersion===2&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
+ const recoveryTimer=setInterval(async()=>{
+  for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested)){
+   if(await reconcileHandoff(job,{allowAbort:false}))scheduler.finish(job.id);
+  }
+  updateQueueHolds();
+ },5000);recoveryTimer.unref();
  const append=(job,text)=>{job.log=(job.log+text).slice(-120000);};
  const makeCommand=file=>{
   const ext=path.extname(file).toLowerCase();
@@ -105,11 +136,11 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'");
    const url=new URL(req.url,`http://${expectedHost}`);
    let body={};
-   const controlMatch=url.pathname.match(/^\/api\/task-control\/([\w-]+)\/(acquire|release|is-managed|completed)$/);
+   const controlMatch=url.pathname.match(/^\/api\/task-control\/([\w-]+)\/(acquire|release|is-managed|completed|checkpoint)$/);
    if(req.method!=='GET'){
     if(controlMatch){if(!taskTokens.has(controlMatch[1])||req.headers['x-task-token']!==taskTokens.get(controlMatch[1]))return send(403,{error:'任务调度凭证无效'});}
     else if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
-    let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>20000)throw Error('请求过大');}
+    let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>(controlMatch?200000:20000))throw Error('请求过大');}
     body=raw?JSON.parse(raw):{};
    }
    if(req.method==='POST'&&controlMatch){
@@ -118,9 +149,16 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(action==='acquire')return send(200,scheduler.acquire(id,body.phase));
     if(action==='release'){scheduler.release(id,body);if(body.runtime)taskRuntimes.set(id,body.runtime);await writeJob(job);return send(200,{ok:true});}
     if(action==='completed'){job.modelCompleted=true;job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});}
+    if(action==='checkpoint'){
+     if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
+     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!d.url.includes('MobileWork/resources/app-dist/index.html')||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;}
+     if(body.submitting)job.submissionPending=true;
+     if(body.sessionId){if(!/^ses_[A-Za-z0-9]+$/.test(body.sessionId)||!body.sessionUrl?.endsWith('/session/'+body.sessionId)||job.sessionId&&job.sessionId!==body.sessionId)throw Error('会话登记不一致');job.sessionId=body.sessionId;job.sessionUrl=body.sessionUrl;job.submissionPending=false;if(job.ownedDraft)job.submittedSelection=job.ownedDraft.selection;delete job.ownedDraft;}
+     await writeJob(job);return send(200,{ok:true});
+    }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state')return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    if(req.method==='POST'&&url.pathname==='/api/batches'){
     if(readingModels||editingCdp)return send(409,{error:'正在读取模型或重启客户端，请等待完成'});
     const batch=await createBatch(body);return send(201,{id:batch.id});
@@ -190,6 +228,8 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     try{
      const item=state.scripts.find(s=>s.id===body.scriptId);if(!item)throw Error('脚本不存在');
      const info=await scriptInfo(item);if(!info.exists)throw Error(info.error);
+     const runArgs=body.args??[];
+     if(!Array.isArray(runArgs)||runArgs.length>1||runArgs.some(a=>typeof a!=='string'||!/^--(?:check|fill-check|resume=ses_[A-Za-z0-9]+)$/.test(a))||runArgs.length&&!info.cooperative)throw Error('脚本执行参数无效');
      if(!info.integrated)throw Error('此脚本尚未接入参数协议，请先读取 MW_TEST_CONFIG_JSON 再执行');
      const config=normalizeConfig(body.config);
      const savedConfig=safeConfig(config);
@@ -202,7 +242,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      const job={id:randomUUID(),batchId:batch.id,scriptId:item.id,name:item.name,path:item.path,config:savedConfig,status:'QUEUED',phase:'QUEUED',queuedAt:new Date().toISOString(),startedAt:null,log:'',reportPath:null};
      const jobDir=path.join(dataDir,'jobs',job.id);await fs.mkdir(jobDir,{recursive:true});
      await fs.writeFile(path.join(jobDir,'运行配置.json'),JSON.stringify(savedConfig,null,2));
-     const [command,argv]=makeCommand(item.path);
+     const [command,argv]=makeCommand(item.path);argv.push(...runArgs);job.args=runArgs;job.cooperative=info.cooperative;if(info.cooperative)job.isolationVersion=2;
      jobs.push(job);active.add(job.id);await writeJob(job);
      scheduler.enqueue(job,{cooperative:info.cooperative,start:async()=>{
      await writeJob(job);
@@ -226,9 +266,11 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
        try{const result=JSON.parse(await fs.readFile(path.join(path.dirname(job.reportPath),'执行结果.json'),'utf8'));if(['PASS','FAIL','BLOCKED','RESUMED','CHECKED'].includes(result.result))job.status=result.result;job.result=result;}catch{}
       }
       job.sessionId??=jobSessionId(job);
-      job.phase='FINISHED';const unresolved=Boolean(job.sessionId&&!job.modelCompleted);
-      if(unresolved){job.schedulingHold=true;job.error=(job.error||job.result?.error||'会话是否结束尚未确认')+'；后续排队暂停，请核对并停止本次会话后继续';}
-      await writeJob(job).catch(()=>{});active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved});
+      job.phase='VERIFYING';
+      const unresolved=info.cooperative?!await reconcileHandoff(job,{allowAbort:['FAIL','BLOCKED'].includes(job.status)}):Boolean(job.sessionId&&!job.modelCompleted);
+      job.phase='FINISHED';
+      if(unresolved){job.schedulingHold=true;job.error=(job.result?.error||job.error||'会话是否结束尚未确认')+'；后续排队暂停：'+(job.handoff?.reason||'待核对本会话');}
+      await writeJob(job).catch(()=>{});active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved});updateQueueHolds();
      });
      }});
      if(automaticBatch){batch.submission='SUBMITTED';batch.submissionEndedAt=new Date().toISOString();await writeBatch(batch);}
@@ -241,15 +283,17 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const job=jobs.find(j=>j.id===stopMatch[1]);
     if(!job)return send(404,{error:'运行记录不存在'});
     if(job.stopRequested)return send(409,{error:'正在停止，请等待'});
-    if(!['QUEUED','RUNNING','INTERRUPTED','BLOCKED'].includes(job.status))return send(409,{error:'该脚本已经结束'});
+    const failedWithLiveSession=Boolean(job.schedulingHold);
+    if(!['QUEUED','RUNNING','INTERRUPTED','BLOCKED'].includes(job.status)&&!failedWithLiveSession)return send(409,{error:'该脚本已经结束'});
     if(job.status==='QUEUED'){
      job.status='STOPPED';job.phase='FINISHED';job.endedAt=new Date().toISOString();job.error='用户取消排队，未启动脚本、未向客户端发送任务';active.delete(job.id);scheduler.finish(job.id);await writeJob(job);return send(200,{message:job.error});
     }
     active.add(job.id);job.stopRequested=true;
-    try{if(job.status!=='BLOCKED'&&job.pid)await killScript(job);}catch(e){delete job.stopRequested;active.delete(job.id);throw e;}
+    try{if(job.status!=='BLOCKED'&&!failedWithLiveSession&&job.pid)await killScript(job);}catch(e){delete job.stopRequested;active.delete(job.id);throw e;}
     try{
      const disk=await fs.readFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'utf8').catch(()=>job.log);job.log=disk;
-     let message,confirmed=false;try{message=await stopSession(job,{connection:taskRuntimes.get(job.id)});confirmed=true;}catch(e){message='脚本已停止，但会话停止未确认：'+e.message+'；请在客户端核对';}
+     let message,confirmed=false;try{message=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await stopSession(job,{connection:taskRuntimes.get(job.id)});confirmed=true;if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;}catch(e){message='脚本已停止，但会话停止未确认：'+e.message+'；请在客户端核对';}
+     if(confirmed&&job.cooperative){confirmed=await reconcileHandoff(job);if(!confirmed)message+='；页面交接：'+job.handoff?.reason;}
      if(job.status!=='BLOCKED')await releaseOwnedLock(job,projectRoot).catch(e=>{message+='；执行锁处理失败：'+e.message;});
      job.schedulingHold=!confirmed;job.status=confirmed?'STOPPED':'BLOCKED';job.endedAt=new Date().toISOString();job.error='用户强制停止。'+message;
      append(job,'\n'+job.error+'\n');
@@ -316,6 +360,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    send(404,{error:'未找到入口'});
   }catch(e){send(400,{error:e.message});}
  });
+ server.on('close',()=>clearInterval(recoveryTimer));
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
  return {server,url:`http://127.0.0.1:${server.address().port}`,dataDir};
 }

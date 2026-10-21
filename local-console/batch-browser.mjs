@@ -1,5 +1,6 @@
 import {batchLabels,batchResultClass,assertionRate,batchDate,phaseLabels} from './batches.mjs';
 import {approvalLabels} from './policy.mjs';
+import {canStopJob} from './stop-all.mjs';
 const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;};
 const link=(text,href)=>{const a=el('a',text);a.href=href;return a;};
 export async function showBatch(id){
@@ -40,7 +41,7 @@ export async function showBatch(id){
     if(checks.some(c=>c.pass!==true))rate.className='result-fail';tr.append(rate);
     const actions=el('td');if(job){actions.append(link('查看报告','/reports/'+encodeURIComponent(job.id)),link('Trace 记录','/?trace='+encodeURIComponent(job.id)));if(job.sessionId)actions.append(link('下载 Session 日志','/sessions/'+encodeURIComponent(job.sessionId)+'/download'));else actions.append(el('span','未获取会话 ID','hint'));}
     else actions.append(el('span','尚未启动','hint'));
-    if(job&&!job.stopRequested&&(job.status==='QUEUED'||['RUNNING','BLOCKED','INTERRUPTED'].includes(job.status)&&(job.pid||job.sessionId))){
+    if(job&&!job.stopRequested&&canStopJob(job)){
      const stop=el('button',job.status==='QUEUED'?'取消排队':'强制停止','result-fail');
      stop.onclick=async()=>{stop.disabled=true;try{
       const stateResponse=await fetch('/api/state'),state=await stateResponse.json();
@@ -50,6 +51,8 @@ export async function showBatch(id){
      actions.append(stop);
     }
     if(job?.error)actions.append(el('p',job.error,'result-fail'));
+    if(job?.queueHold)actions.append(el('p','等待客户端恢复：'+job.queueHold,'result-fail'));
+    if(job?.handoff)actions.append(el('p','页面交接：'+job.handoff.reason,job.handoff.ready?'':'result-fail'));
     const failed=checks.filter(c=>c.pass!==true);if(failed.length){const details=el('details'),label=el('summary',`失败断言 ${failed.length} 项`,'result-fail');details.dataset.expansionKey='checks-'+job.id;details.append(label);for(const check of failed)details.append(el('p',check.name+(check.actual!==undefined?' · '+(typeof check.actual==='string'?check.actual:JSON.stringify(check.actual)):''),'result-fail'));actions.append(details);}
     tr.append(actions);tbody.append(tr);
    }

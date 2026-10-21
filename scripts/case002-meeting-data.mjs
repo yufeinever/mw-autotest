@@ -21,9 +21,11 @@ export const meetingText=`请把以下会议文字材料整理成结构化会议
 待确认信息：公开纪要没有逐项指定个人负责人，也未明确各项工作的具体截止日期，整理时应保留这一信息缺口。`;
 
 export function meetingAssertions(text){
+ text=text.normalize('NFKC');
  const compact=text.replace(/[\s*`_]/g,'');
  const blocks=text.split(/\n\s*\n/).flatMap(p=>p.includes('|')?p.split('\n'):[p]);
- const ledByGeneralOffice=blocks.some(b=>/综合科/.test(b)&&/统筹调度/.test(b)&&/方案(?:制[定订]|编制)/.test(b)&&/材料(?:收集|汇总)/.test(b));
+ const responsibility=text.match(/综合科[^\n]*(?:\n(?!\s*#{1,6}\s)[^\n]*){0,5}/g)||[];
+ const ledByGeneralOffice=[...blocks,...responsibility].some(b=>/综合科/.test(b)&&/统筹|调度|协调/.test(b)&&/方案/.test(b)&&/材料|资料/.test(b)&&/收集|汇总|搜集/.test(b));
  const deadlineLabel=/截止|时限|期限|完成时间|完成日期|时间要求/;
  const deadlineBlocks=[];let deadlineColumn=-1;
  for(const line of text.split('\n')){
@@ -43,9 +45,9 @@ export function meetingAssertions(text){
  return [
   {name:'保留会议议题、实际会议日期与主持人',pass:/大调研/.test(text)&&/大服务/.test(text)&&/2025(?:年|[-/.])0?2(?:月|[-/.])0?6/.test(compact)&&/李长华/.test(text)},
   {name:'保留出席及列席人员',pass:['李长华','魏中齐','刘振','梁立','张乃智','徐晶','郑瑜','孔伟','张朋'].every(n=>compact.includes(n))},
-  {name:'保留原则同意活动方案的决议',pass:/原则(?:上)?同意/.test(text)&&/徐晶/.test(text)&&/活动方案/.test(text)},
-  {name:'四个工作组及人员构成、包保范围完整',pass:/(?:四|4)(?:个)?工作组/.test(compact)&&/领导班子成员/.test(compact)&&/组长/.test(text)&&/专业骨干/.test(text)&&/县市区/.test(text)},
-  {name:'待办包含调查问卷及走访调研报告',pass:/调查问卷/.test(text)&&/线上调查/.test(text)&&/实地走访/.test(text)&&/企业座谈/.test(text)&&/调研报告/.test(text)},
+  {name:'保留原则通过活动方案的决议',pass:/原则(?:上)?(?:同意|通过|认可)/.test(text)&&/徐晶/.test(text)&&/(?:活动|调研|服务)方案/.test(compact)},
+  {name:'四个工作组及人员构成、包保范围完整',pass:/(?:四|4)(?:个|支)?(?:工作|调研)组/.test(compact)&&/领导班子|局领导/.test(compact)&&/组长|带队/.test(text)&&/专业骨干/.test(text)&&/县[、,，（(]?市[、,，）)]?区/.test(compact)},
+  {name:'待办包含问卷、线上线下调研及报告',pass:/问卷/.test(text)&&/线上|在线|网络调查/.test(text)&&/实地|走访/.test(text)&&/企业座谈|企业.{0,6}座谈/.test(text)&&/调研报告|调查报告/.test(text)},
   {name:'综合科承担统筹调度、方案制定和材料收集',pass:ledByGeneralOffice},
   {name:'明确截止时间未提供且未补造期限',pass:deadlineBlocks.some(b=>unspecified.test(b))&&!deadlineBlocks.some(b=>inventedDeadline.test(b))}
  ];

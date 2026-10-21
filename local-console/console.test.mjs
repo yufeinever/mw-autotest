@@ -17,7 +17,7 @@ test('紧凑脚本表分页、跨页范围和全部执行、固定参数及部�
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const scripts=Array.from({length:18},(_,i)=>({id:'script-'+(i+1),name:'分页脚本'+(i+1),path:'D:/测试脚本/case'+(i+1)+'.mjs',exists:true,integrated:true}));
-  const mock={token:'isolated-token',capabilities:{taskScheduling:1},config:normalizeConfig(),scripts,jobs:[{id:'job-16',scriptId:'script-16',status:'RUNNING',pid:123}],active:1,readingModels:false};
+  const mock={token:'isolated-token',capabilities:{taskScheduling:1,taskIsolation:2},config:normalizeConfig(),scripts,jobs:[{id:'job-16',scriptId:'script-16',status:'RUNNING',pid:123}],active:1,readingModels:false};
   const requests=[],stops=[];let failAt=0,holdNext=false,release,held;
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   // All client, configuration and run traffic is intercepted: no MobileWork tasks.
@@ -138,6 +138,13 @@ test('弹窗策略和模型切换模拟验证',async()=>{
   }
   for(const [approval,label] of Object.entries(approvalLabels)){
    await page.setContent('<section>'+Object.values(approvalLabels).map(x=>`<button onclick="window.approved=this.textContent">${x}</button>`).join('')+'</section>');
+   if(approval==='full')await page.getByRole('button',{name:label,exact:true}).evaluate(button=>{
+    button.onclick=()=>{
+     const dialog=document.createElement('div');dialog.setAttribute('role','dialog');
+     dialog.innerHTML='<h2>确认开启完全访问权限</h2><button>取消</button><button>同意并开启</button>';
+     dialog.lastElementChild.onclick=()=>{window.approved='开启完全访问权限';dialog.remove();};document.body.append(dialog);
+    };
+   });
    for(let repeat=0;repeat<2;repeat++){
     await page.evaluate(()=>{window.approved=null;});const began=Date.now();
     await handleConfiguredDialog(page,normalizeConfig({approval}),capture,log);assert.equal(await page.evaluate(()=>window.approved),label);assert.ok(Date.now()-began>=1000);

@@ -1,6 +1,7 @@
 // Reuse the identity-checked per-job stop API, including on running consoles.
 export function canStopJob(job){
- return ['QUEUED','RUNNING'].includes(job.status)||
+ return Boolean(job.schedulingHold)||['QUEUED','RUNNING'].includes(job.status)||
+  (job.status==='FAIL'&&job.schedulingHold&&!job.modelCompleted&&Boolean(job.sessionId||job.result?.sessionId))||
   (['BLOCKED','INTERRUPTED'].includes(job.status)&&!job.modelCompleted&&
    Boolean(job.sessionId||job.result?.sessionId||job.schedulingHold||job.status==='INTERRUPTED'&&job.pid));
 }

@@ -68,6 +68,12 @@
 !/scripts/fixtures/case002-synthetic-meeting.mjs
 !/scripts/mobilework-composer.mjs
 !/scripts/mobilework-evidence.mjs
+!/scripts/mobilework-full-access.test.mjs
+!/scripts/mobilework-isolation.mjs
+!/scripts/mobilework-isolation.test.mjs
+!/scripts/mobilework-standalone.mjs
+!/local-console/task-recovery.mjs
+!/local-console/task-isolation.test.mjs
 !/scripts/mobilework-question-no-send.test.mjs
 !/scripts/mobilework-run-policy.mjs
 !/scripts/mobilework-run-policy.test.mjs

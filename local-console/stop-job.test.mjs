@@ -6,6 +6,22 @@ import path from 'node:path';
 import {chromium} from 'playwright-core';
 import {createConsole,projectRoot} from './server.mjs';
 import {killScript,releaseOwnedLock} from './stop-job.mjs';
+import {canStopJob} from './stop-all.mjs';
+
+test('FAIL会话及页面交接保护可收尾，已结束且无交接保护不能再停止',async()=>{
+ const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-failed-live-'));
+ const job={id:'failed-live',status:'FAIL',schedulingHold:true,sessionId:'ses_isolated',startedAt:new Date().toISOString(),config:{cdpPort:1},log:''};
+ assert.equal(canStopJob(job),true);assert.equal(canStopJob({...job,modelCompleted:true}),true);assert.equal(canStopJob({...job,modelCompleted:true,schedulingHold:false}),false);assert.equal(canStopJob({...job,schedulingHold:false}),false);
+ await fs.mkdir(path.join(dataDir,'jobs',job.id),{recursive:true});await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
+ const {server,url}=await createConsole({port:0,dataDir});
+ try{
+  const s=await fetch(url+'/api/state').then(r=>r.json());
+  const r=await fetch(url+'/api/jobs/'+job.id+'/stop',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:'{}'});
+  assert.equal(r.status,200,'不能以脚本已结束为由拒绝清理未完成会话');
+  const current=await fetch(url+'/api/jobs/'+job.id).then(r=>r.json());
+  assert.equal(current.status,'BLOCKED');assert.equal(current.schedulingHold,true,'未连接隔离客户端，不能伪造停止成功');
+ }finally{await new Promise(r=>server.close(r));}
+});
 test('只释放本次执行锁，并保留截图供报告读取',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'mw-stop-lock-')),dir=path.join(root,'runs','本次执行');
  await fs.mkdir(dir,{recursive:true});await fs.writeFile(path.join(dir,'1018-1600-01-现场.png'),'evidence');

@@ -7,7 +7,9 @@ import {readSessionLog} from '../local-console/session-log.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
 import {selectModel,handleConfiguredDialog} from './mobilework-run-policy.mjs';
-import {appendComposerText,containsComposerText,clearComposerText} from './mobilework-composer.mjs';
+import {appendComposerText,containsComposerText,readComposerState} from './mobilework-composer.mjs';
+import {clearOwnedDraft,selectionState,resetComposerPermission} from './mobilework-isolation.mjs';
+import {dispatchStandalone} from './mobilework-standalone.mjs';
 import {getClientCase,caseSheet,caseWorkbook} from './client-case-catalog.mjs';
 import {clientCaseInput} from './client-case-inputs.mjs';
 import {textChecks,fileChecks,expectedArtifacts,readArtifact} from './client-case-checks.mjs';
@@ -19,7 +21,7 @@ const projectRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'
 const button=(page,name)=>page.getByRole('button',{name,exact:true}).filter({visible:true});
 const scenarioButton=(page,name)=>page.getByRole('button',{name:new RegExp('^\\s*'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:\\s*未生效)?\\s*$')}).filter({visible:true});
 const editorOf=page=>page.locator('[contenteditable="true"]').filter({visible:true});
-const selectionState=page=>page.locator('[data-composer-toolbar-item] [role="button"][aria-label^="退出"]').evaluateAll(es=>es.map(e=>({item:e.closest('[data-composer-toolbar-item]').getAttribute('data-composer-toolbar-item'),exit:e.getAttribute('aria-label')})));
+export {clearOwnedDraft} from './mobilework-isolation.mjs';
 export const blocked=message=>Object.assign(Error(message),{blocked:true});
 export function finalAssistantText(sessionLog){
  const assistants=sessionLog.messages.filter(m=>m.info?.role==='assistant'&&!(m.parts||[]).some(p=>p.type==='tool'));
@@ -85,6 +87,7 @@ export async function fillScenario(page,definition,config,{capture=async()=>{},l
  await button(page,'新建任务').click();
  await button(page,definition.category).first().waitFor();
  await selectTestWorkspace(page);
+ await resetComposerPermission(page);
  const url=page.url();
  if(config.model){await selectModel(page,config.model);log('模型已回读核对',config.model);}
  await button(page,definition.category).first().click();
@@ -95,38 +98,20 @@ export async function fillScenario(page,definition,config,{capture=async()=>{},l
  // 当前客户端的技能配置弹窗可在卡片点击后异步出现。
  await page.waitForTimeout(500);
  const candidate=editorOf(page);
- if(await candidate.count()===1&&containsComposerText(await candidate.innerText(),definition.prompt))onDraft({editor:candidate,url,text:await candidate.innerText(),skills:await candidate.locator('[data-skill-remove]').evaluateAll(es=>es.map(e=>e.getAttribute('data-skill-remove'))),previousSelection,selection:await selectionState(page)});
+ if(await candidate.count()===1&&containsComposerText(await candidate.innerText(),definition.prompt))await onDraft({editor:candidate,url,...await readComposerState(candidate),previousSelection,selection:await selectionState(page)});
  await guardDialogs(page,{cancelReload:true});
  if(page.url()!==url)throw blocked('场景选择期间页面切换，停止自动操作');
  const editor=editorOf(page);
  if(await editor.count()!==1)throw blocked('未识别到唯一的任务输入框');
  await page.waitForFunction(expected=>[...document.querySelectorAll('[contenteditable="true"]')].some(e=>e.innerText.includes(expected)),definition.prompt,{timeout:10000});
  await guardDialogs(page,{cancelReload:true});
- const text=await editor.innerText(),skills=await editor.locator('[data-skill-remove]').evaluateAll(es=>es.map(e=>e.getAttribute('data-skill-remove')));
+ const {text,skills}=await readComposerState(editor);
  assert('场景真实自动填充原提示词',containsComposerText(text,definition.prompt),text);
  if(definition.skills.length)assert('场景自动选择指定技能',definition.skills.every(s=>skills.includes(s)),{expected:definition.skills,actual:skills});
  else log('此用例未配置预期 Skill','保留实际专家或团队选择，不计为 Skill 调用通过');
  try{assert('自动填充后运行按钮可用',await button(page,'运行任务').isEnabled());}catch(e){await guardDialogs(page,{cancelReload:true});throw e;}
  await capture('场景自动填充');log('场景自动填充已核对',definition.category+' → '+definition.button);
  return {editor,url,text,skills,previousSelection,selection:await selectionState(page)};
-}
-export async function clearOwnedDraft(page,owned){
- if(!owned||page.url()!==owned.url)return false;
- const editor=editorOf(page);
- if(await editor.count()!==1||(await editor.innerText())!==owned.text)return false;
- const skills=await editor.locator('[data-skill-remove]').evaluateAll(es=>es.map(e=>e.getAttribute('data-skill-remove')));
- if(JSON.stringify(skills)!==JSON.stringify(owned.skills))return false;
- if(owned.selection&&JSON.stringify(await selectionState(page))!==JSON.stringify(owned.selection))return false;
- for(const selected of owned.selection||[]){
-  if((owned.previousSelection||[]).some(s=>s.item===selected.item&&s.exit===selected.exit))continue;
-  // 退出控件仅在悬停时可见；按实际aria-label定位，不点击坐标。
-  const control=page.locator('[data-composer-toolbar-item="'+selected.item+'"]');
-  await control.hover();await control.getByRole('button',{name:selected.exit,exact:true}).click();
-  await page.waitForTimeout(300);
-  await guardDialogs(page,{cancelReload:true}).catch(e=>{if(!e.blocked)throw e;});
- }
- await clearComposerText(editor);
- return !(await editor.innerText()).trim()&&await editor.locator('[data-skill-remove]').count()===0;
 }
 async function sessionStatus(sessionId){
  const info=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
@@ -169,6 +154,7 @@ export async function runScenarioCase(number,inputConfig){
  const resumeId=args.find(a=>a.startsWith('--resume='))?.slice(9),checkOnly=args.includes('--check'),fillOnly=args.includes('--fill-check');
  if(invalid||[Boolean(resumeId),checkOnly,fillOnly].filter(Boolean).length>1)throw Error('参数无效或互斥，请使用 --help');
  const config=normalizeConfig(inputConfig||{cdpPort:process.env.MW_CDP_PORT||9223}),safeConfig=structuredClone(config);delete safeConfig.provider.key;
+ if(await dispatchStandalone({number,args,config}))return;
  const started=new Date(),dir=await createRunDirectory(path.join(projectRoot,'runs'),definition.label+(checkOnly?'预检':fillOnly?'填充检查':''),started);
  const checks=[],events=[],outputs=[];let browser,page,sessionId=resumeId,result='BLOCKED',errorText='',owned,submitted=false,environment;
  const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+beijingPrefix()+'] '+step+' '+detail);};
@@ -209,11 +195,11 @@ export async function runScenarioCase(number,inputConfig){
     if(expectedArtifacts[number])throw blocked('文件产物用例请通过默认入口新建执行；续跑不能重用其他运行目录的产物');
     log('续跑既有会话',sessionId);
    }else{
-    owned=await fillScenario(page,definition,config,{capture,log,assert,onDraft:value=>{owned=value;}});
+    owned=await fillScenario(page,definition,config,{capture,log,assert,onDraft:async value=>{owned=value;await taskControl?.checkpointDraft(owned);}});
     await fs.mkdir(outputDir);
     const input=clientCaseInput(number,{outputDir,asOfDate:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(started)});
     await fs.writeFile(path.join(dir,'内嵌测试材料.txt'),input);
-    const after=await appendComposerText(owned.editor,input);owned={...owned,...after};
+    const after=await appendComposerText(owned.editor,input,{onDraft:async value=>{owned={...owned,...value};await taskControl?.checkpointDraft(owned);}});owned={...owned,...after};
     assert('完整材料追加且保留原提示词和技能',containsComposerText(after.text,input)&&containsComposerText(after.text,definition.prompt)&&definition.skills.every(s=>after.skills.includes(s)));
     await capture('完整测试材料');
     if(fillOnly){
@@ -221,9 +207,11 @@ export async function runScenarioCase(number,inputConfig){
      owned=null;result='CHECKED';log('自动填充与材料检查通过','已清理本次草稿；没有发送任务');
     }else{
      await guardDialogs(page);
-     if(page.url()!==owned.url||(await owned.editor.innerText())!==owned.text)throw blocked('发送前页面或草稿已变化，停止发送');
+     if(page.url()!==owned.url||(await readComposerState(owned.editor)).text!==owned.text)throw blocked('发送前页面或草稿已变化，停止发送');
+     await taskControl?.markSubmitting();
      await button(page,'运行任务').click();submitted=true;
      sessionId=await waitCreatedSession(page,owned.url,{timeoutMs:Math.min(timeoutMs,180000),log});
+     await taskControl?.registerSession(page,sessionId);
      assert('创建本次独立会话',Boolean(sessionId),sessionId);log('任务已发送',sessionId);await capture('发送成功');
      const receipt=await waitSentInput(page,sessionId,input),sent=receipt.data;
      await fs.writeFile(path.join(dir,'发送核对-session-log.json'),JSON.stringify(sent,null,2));
@@ -243,7 +231,7 @@ export async function runScenarioCase(number,inputConfig){
     await fs.writeFile(path.join(dir,sessionId+'-session-log.json'),JSON.stringify(data,null,2));
     const output=finalAssistantText(data);await fs.writeFile(path.join(dir,'助手最终回复.txt'),output);
     checks.push(...textChecks(number,output));
-    if(number===12)checks.push({name:'最终回复包含海报构图、配色与排版规范',pass:/构图|主视觉/.test(output)&&/配色|色彩/.test(output)&&/排版|字号/.test(output)});
+    if(number===12)checks.push({name:'回复说明海报视觉设计',pass:/构图|主视觉|布局|视觉/.test(output)&&/配色|色彩|颜色|色调|#[0-9a-f]{3,8}/i.test(output)&&/排版|字号|字体|层级|标题/.test(output)});
     try{checks.push(...await fileChecks(number,outputDir));}catch(e){checks.push({name:'真实产物内容可解析',pass:false,actual:e.message});}
     for(const name of expectedArtifacts[number]||[]){try{await readArtifact(outputDir,name,{binary:true,maxBytes:80000000});outputs.push({name,path:'产物/'+name});}catch{}}
     if([11,12,14].includes(number)&&outputs.length===(expectedArtifacts[number]||[]).length)checks.push(...await previewChecks(number,outputDir,(preview,step)=>recorder.capture(preview,step)));

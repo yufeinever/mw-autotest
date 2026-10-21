@@ -20,6 +20,13 @@ export class TaskScheduler {
   }}finally{this.pumping=false;}
  }
  entry(id){const entry=this.entries.find(e=>e.job.id===id);if(!entry?.running)throw Error('任务没有在执行，不能操作客户端');return entry;}
+ reserveRecovery(job){
+  this.locations.set(job.id,job.config.cdpPort);
+  const r=this.renderer(job.config.cdpPort);
+  if(r.owner&&r.owner!==job.id)return false;
+  r.owner=job.id;return true;
+ }
+ releaseRecovery(job){const r=this.renderer(job.config.cdpPort);if(r.owner===job.id)r.owner=null;}
  acquire(id,phase){
   const {job}=this.entry(id),r=this.renderer(job.config.cdpPort);
   if(!['PREPARING','INTERACTING','EVIDENCE'].includes(phase))throw Error('页面操作阶段无效');
@@ -45,6 +52,14 @@ export class TaskScheduler {
   const entry=this.entries.find(e=>e.job.id===id),port=this.locations.get(id);if(port===undefined)return;
   const r=this.renderer(port);if(unresolved)r.unresolved.add(id);else r.unresolved.delete(id);
   if(r.owner===id)r.owner=null;r.waiting=r.waiting.filter(x=>x!==id);
-  this.entries=this.entries.filter(e=>e!==entry);this.pump();
+  this.entries=this.entries.filter(e=>e!==entry);
+  // A URL is an ownership check only while this renderer still has managed
+  // work. After the final confirmed completion/stop, a new run must inspect
+  // the current page rather than inherit the previous run's navigation.
+  // Do this before pump(), which may immediately start the next queued job.
+  if(!r.unresolved.size&&!this.entries.some(e=>e.running&&e.job.config.cdpPort===port)){
+   r.expectedUrl=null;
+  }
+  this.pump();
  }
 }

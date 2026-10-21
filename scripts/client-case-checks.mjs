@@ -5,56 +5,123 @@ import {parseDocument} from 'yaml';
 import {unzipSync,strFromU8} from 'fflate';
 
 const check=(name,pass,actual)=>({name,pass:Boolean(pass),...(actual===undefined?{}:{actual})});
-const compact=s=>s.replace(/[\s*`_]/g,'');
+const compact=s=>s.normalize('NFKC').replace(/[\s*`_]/g,'');
 const date=(s,y,m,d)=>new RegExp(y+'(?:年|[-/.])0?'+m+'(?:月|[-/.])0?'+d+'(?:日|\\b)').test(compact(s));
+const chineseNumber=n=>n<10?'零一二三四五六七八九'[n]:(n<20?'十':'二十')+(n%10?'零一二三四五六七八九'[n%10]:'');
+const time=(s,h,m)=>{
+ const words=hour=>'(?:'+hour+'|'+chineseNumber(hour)+(hour===2?'|两':'')+')(?:时|点)'+(m===0?'(?:整)?':m===30?'(?:半|30分?|三十分?)':'(?:'+m+'|'+chineseNumber(m)+')分?');
+ return new RegExp('(?<!\\d)(?:'+h+'[:：]'+String(m).padStart(2,'0')+'|'+words(h)+(h>12?'|(?:下午|午后)(?:'+(h-12)+'[:：]'+String(m).padStart(2,'0')+'|'+words(h-12)+')':'')+')').test(compact(s));
+};
+const evidence=(text,patterns)=>patterns.map(p=>text.split('\n').find(line=>p.test(line))?.trim()).filter(Boolean);
+// Compare concepts and supplied facts, not headings, word counts or JSON syntax.
+function conceptsCheck(name,text,patterns){const actual=evidence(text,patterns);return check(name,patterns.every(p=>p.test(text)),{evidence:actual});}
+function sections(text,groups,{labelColumns=false}={}){
+ const sourceLines=text.split('\n'),cells=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+ const rows=sourceLines.filter(l=>/^\s*\|.*\|\s*$/.test(l)&&! /^[\s|:-]+$/.test(l)).map(cells);
+ // A pipe in a heading (including NFKC-normalized “｜”) is not a table.
+ // Recognize Markdown tables by their separator, then gather their rows.
+ for(let i=1;i<sourceLines.length;i++)if(/^\s*\|?[\s:|-]+\|?[\s]*$/.test(sourceLines[i])&&sourceLines[i].includes('|')&&sourceLines[i].includes('---')&&sourceLines[i-1].includes('|')&&!/^\s*\|/.test(sourceLines[i-1])){
+  rows.push(cells(sourceLines[i-1]));while(i+1<sourceLines.length&&sourceLines[i+1].includes('|')&&!/^\s*#/.test(sourceLines[i+1]))rows.push(cells(sourceLines[++i]));
+ }
+ const header=rows.findIndex(row=>groups.every(g=>row.some(c=>g.test(c))));
+ if(header>=0)return groups.map(g=>{const col=rows[header].findIndex(c=>g.test(c));return rows.slice(header+1).filter(row=>row[col]).map(row=>row[0]+': '+row[col]).join('\n');});
+ const groupRows=groups.map(g=>rows.filter(row=>row.some(c=>g.test(c))));
+ if(groupRows.every(r=>r.length))return groupRows.map(r=>r.map(c=>labelColumns?c.map((value,i)=>value?(rows[0]?.[i]||'')+': '+value:'').join(' | '):c.join(' | ')).join('\n'));
+ // A concluding recommendation mentioning every audience/product is not
+ // an individual section heading. Fall back to each first concrete mention.
+ const lines=text.split('\n'),starts=groups.map(g=>{const heading=lines.findIndex(l=>/^\s*(?:#{1,6}\s|\*\*|(?:\d+|[一二三四五])\s*[.、)）])/.test(l)&&g.test(l)&&groups.filter(other=>other.test(l)).length===1);return heading>=0?heading:lines.findIndex(l=>g.test(l));});
+ const summaries=lines.flatMap((l,i)=>/^\s*(?:#{1,6}\s|\*\*)/.test(l)&&groups.filter(g=>g.test(l)).length>1?[i]:[]);
+ return starts.map((start,i)=>start<0?'':lines.slice(start,Math.min(...starts.filter((n,j)=>j!==i&&n>start),...summaries.filter(n=>n>start),lines.length)).join('\n'));
+}
 export function reportJson(text,key){
  for(const match of [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/gi)].reverse()){
   try{const value=JSON.parse(match[1]);if(value&&Object.hasOwn(value,key))return value;}catch{}
  }
  return null;
 }
-export function textChecks(number,text){
- const s=compact(text);
+function conceptSections(text,groups){
+ const lines=text.split('\n'),heads=lines.flatMap((line,index)=>{const m=line.match(/^\s*(#{1,6})\s+(?:方案|概念)\s*[一二三四五六七八九十\d]+/);return m?[{index,level:m[1].length}]:[];});
+ if(heads.length<3)return sections(text,groups);
+ const blocks=heads.map(({index,level})=>{let end=index+1;while(end<lines.length){const h=lines[end].match(/^\s*(#{1,6})\s/);if(h&&h[1].length<=level)break;end++;}return lines.slice(index,end).join('\n');});
+ // Named concepts can introduce the audience in their positioning paragraph.
+ // Use the first audience mentioned inside each concept, never the preamble
+ // or a comparison table that happens to repeat all audiences.
+ return groups.map((g,i)=>blocks.find(block=>{const positions=groups.map(x=>block.search(x));const first=Math.min(...positions.filter(n=>n>=0));return positions[i]>=0&&positions[i]===first;})||'');
+}
+export function textChecks(number,text,{scheduleFixture=false}={}){
+ text=text.normalize('NFKC');
+ if(number===1){
+  const content=text.split(/\n|[。！？]/).filter(s=>!/(?:请|需要|还需).{0,16}(?:提供|补充|发给|告诉)|(?:我会|我将|收到.{0,12}后).{0,40}(?:安排|排序|规划)/.test(s)).join('\n');
+  return [
+   conceptsCheck('回复提供实际日程安排（索要材料不算完成）',content,[/周[一二三四五六日天]|星期[一二三四五六日天]|\d{1,2}月\d{1,2}日|每天|每日/,/安排|计划|日程|排期/,/完成|处理|推进|交付|整理|提交/]),
+   conceptsCheck('回复说明任务优先顺序或取舍依据',content,[/优先|先.{0,12}再|P[0-3]|紧急|重要性/,/截止|交付|重要|紧急|核心|依赖|优先级|P[0-3]/]),
+   ...(scheduleFixture?[conceptsCheck('安排涵盖提供的三项任务',content,[/项目方案/,/客户反馈/,/周报/])]:[])
+  ];
+ }
  if(number===3)return [
-  check('邮件包含主题、收件人与署名',/主题/.test(text)&&/星桥项目/.test(text)&&/项目组/.test(text)&&/许晴/.test(text)),
-  check('说明评审由14时调整到15时30分',/14[:：]00|14时|14点/.test(text)&&/15[:：]30|15时30|15点30/.test(text)&&/调整|改为|变更|更改/.test(text)&&date(text,2026,11,3)),
-  check('保留会议地点及反馈截止时间',/三楼A会议室|3楼A会议室/.test(text)&&date(text,2026,11,2)&&/18[:：]00|18时|18点/.test(text)&&/反馈|回复/.test(text))
+  conceptsCheck('邮件回应改期主题并保留收件人与署名',text,[/星桥项目/,/项目组/,/许晴/,/调整|改期|变更|更改|改为/]),
+  check('保留材料中原会议及调整后的时间',time(text,14,0)&&time(text,15,30)&&date(text,2026,11,3)),
+  check('保留会议地点及反馈截止时间',/(?:三|3)楼\s*A\s*会议室|A\s*会议室.{0,8}(?:三|3)楼/.test(text)&&date(text,2026,11,2)&&time(text,18,0)&&/反馈|回复|确认/.test(text))
  ];
  if(number===4)return [
-  check('公文包含通知标题、受文对象和落款',/关于开展办公设备盘点的通知/.test(text)&&/各部门/.test(text)&&/星桥科技综合管理部/.test(text)&&date(text,2026,11,2)),
-  check('盘点范围和登记字段完整',['电脑','显示器','打印机','资产编号','使用人','设备状态'].every(w=>text.includes(w))),
-  check('提交时间、联系人及异常说明完整',date(text,2026,11,6)&&/17[:：]00|17时|17点/.test(text)&&/赵宁/.test(text)&&/803/.test(text)&&/丢失/.test(text)&&/损坏/.test(text))
+  conceptsCheck('通知回应设备盘点且保留受文对象和发文单位',text,[/办公设备.*盘点|盘点.*办公设备/,/通知/,/各部门/,/星桥科技\s*综合管理部/]),
+  conceptsCheck('盘点范围和登记信息完整',text,[/电脑|计算机/,/显示器/,/打印机/,/资产编号|资产编码/,/使用人|使用者/,/设备状态|使用状态|设备状况/]),
+  check('保留发文日期、提交期限、联系人和异常说明',date(text,2026,11,2)&&date(text,2026,11,6)&&time(text,17,0)&&/赵宁/.test(text)&&/803/.test(text)&&/丢失|遗失/.test(text)&&/损坏|损毁/.test(text))
  ];
  if(number===13){
-  const data=reportJson(text,'concepts'),items=data?.concepts||[];
+  const data=reportJson(text,'concepts'),items=Array.isArray(data?.concepts)?data.concepts:[];
+  const groups=[/上班族|职场|通勤/,/儿童|亲子|家庭/,/老年|长者|银发/];
+  const parts=items.length?groups.map(g=>JSON.stringify(items.find(x=>g.test(x.userGroup))||'')):conceptSections(text,groups);
+  const substantive=parts.map(p=>compact(p.split('\n').filter(l=>!/^\s*(?:#{1,6}\s|\*\*[^*]+\*\*\s*$)/.test(l)&&!/^\s*(?:[-+]\s*)?(?:目标人群|适用人群|用户群体|人群|受众)\s*[:：]/.test(l.replace(/[*`]/g,''))).join('\n')));
   return [
-   check('输出三个不同名称和人群的完整概念',Array.isArray(items)&&items.length===3&&new Set(items.map(x=>x.name)).size===3&&new Set(items.map(x=>x.userGroup)).size===3&&['上班族','儿童家庭','老年居民'].every(g=>items.some(x=>x.userGroup===g))),
-   check('每个概念包含具体场景、功能和差异化',items.length===3&&items.every(x=>typeof x.scene==='string'&&x.scene.length>=10&&Array.isArray(x.coreFeatures)&&x.coreFeatures.length>=2&&x.coreFeatures.every(f=>typeof f==='string'&&f.length>=4)&&typeof x.differentiation==='string'&&x.differentiation.length>=10)),
-   check('三个方案的场景、功能与亮点不重复',items.length===3&&['scene','differentiation'].every(k=>new Set(items.map(x=>x[k])).size===3)&&new Set(items.map(x=>JSON.stringify(x.coreFeatures))).size===3)
+   check('针对三类人群分别形成方案（接受正文、表格或JSON）',parts.every(p=>p&&p!=='""')&&new Set(parts).size===3),
+   check('方案包含使用场景与可执行功能',items.length?items.every(x=>x.scene?.trim()&&Array.isArray(x.coreFeatures)&&x.coreFeatures.length>=2&&x.coreFeatures.every(f=>f.trim())&&x.differentiation?.trim()):parts.every(p=>/借|换|互助|共享/.test(p)&&/预约|匹配|登记|发布|归还|提醒|代取|上门|邻里|功能/.test(p))),
+   check('方案场景与功能具有区别',items.length?['scene','differentiation'].every(k=>new Set(items.map(x=>x[k])).size===items.length)&&new Set(items.map(x=>JSON.stringify(x.coreFeatures))).size===items.length:substantive.every(Boolean)&&new Set(substantive).size===3)
   ];
  }
  if(number===15){
-  const data=reportJson(text,'products'),items=data?.products||[];
+  const data=reportJson(text,'products'),items=Array.isArray(data?.products)?data.products:[];
   const primary=(name,value)=>{try{const u=new URL(value),h=u.hostname.toLowerCase();if(u.protocol!=='https:')return false;
    const hosts=/codex/i.test(name)?['openai.com']: /claude/i.test(name)?['anthropic.com','claude.com','claude.ai']:['workbuddy.cn','tencent.com','tencent.cn','tencentcloud.com'];
    return hosts.some(d=>h===d||h.endsWith('.'+d))||(/codex/i.test(name)&&h==='github.com'&&u.pathname.startsWith('/openai/'));
   }catch{return false;}};
+  const names=['Codex','Claude Code','WorkBuddy'],urls=[...text.matchAll(/https:\/\/[^\s<>"\])]+/g)].map(m=>m[0]);
+  const productParts=sections(text,names.map(n=>new RegExp(n.replace(' ','\\s*'),'i')),{labelColumns:true});
+  const dimensions=[/功能|能力/,/易用|门槛|上手|安装|使用体验/,/定价|价格|费用|成本|未核实/,/案例|场景|实践/,/优势|优点|擅长/,/局限|不足|缺点|限制|风险/];
   return [
-   check('研究比较三种指定产品',Array.isArray(items)&&items.length===3&&['Codex','Claude Code','WorkBuddy'].every(n=>items.some(x=>x.name?.toLowerCase()===n.toLowerCase()))),
-   check('每种产品覆盖功能、易用性、价格、案例与优劣势',items.length===3&&items.every(x=>['features','usability','pricing','useCase','pros','cons'].every(k=>typeof x[k]==='string'&&x[k].trim().length>=4))),
-   check('每种产品包含对应的官方HTTPS来源',items.length===3&&items.every(x=>Array.isArray(x.sources)&&x.sources.some(u=>primary(x.name,u)))),
-   check('结论回应团队选型需求',typeof data?.recommendation==='string'&&data.recommendation.length>=30&&/Windows|权限|审查|成本|预算|团队/.test(data.recommendation))
+   check('研究比较三种指定产品',names.every(n=>new RegExp(n.replace(' ','\\s*'),'i').test(text))),
+   check('每种产品覆盖功能、使用门槛、成本、场景与优劣势',items.length?names.every(n=>items.some(x=>new RegExp(n.replace(' ','\\s*'),'i').test(x.name||'')&&['features','usability','pricing','useCase','pros','cons'].every(k=>typeof x[k]==='string'&&x[k].trim()))):productParts.every(p=>dimensions.every(d=>d.test(p)))),
+   check('提供对应产品的官方来源依据',names.every(n=>urls.some(u=>primary(n,u)))),
+   conceptsCheck('结论回应团队选型需求',data?.recommendation||text,[/建议|推荐|选择|选型/,/Windows|权限|审查|成本|预算|团队/])
   ];
  }
  if(number===16){
   const data=reportJson(text,'recommended'),good=data?.recommended||[],bad=data?.excluded||[];
+  const lines=text.split('\n'),aliases={A:/云杉\s*Air|(?:候选|产品)?\bA\b/i,B:/远行\s*Pro|(?:候选|产品)?\bB\b/i,C:/旗舰\s*Max|(?:候选|产品)?\bC\b/i,D:/力量\s*Book|(?:候选|产品)?\bD\b/i,E:/轻享\s*Go|(?:候选|产品)?\bE\b/i};
+  const exclusion=/不推荐|不满足|不符合|不达标|未达|不足|超出|超标|超限|剔除|排除|淘汰|超预算|超重/;
+  // Candidate headings can be followed by reasons on later lines. Keep those
+  // reasons attached to their candidate instead of demanding one table row.
+  const parts=sections(text,Object.values(aliases));
+  const mention=id=>{
+   // A response may put recommended products in a table and exclusions in
+   // a list. Match the product-name cell, not comparisons in another row.
+   const rows=lines.filter(l=>/^\s*\|.*\|\s*$/.test(l)).map(l=>l.trim().replace(/^\||\|$/g,'').split('|'));
+   const row=rows.find(r=>aliases[id].test(r[0]));if(row)return row.join(' | ');
+   const body=parts[Object.keys(aliases).indexOf(id)]||lines.filter(l=>aliases[id].test(l)).join('\n');
+   const start=lines.findIndex(l=>l===body.split('\n')[0]);
+   const heading=start>=0?lines.slice(0,start).findLast(l=>/^\s*#{1,6}\s/.test(l)||/^\s*\*\*[^*]+\*\*\s*$/.test(l)):'';
+   return (heading&&!Object.values(aliases).some(a=>a.test(heading))?heading+'\n':'')+body;
+  };
   return [
-   check('仅推荐满足硬条件的A、B两款',Array.isArray(good)&&good.length===2&&good.map(x=>x.id).sort().join(',')==='A,B'&&good.every(x=>typeof x.reason==='string'&&x.reason.length>=5)),
-   check('剔除C的预算、D的重量、E的容量问题',Array.isArray(bad)&&bad.length===3&&bad.some(x=>x.id==='C'&&/预算|价格|8000|8999/.test(x.reason))&&bad.some(x=>x.id==='D'&&/重量|1[.．]65|1[.．]4|超重/.test(x.reason))&&bad.some(x=>x.id==='E'&&/内存|SSD|存储|容量|8GB|256GB/.test(x.reason))),
-   check('明确虚构商品并未生成购买链接',/虚构/.test(data?.note||'')&&!/https?:\/\//i.test(text))
+   check('推荐符合条件的A、B两款并说明理由',data?Array.isArray(good)&&good.length===2&&good.map(x=>x.id).sort().join(',')==='A,B'&&good.every(x=>x.reason?.trim()):['A','B'].every(id=>/推荐|满足|符合|达标|合格|首选|备选/.test(mention(id))&&!exclusion.test(mention(id)))),
+   check('不推荐超预算、超重或容量不足的候选',data?Array.isArray(bad)&&['C','D','E'].every(id=>bad.some(x=>x.id===id&&x.reason?.trim())):['C','D','E'].every(id=>exclusion.test(mention(id))&&!/(?<!不)推荐|首选|备选|符合条件/.test(mention(id))),{excluded:data?bad:['C','D','E'].map(id=>({id,evidence:mention(id)}))}),
+   check('剔除原因对应候选的真实短板',[[/预算|价格|8000|8999/,'C'],[/重量|1[.．]65|1[.．]4|超重/,'D'],[/内存|SSD|存储|容量|8GB|256GB/i,'E']].every(([pattern,id])=>pattern.test(data?bad.find(x=>x.id===id)?.reason||'':mention(id)))),
+   check('明确测试快照性质且未生成购买链接',/虚构|模拟|测试商品|测试快照/.test(data?.note||text)&&!/https?:\/\//i.test(text))
   ];
  }
- return [check('最终回复说明本场景交付结果',s.length>=30)];
+ // File scenarios are judged by their actual deliverables below; response
+ // length is not evidence of either success or failure.
+ return [];
 }
 
 export async function readArtifact(root,name,{binary=false,maxBytes=4000000}={}){
@@ -120,9 +187,15 @@ export function workflowChecks(source){
  ];
 }
 export function diagramChecks(source){
- const edges=[...source.matchAll(/\b([A-Za-z_]\w*)\s*(?:\[[^\]]*\])?\s*-->\s*([A-Za-z_]\w*)/g)].map(m=>m[1]+'>'+m[2]);
+ const labels=new Map(),roles={browser:/浏览器|browser/i,gateway:/API\s*网关|API\s*gateway/i,orders:/订单服务|order\s*service/i,db:/PostgreSQL/i,cache:/Redis/i,queue:/消息队列|message\s*queue/i,notify:/通知服务|notification\s*service/i};
+ // Remove label syntax after mapping semantic roles, then parse chains. Node
+ // IDs, rounded/database shapes, edge labels and LR/TD layouts are equivalent.
+ let graph=source.replace(/\b([A-Za-z_]\w*)\s*(\[\([^\n]*?\)\]|\[\[[^\n]*?\]\]|\["[^"\n]*"\]|\[[^\]\n]*\]|\(\([^\n]*?\)\)|\([^\)\n]*\)|\{[^}\n]*\})/g,(_,id,label)=>{for(const [role,re] of Object.entries(roles))if(re.test(label))labels.set(id,role);return id;});
+ graph=graph.replace(/\|[^|\n]*\|/g,'').replace(/--\s+[^\n>]+?\s+-->/g,'-->');
+ const edges=[];
+ for(const match of graph.matchAll(/\b([A-Za-z_]\w*)\s*(?:-->|==>|-\.->)\s*(?=([A-Za-z_]\w*))/g))edges.push((labels.get(match[1])||match[1])+'>'+(labels.get(match[2])||match[2]));
  return [
-  check('Mermaid包含七个规定节点及标签',/^\s*flowchart\s+LR\b/m.test(source)&&Object.entries({browser:'浏览器',gateway:'API网关',orders:'订单服务',db:'PostgreSQL',cache:'Redis',queue:'消息队列',notify:'通知服务'}).every(([n,label])=>new RegExp('\\b'+n+'\\s*\\[\\s*"?'+label+'"?\\s*\\]').test(source))),
+  check('Mermaid表达材料中的七个组件',/^\s*(?:flowchart|graph)\s+(?:LR|RL|TD|TB|BT)\b/m.test(source)&&Object.keys(roles).every(r=>[...labels.values()].includes(r))),
   check('请求链路和异步通知链路方向正确',['browser>gateway','gateway>orders','orders>db','orders>cache','orders>queue','queue>notify'].every(e=>edges.includes(e)),edges),
   check('浏览器不直接访问数据库',!edges.includes('browser>db'))
  ];
@@ -134,7 +207,7 @@ export function pptChecks(bytes){
  const s=slideText.join('\n'),presentation=strFromU8(files['ppt/presentation.xml']||new Uint8Array());
  const size=presentation.match(/<p:sldSz\b([^>]*)/),cx=Number(size?.[1].match(/\bcx=["'](\d+)/)?.[1]),cy=Number(size?.[1].match(/\bcy=["'](\d+)/)?.[1]);
  return [
-  check('真实PPTX包含四页且每页有可编辑文字',names.includes('[Content_Types].xml')&&names.includes('ppt/presentation.xml')&&slides.length===4&&slideText.every(t=>t.trim().length>5)),
+  check('真实PPTX包含材料要求的四页且每页有可编辑文字',names.includes('[Content_Types].xml')&&names.includes('ppt/presentation.xml')&&slides.length===4&&slideText.every(t=>t.trim())),
   check('PPT保留试点人数与正确满意率',/青禾/.test(s)&&/120/.test(s)&&/96/.test(s)&&/84/.test(s)&&/87[.．]5\s*%/.test(s)),
   check('PPT包含问题改进及负责人截止时间',/排队/.test(s)&&/预约分流/.test(s)&&/林溪/.test(s)&&/周言/.test(s)&&date(s,2026,11,6)&&date(s,2026,11,10)),
   check('演示文稿声明四个页面引用',(presentation.match(/<p:sldId\s/g)||[]).length===4),
@@ -146,9 +219,9 @@ export function skillArchiveChecks(bytes){
  const front=md.match(/^---\s*\n([\s\S]*?)\n---/);let meta;try{meta=front?parseDocument(front[1]).toJS():null;}catch{}
  return [
   check('真实归档包含SKILL.md及示例',Boolean(md&&example)),
-  check('技能元数据名称和描述有效',meta?.name==='text-brief'&&typeof meta.description==='string'&&meta.description.length>=8),
-  check('技能说明输入输出与禁止补造信息',/输入/.test(md)&&/摘要/.test(md)&&/待确认/.test(md)&&/不(?:得|要)?(?:补造|编造)|禁止(?:补造|编造)/.test(md)),
-  check('示例保留金星计划延期和日期待定',/金星计划/.test(example)&&/延期/.test(example)&&/日期待定|日期.*未确定/.test(example))
+  check('技能元数据名称和描述有效',meta?.name==='text-brief'&&typeof meta.description==='string'&&Boolean(meta.description.trim())),
+  check('技能说明文字输入、摘要输出与事实边界',/输入|提供.{0,8}(?:文字|文本)/.test(md)&&/摘要|总结/.test(md)&&/待确认|未知|缺失|未明确/.test(md)&&/不.{0,6}(?:补造|编造|虚构)|禁止.{0,6}(?:补造|编造|虚构)|仅.{0,10}(?:原文|材料)|忠于.{0,6}(?:原文|事实)/.test(md)),
+  check('示例保留金星计划延期和日期未定',/金星计划/.test(example)&&/延期|推迟/.test(example)&&/日期.{0,8}(?:待定|待确认|未确定|未明确)|尚未确定.{0,8}(?:日期|时间)/.test(example))
  ];
 }
 

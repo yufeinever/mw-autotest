@@ -5,8 +5,11 @@ import {meetingText,meetingAssertions,meetingSource} from './case002-meeting-dat
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 import {chromium} from 'playwright-core';
-import {readRunConfig,selectModel,handleConfiguredDialog} from './mobilework-run-policy.mjs';
+import {readRunConfig,selectModel} from './mobilework-run-policy.mjs';
+import {finalAssistantText,waitScenario,waitSentInput} from './client-case-runner.mjs';
 import {appendComposerText,containsComposerText} from './mobilework-composer.mjs';
+import {snapshotDraft,clearOwnedDraft,resetComposerPermission} from './mobilework-isolation.mjs';
+import {dispatchStandalone} from './mobilework-standalone.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
 import {createTaskControl} from './mobilework-task-control.mjs';
@@ -21,6 +24,7 @@ if(args.some(a=>a!=='--check'&&!/^--resume=ses_[A-Za-z0-9]+$/.test(a)))throw Err
 const resumeId=args.find(a=>a.startsWith('--resume='))?.slice(9);
 if(resumeId&&args.includes('--check'))throw Error('续跑与只读预检不能同时使用');
 const checkOnly=args.includes('--check'), started=new Date();
+if(await dispatchStandalone({number:2,args,config:runConfig}))process.exit(process.exitCode||0);
 const parts=d=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));
 const prefix=d=>{const p=parts(d);return p.month+p.day+'-'+p.hour+p.minute;};
 await fs.mkdir(path.join(root,'runs'),{recursive:true});
@@ -31,7 +35,7 @@ for(let n=1;;n++){
 }
 if(runConfig)await fs.writeFile(path.join(dir,'运行配置.json'),JSON.stringify(safeConfig,null,2));
 const checks=[],events=[],evidence=[];
-let browser,page,sessionId,result='BLOCKED',errorText='',seq=0;
+let browser,page,sessionId,result='BLOCKED',errorText='',seq=0,owned,submitted=false;
 const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+prefix(new Date())+'] '+step+' '+detail);};
 const taskControl=createTaskControl({log});
 const block=message=>{const e=Error(message);e.blocked=true;throw e;};
@@ -86,53 +90,38 @@ try{
   else{
   await button('新建任务').click();
   await button('日常办公').first().waitFor();await capture('新建任务');
+  await resetComposerPermission(page);
   if(runConfig?.model){await selectModel(page,runConfig.model);log('模型已核对',runConfig.model);}
   await button('日常办公').first().click();await button('会议纪要').first().click();
   const editor=page.locator('[contenteditable="true"]').filter({visible:true});
   await editor.locator('[data-skill-chip-label="true"]').waitFor();
+  owned=await snapshotDraft(page,editor);await taskControl?.checkpointDraft(owned);
   const text=await editor.innerText();
   assert('场景自动填充',text.includes('把这段会议记录整理成结构化纪要与待办清单。')&&await editor.locator('[data-skill-remove="meeting-and-brief"]').count()===1,text);
   assert('发送按钮可用',await button('运行任务').isEnabled());
   await capture('会议纪要自动填充');log('自动填充断言通过');
-  await appendComposerText(editor,meetingText);
+  await appendComposerText(editor,meetingText,{onDraft:async value=>{owned={...owned,...value};await taskControl?.checkpointDraft(owned);}});
   assert('补充完整测试材料且保留技能',containsComposerText(await editor.innerText(),meetingText)&&await editor.locator('[data-skill-remove="meeting-and-brief"]').count()===1);
   await fs.writeFile(path.join(dir,'会议测试材料.txt'),meetingText);
   await fs.writeFile(path.join(dir,'会议材料来源.json'),JSON.stringify(meetingSource,null,2));
   await capture('补充会议测试材料');log('补充内嵌公开会议文字',meetingSource.title);
-  await button('运行任务').click();
+  await taskControl?.markSubmitting();await button('运行任务').click();submitted=true;
   await page.waitForURL(/\/session\/ses_[^/?#]+/,{timeout:30000});
   sessionId=page.url().match(/\/session\/(ses_[^/?#]+)/)?.[1];
+  await taskControl?.registerSession(page,sessionId);
   assert('新会话创建',Boolean(sessionId),sessionId);
   await capture('发送成功');log('任务已发送',sessionId);
-  const sentLog=await page.evaluate(readSessionLog,sessionId);
+  const receipt=await waitSentInput(page,sessionId,meetingText),sentLog=receipt.data;
   const userText=sentLog.messages.filter(m=>m.info?.role==='user').flatMap(m=>(m.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'')).join('\n');
-  assert('会话用户消息包含完整会议材料',containsComposerText(userText,meetingText));
+  assert('会话用户消息包含完整会议材料',receipt.complete&&containsComposerText(userText,meetingText));
   await fs.writeFile(path.join(dir,'发送消息核对-session-log.json'),JSON.stringify(sentLog,null,2));
   log('发送消息已核对','完整会议文字材料已进入本次会话，未使用附件');
   }
-  const deadline=Date.now()+timeout;let done=false,approvals=0,answered=new Set(),lastLog=0,interactions=0;
-  if(taskControl){await taskControl.submitted(page,sessionId);await taskControl.wait(page,runConfig,{timeoutMs:timeout,capture,log});done=true;}
-  else{
-  while(Date.now()<deadline){
-   if(!page.url().endsWith('/session/'+sessionId))block('页面已离开本次会话，停止自动操作');
-   const body=await page.locator('main').last().innerText();let handled=false;
-   if(runConfig){
-    try{handled=await handleConfiguredDialog(page,runConfig,capture,log);}catch(e){block(e.message);}
-    if(handled){interactions++;await page.waitForTimeout(1500);continue;}
-   }
-   if(/等待确认/.test(body)&&await present('发送'))block('出现未配置的人工交互问题，保留现场');
-   if(await page.getByText('执行成功',{exact:true}).filter({visible:true}).count()&&!await present('停止')){done=true;break;}
-   if(await page.getByText('执行失败',{exact:true}).filter({visible:true}).count())throw Error('客户端显示执行失败');
-   if(Date.now()-lastLog>30000){log('等待任务完成');lastLog=Date.now();}
-   await page.waitForTimeout(2000);
-  }
-  }
-  if(!done)block('等待超时；保留运行中的任务，不自动中止');
-  assert('任务完成',done);
-  const sessionLog=taskControl?await taskControl.readLog():await page.evaluate(readSessionLog,sessionId);
+  if(taskControl)await taskControl.submitted(page,sessionId);
+  const sessionLog=taskControl?await taskControl.wait(page,runConfig,{timeoutMs:timeout,capture,log}):await waitScenario(page,sessionId,runConfig,{timeoutMs:timeout,capture,log});
+  assert('任务完成',Boolean(finalAssistantText(sessionLog).trim()));
   await fs.writeFile(path.join(dir,sessionId+'-session-log.json'),JSON.stringify(sessionLog,null,2));
-  const assistants=sessionLog.messages.filter(m=>m.info?.role==='assistant'&&!(m.parts||[]).some(p=>p.type==='tool'));
-  const output=(assistants.at(-1)?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
+  const output=finalAssistantText(sessionLog);
   assert('会话日志存在最终助手回复',Boolean(output.trim()));
   await fs.writeFile(path.join(dir,'助手最终回复.txt'),output);
   const contentChecks=meetingAssertions(output);checks.push(...contentChecks);
@@ -143,6 +132,7 @@ try{
 }catch(e){
  errorText=e.message;result=e.blocked||!sessionId&&checks.length===0?'BLOCKED':'FAIL';
  log(result,errorText);if(page)await capture('异常现场').catch(()=>{});
+ if(!submitted&&owned&&await clearOwnedDraft(page,owned).catch(()=>false))log('已清理本次未发送草稿');
 }finally{
  const trace=page&&sessionId?await saveRunTrace({page,sessionId,number:2,dir,checks,log,...(taskControl?.connection?{readLog:children=>taskControl.readLog(children)}:{})}):null;
  if(['PASS','RESUMED'].includes(result)&&checks.some(c=>!c.pass)){result='FAIL';errorText='Skill 实际调用或 Trace 证据断言失败，请查看 Trace 记录';log('用例失败',errorText);}

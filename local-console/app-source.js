@@ -33,6 +33,7 @@ async function refresh(){
  await refreshCdp();
  if(!initialized){const c=state.config;$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
  $('#connection').textContent=state.active?'脚本执行中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
+ if(state.capabilities?.taskIsolation!==2)batchNotice('任务隔离升级尚未加载：请先关闭旧控制台服务，再运行“启动测试平台.cmd”，仍使用18888端口；仅刷新页面不能升级服务。',true);
  renderScripts();
  renderHistory();
 }
@@ -47,9 +48,9 @@ function renderScripts(){
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
   tr.append(el('td',String(start+offset+1).padStart(2,'0')),name,el('td',!script.exists?'文件不存在':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),el('td',job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行',resultClass(job?.status)));
   const actions=el('td'),run=el('button','执行','primary'),stop=el('button','强制停止','result-fail'),remove=el('button','移除');
-  run.disabled=stopAllBusy||batchBusy||state.readingModels||cdpBusy||pendingScripts.has(script.id)||!script.exists||!script.integrated;
+  run.disabled=state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||state.readingModels||cdpBusy||pendingScripts.has(script.id)||!script.exists||!script.integrated;
   run.onclick=()=>startScripts([script],'执行此脚本');
-  stop.disabled=stopAllBusy||!job||!!job.stopRequested||!(job.status==='QUEUED'||(['RUNNING','INTERRUPTED','BLOCKED'].includes(job.status))&&(job.pid||job.sessionId||job.result?.sessionId));
+  stop.disabled=stopAllBusy||!job||!!job.stopRequested||!canStopJob(job);
   stop.title='停止本次脚本进程及其会话，保留日志和截图';
   stop.onclick=async()=>{stop.disabled=true;try{const r=await api('/api/jobs/'+job.id+'/stop',{});notice(r.message);await refresh();}catch(e){notice(e.message,true);}};
   remove.disabled=!!state.active||batchBusy||pendingScripts.has(script.id);
@@ -59,11 +60,12 @@ function renderScripts(){
  if(!total){const tr=el('tr'),td=el('td','暂无脚本，请先添加。','hint');td.colSpan=5;tr.append(td);$('#scripts').append(tr);}
  $('#scriptPageInfo').textContent=`共 ${total} 条 · ${total?start+1:0}–${Math.min(start+size,total)} 条 · 第 ${scriptPage} / ${pages} 页`;
  $('#scriptPrevPage').disabled=scriptPage===1;$('#scriptNextPage').disabled=scriptPage===pages;
- $('#runAll').disabled=$('#runRange').disabled=stopAllBusy||batchBusy||pendingScripts.size>0||state.readingModels||cdpBusy||!total;
+ $('#runAll').disabled=$('#runRange').disabled=state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||pendingScripts.size>0||state.readingModels||cdpBusy||!total;
  $('#stopAll').disabled=stopAllBusy||(!submissions.size&&!state.jobs.some(canStopJob));
  $('#stopAll').textContent=stopAllBusy?'正在停止…':'强制停止全部';
 }
 async function startScripts(scripts,label,batch=false){
+ if(state.capabilities?.taskIsolation!==2){batchNotice('请先重启本项目18888控制台加载任务隔离升级，未提交新任务。',true);return;}
  if(state.capabilities?.taskScheduling!==1){batchNotice('当前服务尚未加载执行策略，请从“启动测试平台.cmd”打开新版控制台后执行。',true);return;}
  if(stopAllBusy||batchBusy||scripts.some(s=>pendingScripts.has(s.id)))return;
  const unavailable=scripts.filter(s=>!s.exists||!s.integrated);

@@ -25,7 +25,7 @@ export async function selectedFiles(){
  for(const item of await fs.readdir(path.join(root,'local-console'),{withFileTypes:true}))if(item.isFile()&&/\.(?:mjs|js|html|css|md)$/.test(item.name))selected.push('local-console/'+item.name);
  selected.push('local-console/fixtures/long-running.mjs','scripts/fixtures/case002-synthetic-meeting.mjs');
  selected.push(...clientCases.map(c=>c.entry));
- selected.push('scripts/mobilework-task-control.mjs','scripts/mobilework-task-control.test.mjs','scripts/mobilework-question-no-send.test.mjs');
+ selected.push('scripts/mobilework-task-control.mjs','scripts/mobilework-task-control.test.mjs','scripts/mobilework-question-no-send.test.mjs','scripts/mobilework-isolation.mjs','scripts/mobilework-standalone.mjs','scripts/mobilework-isolation.test.mjs','scripts/mobilework-full-access.test.mjs');
  selected.push(...['client-case-catalog.mjs','client-case-inputs.mjs','client-case-runner.mjs','client-case-checks.mjs','client-case-preview.mjs','client-cases.test.mjs','mobilework-run-policy.mjs','mobilework-run-policy.test.mjs','mobilework-composer.mjs','mobilework-evidence.mjs','mobilework-trace.mjs','case002-meeting-data.mjs','case002-meeting.test.mjs','build-console-app.mjs','node-runner.cmd','check-package.mjs','package-windows.mjs'].map(s=>'scripts/'+s));
  for(const name of await fs.readdir(path.join(root,'测试用例与脚本')))if(/\.(?:md|cmd)$/.test(name)||name===caseWorkbook)selected.push('测试用例与脚本/'+name);
  return [...new Set(selected)].sort();

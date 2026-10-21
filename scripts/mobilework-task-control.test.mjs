@@ -7,6 +7,90 @@ import {TaskScheduler} from '../local-console/task-scheduler.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 import {readSessionLog} from '../local-console/session-log.mjs';
 
+test('交互竞态：过期请求、延迟渲染和重复审批不提前阻塞或重复点击',async()=>{
+ const browser=await chromium.launch({channel:'chrome',headless:true});
+ try{
+  const page=await browser.newPage();await page.goto('about:blank#ses_Race');
+  const control=new TaskControl({url:'unused',token:'isolated'}),events=[],clicks=[];
+  control.sessionId='ses_Race';control.sessionUrl=page.url();
+  let stage=0,reads=0,uiTurns=0,released=0,completed=false;
+  const request=id=>({id,sessionID:control.sessionId});
+  control.get=async route=>{
+   if(route==='/session/status')return stage<5?{ses_Race:{type:'busy'}}:{};
+   if(route==='/question')return [];
+   if(route==='/permission'){
+    if(stage===0)return [request('per_expired')];
+    if(stage===1){if(++reads===1)return [request('per_vanished')];stage=2;return [];}
+    if(stage===2||stage===3||stage===4)return [request('per_'+stage),{id:'per_foreign',sessionID:'ses_Other'}];
+    return [{id:'per_foreign',sessionID:'ses_Other'}];
+   }
+   throw Error(route);
+  };
+  await page.exposeFunction('approved',()=>{clicks.push(stage);stage++;});
+  const render=()=>page.evaluate(()=>{
+   document.body.innerHTML='<section><button>拒绝</button><button>允许一次</button><button>在会话期间允许</button><button>开启完全访问权限</button></section>';
+   document.querySelectorAll('button')[2].onclick=async()=>{document.body.replaceChildren();await window.approved();};
+  });
+  control.withUI=async(_page,_phase,action)=>{
+   uiTurns++;control.held=true;
+   try{
+    if(stage===0)stage=1; // Request disappeared while waiting for the page.
+    if(stage===2&&uiTurns>=3)await render(); // API becomes ready before DOM.
+    if(stage===3){await render();await page.evaluate(()=>setTimeout(()=>document.body.replaceChildren(),100));stage=4;}
+    else if(stage===4)await render();
+    return await action();
+   }finally{control.held=false;released++;}
+  };
+  control.readLog=async()=>({messages:[{info:{role:'assistant',time:{completed:1},finish:'stop'},parts:[{type:'text',text:'真实最终回复'}]}]});
+  control.call=async action=>{if(action==='completed')completed=true;};
+  await control.wait(page,normalizeConfig({approval:'session'}),{timeoutMs:20000,capture:async()=>{},log:(...args)=>events.push(args)});
+  assert.deepEqual(clicks,[2,4]);assert.equal(completed,true);assert.equal(uiTurns,released);
+  assert.ok(events.some(e=>e[0].includes('交互')),'保留请求变化和重试证据');
+ }finally{await browser.close();}
+});
+
+test('持续未知交互限时阻塞，记录请求ID并在重试间交还页面',async()=>{
+ const browser=await chromium.launch({channel:'chrome',headless:true});
+ try{
+  const page=await browser.newPage();const control=new TaskControl({url:'unused',token:'isolated'});
+  control.sessionId='ses_Unknown';control.sessionUrl=page.url();let turns=0,releases=0;
+  control.get=async route=>route==='/session/status'?{ses_Unknown:{type:'busy'}}:route==='/question'?[{id:'que_unknown',sessionID:'ses_Unknown',questions:[{question:'尚未渲染的问题'}]}]:[];
+  control.withUI=async(_page,_phase,action)=>{turns++;try{return await action();}finally{releases++;}};
+  control.call=async()=>assert.fail('未知交互不能标记完成');
+  await assert.rejects(()=>control.wait(page,normalizeConfig(),{timeoutMs:10000,interactionTimeoutMs:1500,capture:async()=>{}}),e=>e.blocked&&/que_unknown/.test(e.message));
+  assert.ok(turns>=2);assert.equal(turns,releases);
+ }finally{await browser.close();}
+});
+
+test('补丁审批接口短暂400恢复后才允许完成，持续异常和普通400不吞掉',async()=>{
+ for(const mode of ['recover','persistent','other']){
+  const page={},control=new TaskControl({url:'unused',token:'isolated'});control.sessionId='ses_Patch';let polls=0,completed=false,logReads=0;
+  control.get=async route=>{
+   if(route==='/session/status')return {}; // Even idle cannot prove completion while permissions are unknown.
+   if(route==='/question')return [];
+   if(route==='/permission'){
+    if(mode==='recover'&&++polls>1)return [];
+    throw Object.assign(Error('HTTP 400'),{patchPermissionError:mode!=='other'});
+   }
+   throw Error(route);
+  };
+  control.readLog=async()=>{logReads++;return {messages:[{info:{role:'assistant',time:{completed:1},finish:'stop'},parts:[{type:'text',text:'已完成补丁'}]}]};};
+  control.call=async action=>{if(action==='completed')completed=true;};
+  const run=()=>control.wait(page,normalizeConfig(),{timeoutMs:5000,permissionRecoveryMs:500,capture:async()=>{},log:()=>{}});
+  if(mode==='recover'){await run();assert.equal(completed,true);assert.equal(logReads,1);}
+  else {await assert.rejects(run,mode==='persistent'?/持续无法解析/:/HTTP 400/);assert.equal(completed,false);assert.equal(logReads,0);}
+ }
+});
+
+test('只有补丁审批序列化错误允许重试，错误正文不进入日志',async()=>{
+ const server=http.createServer((req,res)=>{res.statusCode=400;res.setHeader('content-type','application/json');res.end(JSON.stringify({data:{message:'Expected JSON value, got [{"filePath":"private-path","patch":"private-content"}]'}}));});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  const control=new TaskControl({url:'unused',token:'isolated'});control.connection={baseUrl:'http://127.0.0.1:'+server.address().port};
+  for(const route of ['/permission','/question'])await assert.rejects(()=>control.get(route),e=>e.patchPermissionError===(route==='/permission')&&!/private-/.test(e.message));
+ }finally{await new Promise(r=>server.close(r));}
+});
+
 test('两个模型任务重叠等待；真实DOM按会话轮流回答和审批；外部切换不误操作',async()=>{
  const jobs=['A','B'].map(id=>({id,status:'QUEUED',config:normalizeConfig({executionStrategy:'parallel',maxParallel:2})}));
  const scheduler=new TaskScheduler(),sessions=new Map(),actions=[],turns=[];
@@ -37,6 +121,7 @@ test('两个模型任务重叠等待；真实DOM按会话轮流回答和审批�
    if(action==='acquire'){const r=scheduler.acquire(id,body.phase);if(r.granted)turns.push({id,phase:body.phase});return send(r);}
    if(action==='release'){scheduler.release(id,body);return send({ok:true});}
    if(action==='completed'){jobs.find(j=>j.id===id).modelCompleted=true;return send({ok:true});}
+   if(action==='checkpoint')return send({ok:true});
    if(action==='is-managed')return send({managed:jobs.some(j=>j.sessionUrl===body.url)});
   }
   const view=route.pathname.match(/^\/view\/([AB])$/);if(view)return send({...sessions.get(view[1]),user:user(view[1])});

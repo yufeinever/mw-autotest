@@ -16,6 +16,46 @@ import {createConsole,projectRoot} from '../local-console/server.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 
 const all=checks=>checks.every(c=>c.pass),json=x=>'```json\n'+JSON.stringify(x)+'\n```';
+test('日程功能按实际安排与优先顺序判断，拒绝仅复述要求或无关回复',()=>{
+ // Excerpt from the 1020-2321 false negative; keep regression portable.
+ const actual='## 本周工作日程与优先级\n优先级规则：本周必须交付、影响他人或有明确截止时间的事项。\n按天安排：10月21日 周三，完成最紧急、最接近截止的交付事项。\n每天2小时建议拆分：前10分钟确认当天唯一核心目标；接下来80分钟连续深度工作；最后30分钟检查、整理、提交。';
+ assert.ok(all(textChecks(1,actual)),'真实逐日安排和时间分配应通过');
+ assert.ok(all(textChecks(1,'本周计划：周三上午完成核心交付，周四下午处理反馈。优先保障临近截止事项。')));
+ for(const wrong of ['帮我规划本周的工作日程与优先级。','今天推荐红烧肉和番茄汤。','请提供任务，我将为你规划日程。','请把本周要完成的事项、各自截止时间，以及固定会议或不可用时段发给我。我会按 **10月19日—25日** 安排日程并排序优先级。'])assert.ok(!all(textChecks(1,wrong)));
+ const schedule='工作日程安排：周一完成项目方案，周二整理客户反馈，周五提交周报。优先处理截止时间近的项目方案。';
+ assert.ok(all(textChecks(1,schedule,{scheduleFixture:true})));assert.ok(!all(textChecks(1,schedule.replace('客户反馈','无关事项'),{scheduleFixture:true})));
+});
+test('正文和表格不必附JSON，等价时间、图布局和节点ID有效',()=>{
+ assert.ok(all(textChecks(3,'主题：星桥项目评审改期通知\n项目组各位：2026年11月3日由下午2点改为下午3点半，三楼A会议室。请2026年11月2日下午6点前确认。许晴')));
+ assert.ok(all(textChecks(3,'主题：星桥项目评审改期通知\n项目组各位：2026年11月3日由下午两点改为下午三点半，三楼A会议室。请2026年11月2日下午六点前确认。许晴')));
+ const creative='## 通勤上班族：邻里快借\n下班借用工具，预约和归还提醒，以时间匹配为特点。\n## 亲子家庭：成长交换\n周末交换玩具，发布需求和年龄匹配，关注儿童成长。\n## 银发居民：上门互助\n邻里借用家用品，代取和上门归还，减少出行。';
+ assert.ok(all(textChecks(13,creative)));assert.ok(!all(textChecks(13,'上班族、儿童家庭、老年居民')));
+ assert.ok(all(textChecks(13,creative.replace('通勤上班族：','快取邻居｜通勤上班族：').replace('亲子家庭：','成长换物圈｜亲子家庭：').replace('银发居民：','熟人帮｜银发居民：'))),'标题分隔竖线不是表格');
+ assert.ok(!all(textChecks(13,['上班族','亲子家庭','老年居民'].map(g=>'## '+g+'\n邻里借用工具，预约与归还提醒。').join('\n'))),'不能只换人群标题而复用相同方案');
+ const labeled=[['邻里闪借','上班族','下班临时借用电钻，附近筛选、快速预约与归还。'],['成长循环箱','儿童家庭','成长阶段交换绘本，年龄匹配与家庭清单发布。'],['熟邻帮帮站','老年居民','借用推车，大字语音发布、邻里代取和线下登记。']].map(([title,group,body])=>'## '+title+'\n- **目标人群：**'+group+'\n'+body).join('\n');
+ const recommendation='\n**初步建议：**上班族、儿童家庭和老年居民按社区特征选择。';
+ assert.ok(all(textChecks(13,labeled+recommendation)),'末尾同时提及三组的建议不能替代三个实际方案段落');
+ const repeated=['上班族','儿童家庭','老年居民'].map((g,i)=>'## 方案'+i+'\n- **目标人群：**'+g+'\n邻里借用工具，预约与归还提醒。').join('\n');
+ assert.ok(!all(textChecks(13,repeated)),'人群标签不同不能使重复内容变成差异化方案');
+ assert.ok(!all(textChecks(13,repeated+recommendation)),'共同建议不能使最后一个重复方案变成差异化内容');
+ const named='三类人群：\n1. 上班族\n2. 儿童家庭\n3. 老年居民\n'+[['上班族','下班借用工具，预约和归还提醒。'],['儿童家庭','成长阶段交换绘本，年龄匹配与家庭清单发布。'],['老年居民','借用推车，邻里代取和线下登记。']].map(([g,b],i)=>'# 方案'+(i+1)+'：产品名\n## 定位\n面向'+g+'。\n## 核心功能\n'+b).join('\n')+'\n# 比较\n|核心人群|上班族|儿童家庭|老年居民|\n|---|---|---|---|\n|体验|快|成长|信任|';
+ assert.ok(all(textChecks(13,named)),'概要人群列表和简略比较表不能替代实际方案');
+ assert.ok(!all(textChecks(13,named.replace('借用推车，邻里代取和线下登记。','待定'))),'概要和其他方案不能掩盖缺失功能');
+ const shop='虚构测试快照\n|候选|结论|原因|\n|A 云杉Air|推荐|满足预算、重量和容量要求|\n|B 远行Pro|推荐|满足全部硬条件|\n|C 旗舰Max|剔除|价格超预算|\n|D 力量Book|剔除|重量超限|\n|E 轻享Go|剔除|内存与SSD不足|';
+ assert.ok(all(textChecks(16,shop)));assert.ok(!all(textChecks(16,shop.replace('C 旗舰Max|剔除|价格超预算','C 旗舰Max|推荐|性能优秀'))));
+ const paragraphs='以下为虚构测试快照。\n## A 云杉Air\n推荐，满足全部条件。\n## B 远行Pro\n推荐，预算重量容量达标。\n## C 旗舰Max\n剔除：价格超预算。\n## D 力量Book\n剔除：重量超限。\n## E 轻享Go\n不推荐：内存和SSD不足。';
+ assert.ok(all(textChecks(16,paragraphs)),'理由可以写在产品标题下一行');
+ assert.ok(!all(textChecks(16,paragraphs.replace('价格超预算','重量超限'))),'理由仍须对应候选短板');
+ const mixed='推荐云杉Air和远行Pro。\n### 推荐\n|产品|结论|\n|---|---|\n|云杉Air|优先推荐，比远行Pro更轻|\n|远行Pro|符合条件，作为备选|\n### 剔除\n- 旗舰Max：8999元，超过8000元预算上限。\n- 力量Book：1.65kg，超过1.4kg重量上限。\n- 轻享Go：内存8GB、SSD256GB低于要求。\n说明：虚构测试快照。';
+ assert.ok(all(textChecks(16,mixed)),'允许推荐表格与剔除列表混排，继承剔除分组且按产品列匹配');
+ assert.ok(all(textChecks(16,mixed.replace('### 剔除','**剔除产品**'))),'加粗分组标题与Markdown标题等价');
+ assert.ok(!all(textChecks(16,mixed.replace('旗舰Max：8999','旗舰Max：推荐，8999'))),'剔除标题不能覆盖明确推荐不合格商品的矛盾');
+ const research='|维度|Codex|Claude Code|WorkBuddy|\n|功能|代码|代码|办公|\n|上手门槛|CLI|CLI|客户端|\n|成本|未核实|未核实|未核实|\n|场景|修改仓库|修改仓库|办公任务|\n|优势|代码任务|开发工具|办公协作|\n|局限|需审查|需审查|需审查|\n建议Windows团队先试点。来源：https://developers.openai.com/codex/ https://code.claude.com/docs https://www.workbuddy.cn/docs/workbuddy/Overview';
+ assert.ok(all(textChecks(15,research)),'接受按产品分列的对照表');
+ assert.ok(!all(textChecks(15,research.replace('|局限|需审查|需审查|需审查|','|局限|需审查|需审查||'))),'不能以别的产品内容替代缺失维度');
+ const diagram='graph TD\nA(浏览器) --> B[API网关] --> C[订单服务]\nC --> D[(PostgreSQL数据库)]\nC --> E[(Redis缓存)]\nC -->|消息| F[消息队列] --> G(通知服务)';
+ assert.ok(all(diagramChecks(diagram)));assert.ok(!all(diagramChecks(diagram.replace('F[消息队列] --> G(通知服务)','G(通知服务) --> F[消息队列]'))));
+});
 test('前16条按原表映射，入口存在，补缺迁移保留旧ID和用户脚本',async()=>{
  assert.equal(clientCases.length,16);
  for(const c of clientCases){assert.equal(c.row,c.number+1);await fs.access(c.entry);if(c.number>=3)assert.ok(clientCaseInput(c.number,{outputDir:'D:/独立产物',asOfDate:'2026-10-18'}).length>100);}
@@ -81,6 +121,7 @@ test('模拟真实场景自动填充、不提前发送、消息延迟落盘和�
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const page=await browser.newPage(),definition=getClientCase(3);await page.setContent(`<main><button>新建任务</button><button>日常办公</button><button>默认工作空间</button><button id="scene">邮件处理 未生效</button><div contenteditable="true"></div><button onclick="window.sent=true">运行任务</button></main><script>document.querySelector('#scene').onclick=()=>{const e=document.querySelector('[contenteditable]');e.textContent='帮我起草一封专业的工作邮件。';const s=document.createElement('span');s.setAttribute('data-skill-remove','email-official');s.textContent='email-official';e.prepend(s);}</script>`);
+  await page.evaluate(()=>document.querySelector('main').insertAdjacentHTML('afterbegin','<button aria-label="权限">默认权限</button>'));
   const assertions=[],owned=await fillScenario(page,definition,normalizeConfig(),{assert:(name,pass)=>assertions.push(pass)});assert.ok(assertions.every(Boolean));assert.equal(await page.evaluate(()=>window.sent),undefined);
   assert.equal(await clearOwnedDraft(page,owned),true);await fillScenario(page,definition,normalizeConfig());
   await page.locator('[contenteditable]').fill('用户刚写的草稿');assert.equal(await clearOwnedDraft(page,owned),false);assert.equal(await page.locator('[contenteditable]').innerText(),'用户刚写的草稿');

@@ -9,6 +9,11 @@ test('真实提问卡片交互回归',async t=>{
   const page=await browser.newPage();page.setDefaultTimeout(3000);
   const config={question:'first',approval:'session',customText:''};
   const handle=overrides=>handleConfiguredDialog(page,{...config,...overrides},async()=>{},()=>{});
+  await t.test('配置重载遮挡审批时明确阻塞，不强点底层控件或终止会话',async()=>{
+   await page.setContent('<button onclick="window.approved=true">允许一次</button><div role="dialog">配置已更新，需要重新加载引擎<button onclick="window.terminated=true">立即终止并生效</button></div>');
+   await assert.rejects(()=>handle(),e=>e.blocked&&/重新加载引擎/.test(e.message));
+   assert.equal(await page.evaluate(()=>window.approved||window.terminated),undefined);
+  });
   await t.test('ARIA 隐藏、无跳过按钮、连续两题自动提交，不误点下一题的发送',async()=>{
    await page.setContent(`<main><div aria-hidden="true" id="question"></div></main><script>
     window.answers=[];window.sendClicks=0;window.shown=[];

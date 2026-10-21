@@ -27,6 +27,7 @@ export class TaskControl {
  }
  async begin(page,{openComposer=true}={}){
   await this.acquire(page,'PREPARING');
+  await this.call('checkpoint',{protocol:2});
   // The previous managed session may still be running. Open a fresh composer
   // through the actual control, without aborting its model work.
   if(openComposer&&/\/session\/ses_[A-Za-z0-9]+$/.test(page.url())){
@@ -43,8 +44,17 @@ export class TaskControl {
   const drafts=page.locator('[contenteditable="true"]').filter({visible:true});
   for(let i=0;i<await drafts.count();i++)if((await drafts.nth(i).innerText()).trim())throw blocked('当前有未发送草稿，保留草稿，不切换页面');
  }
+ async checkpointDraft(owned){
+  const {editor,...draft}=owned;await this.call('checkpoint',{draft});
+ }
+ async markSubmitting(){await this.call('checkpoint',{submitting:true});}
+ async registerSession(page,sessionId){
+  if(!/^ses_[A-Za-z0-9]+$/.test(sessionId)||!page.url().endsWith('/session/'+sessionId))throw blocked('不能登记不属于当前页面的会话');
+  this.sessionId=sessionId;this.sessionUrl=page.url();
+  await this.call('checkpoint',{sessionId,sessionUrl:this.sessionUrl});
+ }
  async submitted(page,sessionId){
-  if(this.sessionId)return;
+  if(this.connection)return;
   if(!/^ses_[A-Za-z0-9]+$/.test(sessionId)||!page.url().endsWith('/session/'+sessionId))throw blocked('不能登记不属于当前页面的会话');
   this.sessionId=sessionId;this.sessionUrl=page.url();
   // Credentials remain in this process only, never in scheduler state/reports.
@@ -68,7 +78,12 @@ export class TaskControl {
  async get(route){
   const query=this.directory?'?directory='+encodeURIComponent(this.directory):'';
   const response=await fetch(this.connection.baseUrl.replace(/\/$/,'')+route+query,{headers:{Authorization:'Basic '+btoa(this.connection.opencodeUsername+':'+this.connection.opencodePassword)},signal:AbortSignal.timeout(15000)});
-  if(!response.ok)throw blocked('读取本任务引擎状态失败：HTTP '+response.status+'；未切换其他任务的引擎');return response.json();
+  if(!response.ok){
+   let message='';try{const body=await response.json();message=body?.data?.message||'';}catch{}
+   const patchPermissionError=route==='/permission'&&response.status===400&&/Expected JSON value/.test(message)&&/filePath/.test(message)&&/patch/.test(message);
+   // Keep raw permission payloads (paths and file contents) out of reports.
+   throw Object.assign(blocked('读取本任务引擎状态失败：HTTP '+response.status+'；接口 '+route+'；未切换其他任务的引擎'),{patchPermissionError});
+  }return response.json();
  }
  async readLog(includeChildren=false){return readSessionLog({sessionId:this.sessionId,includeChildren,connection:this.connection});}
  async focus(page){
@@ -97,30 +112,66 @@ export class TaskControl {
   try{if(!alreadyHeld&&this.sessionId)await this.focus(page);return await action();}
   finally{if(!alreadyHeld&&!this.faulted)await this.release(page,phase==='EVIDENCE'?'VERIFYING':'WAITING_MODEL');}
  }
- async wait(page,config,{timeoutMs,capture,log=this.log}){
-  const deadline=Date.now()+timeoutMs;let lastLog=0;
+ async pendingInteractions(){
+  const questions=await this.get('/question'),permissions=await this.get('/permission');
+  if(!Array.isArray(questions)||!Array.isArray(permissions))throw blocked('引擎待处理交互格式不支持，保留会话');
+  return [...questions.map(q=>({...q,kind:'question'})),...permissions.map(q=>({...q,kind:'permission'}))]
+   .filter(q=>q.sessionID===this.sessionId).map(q=>{
+    if(typeof q.id!=='string'||!q.id)throw blocked('待处理交互缺少请求ID，不能核对归属');
+    return {...q,key:q.kind+':'+q.id};
+   });
+ }
+ async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000}){
+  const deadline=Date.now()+timeoutMs,observed=new Map();let lastLog=0,permissionErrorSince=null;
+  const reconcile=pending=>{
+   const keys=new Set(pending.map(q=>q.key));
+   for(const key of observed.keys())if(!keys.has(key)){log('交互请求已消失，继续等待模型',key);observed.delete(key);}
+   for(const q of pending)if(!observed.has(q.key)){observed.set(q.key,{since:Date.now(),clicked:false});log('发现本会话待处理交互',q.key);}
+  };
   while(Date.now()<deadline){
-   const [states,questions,permissions]=await Promise.all([this.get('/session/status'),this.get('/question'),this.get('/permission')]);
-   if(!Array.isArray(questions)||!Array.isArray(permissions))throw blocked('引擎待处理交互格式不支持，保留会话');
-   const pending=[...questions,...permissions].filter(q=>q.sessionID===this.sessionId);
+   try{
+   const [states,pending]=await Promise.all([this.get('/session/status'),this.pendingInteractions(page)]);
+   reconcile(pending);
    if(pending.length){
     await this.withUI(page,'INTERACTING',async()=>{
-     // Pending requests are read from this exact session, then the real DOM
-     // handler applies all four approval modes, including full access.
-     const ownQuestions=questions.filter(q=>q.sessionID===this.sessionId);
-     if(ownQuestions.length){
-      const expected=ownQuestions.flatMap(q=>q.questions||[]).map(q=>q.question).filter(Boolean);
-      if(!expected.length)throw blocked('待回答问题缺少可核对正文');
-      await page.waitForFunction(items=>items.some(s=>document.body.innerText.includes(s)),expected,{timeout:10000});
+     // A request may resolve while acquiring/focusing the shared page. Never
+     // treat the pre-acquire API snapshot as proof that a DOM control exists.
+     const current=await this.pendingInteractions(page);reconcile(current);
+     if(!current.length)return;
+     const kind=current.some(q=>q.kind==='permission')?'permission':'question';
+     const targets=current.filter(q=>q.kind===kind);
+     const expected=targets.flatMap(q=>q.questions||[]).map(q=>q.question).filter(Boolean);
+     if(kind==='question'&&!expected.length)throw blocked('待回答问题缺少可核对正文');
+     const canAct=async()=>{
+      if(page.url()!==this.sessionUrl)throw blocked('页面已离开本任务会话');
+      const latest=await this.pendingInteractions(page);reconcile(latest);
+      return targets.every(q=>latest.some(item=>item.key===q.key));
+     };
+     // Successful permissions are not clicked again while engine state settles.
+     // Questions may contain several cards under one request ID.
+     let handled=false;
+     if(!targets.some(q=>observed.get(q.key)?.clicked)){
+      handled=await handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions:expected,canAct});
+      if(handled)for(const q of targets){const state=observed.get(q.key);if(state){state.since=Date.now();state.clicked=kind==='permission';}log('交互已点击，等待引擎确认',q.key);}
      }
-     const handled=await handleConfiguredDialog(page,config,capture,log);
-     if(!handled)throw blocked('本会话存在待处理问题或审批，但未识别对应控件，保留现场');
+     const latest=await this.pendingInteractions(page);reconcile(latest);
+     for(const q of latest){
+      const state=observed.get(q.key);
+      if(Date.now()-state.since>=interactionTimeoutMs)throw blocked(`本会话交互持续未解决：${q.key}；${state.clicked?'已点击但引擎尚未确认':'限时重试后仍未识别对应控件'}，保留现场`);
+      if(!handled&&!state.logged){log('交互尚未同步，交还页面后重试',q.key);state.logged=true;}
+     }
     });
    }else if((states[this.sessionId]?.type||'idle')==='idle'){
     const data=await this.readLog(),last=data.messages.at(-1);
     if(last?.info?.error){await this.call('completed');throw Error('引擎会话错误：'+JSON.stringify(last.info.error));}
     const text=(last?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
     if(last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool')&&text.trim()){await this.call('completed');return data;}
+   }
+   if(permissionErrorSince!==null){log('审批接口已恢复','已重新核对本会话交互状态');permissionErrorSince=null;}
+   }catch(error){
+    if(!error.patchPermissionError)throw error;
+    if(permissionErrorSince===null){permissionErrorSince=Date.now();log('客户端补丁审批数据暂不可解析','/permission HTTP 400；限时重试，期间不点击、不判定完成');}
+    if(Date.now()-permissionErrorSince>=permissionRecoveryMs)throw blocked('客户端补丁审批数据持续无法解析：/permission HTTP 400；限时重试未恢复，不能确认待审批状态，保留会话');
    }
    if(Date.now()-lastLog>30000){log('等待本次模型完成',this.sessionId+'；未占用客户端页面');lastLog=Date.now();}
    await delay(1000);

@@ -236,7 +236,7 @@ var assertionRate = (checks) => checks.total ? `${checks.passed}/${checks.total}
 var batchDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "\u2014";
 batchLabels.QUEUED = "\u6392\u961F\u4E2D";
 var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINISHED: "\u5DF2\u7ED3\u675F" };
-function publicJob({ log, ...job }) {
+function publicJob({ log, ownedDraft, ...job }) {
   return { ...job, sessionId: job.result?.sessionId || job.sessionId || log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1] };
 }
 function summarizeBatch(batch, jobs) {
@@ -258,6 +258,7 @@ function summarizeBatch(batch, jobs) {
   }
   let status;
   if (batch.submission === "SUBMITTING") status = "SUBMITTING";
+  else if (!running && entries.some((e) => e.job?.queueHold)) status = "BLOCKED";
   else if (running || queued) status = "RUNNING";
   else if (counts.FAIL || checks.failed) status = "FAIL";
   else if (batch.submission === "INTERRUPTED" || counts.INTERRUPTED) status = "INTERRUPTED";
@@ -280,6 +281,41 @@ function collectBatches(batches, jobs) {
 
 // local-console/policy.mjs
 var approvalLabels = { reject: "\u62D2\u7EDD", once: "\u5141\u8BB8\u4E00\u6B21", session: "\u5728\u4F1A\u8BDD\u671F\u95F4\u5141\u8BB8", full: "\u5F00\u542F\u5B8C\u5168\u8BBF\u95EE\u6743\u9650" };
+
+// local-console/stop-all.mjs
+function canStopJob(job) {
+  return Boolean(job.schedulingHold) || ["QUEUED", "RUNNING"].includes(job.status) || job.status === "FAIL" && job.schedulingHold && !job.modelCompleted && Boolean(job.sessionId || job.result?.sessionId) || ["BLOCKED", "INTERRUPTED"].includes(job.status) && !job.modelCompleted && Boolean(job.sessionId || job.result?.sessionId || job.schedulingHold || job.status === "INTERRUPTED" && job.pid);
+}
+async function stopAllJobs(api, progress = () => {
+}) {
+  const initial = await api("/api/state"), targets = initial.jobs.filter(canStopJob), errors = /* @__PURE__ */ new Map();
+  const stop = async (job) => {
+    if (job.stopRequested) return;
+    try {
+      await api("/api/jobs/" + encodeURIComponent(job.id) + "/stop", {});
+    } catch (e) {
+      errors.set(job.id, e.message);
+    }
+  };
+  const queued = targets.filter((j) => j.status === "QUEUED");
+  progress(`\u6B63\u5728\u53D6\u6D88 ${queued.length} \u6761\u6392\u961F\u4EFB\u52A1\u2026`);
+  await Promise.all(queued.map(stop));
+  const current = await api("/api/state");
+  const ids = new Set(targets.map((j) => j.id));
+  const uncancelled = current.jobs.filter((j) => ids.has(j.id) && j.status === "QUEUED");
+  if (uncancelled.length) return {
+    total: targets.length,
+    stopped: current.jobs.filter((j) => ids.has(j.id) && j.status === "STOPPED").length,
+    remaining: current.jobs.filter((j) => ids.has(j.id) && canStopJob(j)).map((j) => ({ id: j.id, name: j.name || j.id, message: errors.get(j.id) || "\u6392\u961F\u53D6\u6D88\u5C1A\u672A\u5B8C\u6210\uFF0C\u4E3A\u907F\u514D\u542F\u52A8\u4E0B\u4E00\u6761\uFF0C\u6682\u672A\u505C\u6B62\u6267\u884C\u4E2D\u7684\u4EFB\u52A1\uFF0C\u8BF7\u91CD\u8BD5" }))
+  };
+  const running = current.jobs.filter((j) => ids.has(j.id) && canStopJob(j) && j.status !== "QUEUED");
+  progress(`\u6B63\u5728\u505C\u6B62 ${running.length} \u6761\u6267\u884C\u4E2D\u6216\u5F85\u5904\u7406\u4F1A\u8BDD\u4EFB\u52A1\u2026`);
+  await Promise.all(running.map(stop));
+  const final = await api("/api/state");
+  const remaining = final.jobs.filter((j) => ids.has(j.id) && canStopJob(j));
+  const stopped = final.jobs.filter((j) => ids.has(j.id) && j.status === "STOPPED").length;
+  return { total: targets.length, stopped, remaining: remaining.map((j) => ({ id: j.id, name: j.name || j.id, message: errors.get(j.id) || j.error || "\u505C\u6B62\u5C1A\u672A\u786E\u8BA4" })) };
+}
 
 // local-console/batch-browser.mjs
 var el = (tag, text, cls) => {
@@ -364,7 +400,7 @@ async function showBatch(id) {
           if (job.sessionId) actions.append(link("\u4E0B\u8F7D Session \u65E5\u5FD7", "/sessions/" + encodeURIComponent(job.sessionId) + "/download"));
           else actions.append(el("span", "\u672A\u83B7\u53D6\u4F1A\u8BDD ID", "hint"));
         } else actions.append(el("span", "\u5C1A\u672A\u542F\u52A8", "hint"));
-        if (job && !job.stopRequested && (job.status === "QUEUED" || ["RUNNING", "BLOCKED", "INTERRUPTED"].includes(job.status) && (job.pid || job.sessionId))) {
+        if (job && !job.stopRequested && canStopJob(job)) {
           const stop = el("button", job.status === "QUEUED" ? "\u53D6\u6D88\u6392\u961F" : "\u5F3A\u5236\u505C\u6B62", "result-fail");
           stop.onclick = async () => {
             stop.disabled = true;
@@ -381,6 +417,8 @@ async function showBatch(id) {
           actions.append(stop);
         }
         if (job?.error) actions.append(el("p", job.error, "result-fail"));
+        if (job?.queueHold) actions.append(el("p", "\u7B49\u5F85\u5BA2\u6237\u7AEF\u6062\u590D\uFF1A" + job.queueHold, "result-fail"));
+        if (job?.handoff) actions.append(el("p", "\u9875\u9762\u4EA4\u63A5\uFF1A" + job.handoff.reason, job.handoff.ready ? "" : "result-fail"));
         const failed = checks.filter((c2) => c2.pass !== true);
         if (failed.length) {
           const details = el("details"), label = el("summary", `\u5931\u8D25\u65AD\u8A00 ${failed.length} \u9879`, "result-fail");
@@ -405,41 +443,6 @@ async function showBatch(id) {
   await refresh();
   const timer = setInterval(refresh, 2e3);
   window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
-}
-
-// local-console/stop-all.mjs
-function canStopJob(job) {
-  return ["QUEUED", "RUNNING"].includes(job.status) || ["BLOCKED", "INTERRUPTED"].includes(job.status) && !job.modelCompleted && Boolean(job.sessionId || job.result?.sessionId || job.schedulingHold || job.status === "INTERRUPTED" && job.pid);
-}
-async function stopAllJobs(api, progress = () => {
-}) {
-  const initial = await api("/api/state"), targets = initial.jobs.filter(canStopJob), errors = /* @__PURE__ */ new Map();
-  const stop = async (job) => {
-    if (job.stopRequested) return;
-    try {
-      await api("/api/jobs/" + encodeURIComponent(job.id) + "/stop", {});
-    } catch (e) {
-      errors.set(job.id, e.message);
-    }
-  };
-  const queued = targets.filter((j) => j.status === "QUEUED");
-  progress(`\u6B63\u5728\u53D6\u6D88 ${queued.length} \u6761\u6392\u961F\u4EFB\u52A1\u2026`);
-  await Promise.all(queued.map(stop));
-  const current = await api("/api/state");
-  const ids = new Set(targets.map((j) => j.id));
-  const uncancelled = current.jobs.filter((j) => ids.has(j.id) && j.status === "QUEUED");
-  if (uncancelled.length) return {
-    total: targets.length,
-    stopped: current.jobs.filter((j) => ids.has(j.id) && j.status === "STOPPED").length,
-    remaining: current.jobs.filter((j) => ids.has(j.id) && canStopJob(j)).map((j) => ({ id: j.id, name: j.name || j.id, message: errors.get(j.id) || "\u6392\u961F\u53D6\u6D88\u5C1A\u672A\u5B8C\u6210\uFF0C\u4E3A\u907F\u514D\u542F\u52A8\u4E0B\u4E00\u6761\uFF0C\u6682\u672A\u505C\u6B62\u6267\u884C\u4E2D\u7684\u4EFB\u52A1\uFF0C\u8BF7\u91CD\u8BD5" }))
-  };
-  const running = current.jobs.filter((j) => ids.has(j.id) && canStopJob(j) && j.status !== "QUEUED");
-  progress(`\u6B63\u5728\u505C\u6B62 ${running.length} \u6761\u6267\u884C\u4E2D\u6216\u5F85\u5904\u7406\u4F1A\u8BDD\u4EFB\u52A1\u2026`);
-  await Promise.all(running.map(stop));
-  const final = await api("/api/state");
-  const remaining = final.jobs.filter((j) => ids.has(j.id) && canStopJob(j));
-  const stopped = final.jobs.filter((j) => ids.has(j.id) && j.status === "STOPPED").length;
-  return { total: targets.length, stopped, remaining: remaining.map((j) => ({ id: j.id, name: j.name || j.id, message: errors.get(j.id) || j.error || "\u505C\u6B62\u5C1A\u672A\u786E\u8BA4" })) };
 }
 
 // local-console/app-source.js
@@ -491,9 +494,9 @@ if (traceId) {
       const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
       tr.append(el2("td", String(start + offset + 1).padStart(2, "0")), name, el2("td", !script.exists ? "\u6587\u4EF6\u4E0D\u5B58\u5728" : script.integrated ? "\u5DF2\u63A5\u5165" : "\u5F85\u63A5\u5165", !script.exists ? "result-fail" : ""), el2("td", job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C", resultClass(job?.status)));
       const actions = el2("td"), run = el2("button", "\u6267\u884C", "primary"), stop = el2("button", "\u5F3A\u5236\u505C\u6B62", "result-fail"), remove = el2("button", "\u79FB\u9664");
-      run.disabled = stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
+      run.disabled = state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
       run.onclick = () => startScripts([script], "\u6267\u884C\u6B64\u811A\u672C");
-      stop.disabled = stopAllBusy || !job || !!job.stopRequested || !(job.status === "QUEUED" || ["RUNNING", "INTERRUPTED", "BLOCKED"].includes(job.status) && (job.pid || job.sessionId || job.result?.sessionId));
+      stop.disabled = stopAllBusy || !job || !!job.stopRequested || !canStopJob(job);
       stop.title = "\u505C\u6B62\u672C\u6B21\u811A\u672C\u8FDB\u7A0B\u53CA\u5176\u4F1A\u8BDD\uFF0C\u4FDD\u7559\u65E5\u5FD7\u548C\u622A\u56FE";
       stop.onclick = async () => {
         stop.disabled = true;
@@ -527,7 +530,7 @@ if (traceId) {
     $("#scriptPageInfo").textContent = `\u5171 ${total} \u6761 \xB7 ${total ? start + 1 : 0}\u2013${Math.min(start + size, total)} \u6761 \xB7 \u7B2C ${scriptPage} / ${pages} \u9875`;
     $("#scriptPrevPage").disabled = scriptPage === 1;
     $("#scriptNextPage").disabled = scriptPage === pages;
-    $("#runAll").disabled = $("#runRange").disabled = stopAllBusy || batchBusy || pendingScripts.size > 0 || state.readingModels || cdpBusy || !total;
+    $("#runAll").disabled = $("#runRange").disabled = state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || pendingScripts.size > 0 || state.readingModels || cdpBusy || !total;
     $("#stopAll").disabled = stopAllBusy || !submissions.size && !state.jobs.some(canStopJob);
     $("#stopAll").textContent = stopAllBusy ? "\u6B63\u5728\u505C\u6B62\u2026" : "\u5F3A\u5236\u505C\u6B62\u5168\u90E8";
   }, renderHistory = function() {
@@ -646,10 +649,15 @@ if (traceId) {
     }
     $("#connection").textContent = state.active ? "\u811A\u672C\u6267\u884C\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
     $("#models").disabled = !!state.active || state.readingModels;
+    if (state.capabilities?.taskIsolation !== 2) batchNotice("\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF1A\u8BF7\u5148\u5173\u95ED\u65E7\u63A7\u5236\u53F0\u670D\u52A1\uFF0C\u518D\u8FD0\u884C\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\uFF1B\u4EC5\u5237\u65B0\u9875\u9762\u4E0D\u80FD\u5347\u7EA7\u670D\u52A1\u3002", true);
     renderScripts();
     renderHistory();
   }
   async function startScripts(scripts, label, batch = false) {
+    if (state.capabilities?.taskIsolation !== 2) {
+      batchNotice("\u8BF7\u5148\u91CD\u542F\u672C\u9879\u76EE18888\u63A7\u5236\u53F0\u52A0\u8F7D\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\uFF0C\u672A\u63D0\u4EA4\u65B0\u4EFB\u52A1\u3002", true);
+      return;
+    }
     if (state.capabilities?.taskScheduling !== 1) {
       batchNotice("\u5F53\u524D\u670D\u52A1\u5C1A\u672A\u52A0\u8F7D\u6267\u884C\u7B56\u7565\uFF0C\u8BF7\u4ECE\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\u6253\u5F00\u65B0\u7248\u63A7\u5236\u53F0\u540E\u6267\u884C\u3002", true);
       return;

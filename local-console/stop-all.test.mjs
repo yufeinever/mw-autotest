@@ -31,7 +31,7 @@ test('批量提交期间停止全部，停止已提交任务且不再提交下�
  let release;
  try{
   const scripts=Array.from({length:3},(_,i)=>({id:'script-'+i,name:'隔离脚本'+i,path:'D:/mock.mjs',exists:true,integrated:true}));
-  const state={token:'mock',capabilities:{taskScheduling:1},config:normalizeConfig(),scripts,jobs:[],active:0};
+  const state={token:'mock',capabilities:{taskScheduling:1,taskIsolation:2},config:normalizeConfig(),scripts,jobs:[],active:0};
   const page=await browser.newPage(),runs=[],stops=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
   let entered;const inFlight=new Promise(r=>entered=r);
   await page.route('**/api/**',async route=>{
