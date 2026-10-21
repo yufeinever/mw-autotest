@@ -1,6 +1,7 @@
 import {setTimeout as delay} from 'node:timers/promises';
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
+import {initializeTestPage} from './mobilework-initialize.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 export function createTaskControl({log=()=>{},url=process.env.MW_TASK_CONTROL_URL,token=process.env.MW_TASK_CONTROL_TOKEN}={}){
@@ -28,16 +29,9 @@ export class TaskControl {
  async begin(page,{openComposer=true,stepInterval=0.5}={}){
   await this.acquire(page,'PREPARING');
   await this.call('checkpoint',{protocol:2});
-  // The previous managed session may still be running. Open a fresh composer
-  // through the actual control, without aborting its model work.
-  if(openComposer&&/\/session\/ses_[A-Za-z0-9]+$/.test(page.url())){
-   const owned=await this.call('is-managed',{url:page.url()});
-   if(owned.managed){
-    await this.assertNoDraft(page);
-    if(await page.getByRole('dialog').filter({visible:true}).count())throw blocked('已有任务出现对话框，保留现场，等待其交互处理后重试');
-    await waitStep(page,{stepInterval});await page.getByRole('button',{name:'新建任务',exact:true}).filter({visible:true}).click();
-    await page.waitForURL(url=>! /\/session\/ses_[A-Za-z0-9]+$/.test(url.toString()),{timeout:10000});
-   }
+  if(openComposer){
+   const owned=/\/session\/ses_[A-Za-z0-9]+$/.test(page.url())?await this.call('is-managed',{url:page.url()}):{managed:false};
+   await initializeTestPage(page,{stepInterval,managedSession:owned.managed,log:this.log});
   }
  }
  async assertNoDraft(page){

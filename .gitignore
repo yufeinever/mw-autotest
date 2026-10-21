@@ -63,6 +63,8 @@
 !/package-lock.json
 !/package.json
 !/scripts/build-console-app.mjs
+!/scripts/mobilework-initialize.mjs
+!/scripts/mobilework-initialize.test.mjs
 !/scripts/case002-meeting-data.mjs
 !/scripts/case002-meeting.test.mjs
 !/scripts/check-package.mjs

@@ -89,7 +89,7 @@ try{
  else{
   if(resumeId){sessionId=resumeId;log('续跑既有会话',sessionId);}
   else{
-  await waitStep(page,runConfig);await button('新建任务').click();
+  // 新建首页及输入清理由TaskControl.begin统一完成，避免再次恢复草稿。
   await button('日常办公').first().waitFor();await capture('新建任务');
   await resetComposerPermission(page,runConfig);
   if(runConfig?.model){await selectModel(page,runConfig.model,{stepInterval:runConfig.stepInterval});log('模型已核对',runConfig.model);}

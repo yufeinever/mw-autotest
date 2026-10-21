@@ -87,7 +87,7 @@ export async function selectTestWorkspace(page,config={}){
 export async function fillScenario(page,definition,config,{capture=async()=>{},log=()=>{},assert=()=>{},onDraft=()=>{}}={}){
  await ensureIdleComposer(page);
  const previousSelection=await selectionState(page);
- await waitStep(page,config);await button(page,'新建任务').click();
+ // TaskControl.begin has already initialized the fresh composer once.
  await button(page,definition.category).first().waitFor();
  await selectTestWorkspace(page,config);
  await resetComposerPermission(page,config);
