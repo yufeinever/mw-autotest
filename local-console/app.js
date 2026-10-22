@@ -494,6 +494,7 @@ function findScriptCase(script, projectRoot) {
 }
 function installDetailPreview(readCase, canPreview = () => true) {
   if (window.top !== window) return { openScript: () => {
+  }, openRecording: () => {
   } };
   const dialog = document.createElement("dialog");
   dialog.className = "detail-preview";
@@ -518,10 +519,18 @@ function installDetailPreview(readCase, canPreview = () => true) {
     if (depth) history.go(-depth);
     else hide();
   }
+  function clearBody() {
+    for (const video of body.querySelectorAll("video")) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    body.replaceChildren();
+  }
   function hide() {
     generation++;
     current = null;
-    body.replaceChildren();
+    clearBody();
     if (dialog.open) dialog.close();
     window.scrollTo(0, scrollY);
     if (anchor?.isConnected) anchor.focus({ preventScroll: true });
@@ -543,11 +552,38 @@ function installDetailPreview(readCase, canPreview = () => true) {
     const request = ++generation;
     current = entry;
     title.textContent = entry.title;
-    body.replaceChildren();
+    clearBody();
     if (!dialog.open) {
       anchor = document.activeElement;
       scrollY = window.scrollY;
       dialog.showModal();
+    }
+    if (entry.kind === "recording") {
+      const content = document.createElement("article");
+      content.className = "recording-preview";
+      const heading = document.createElement("h2");
+      heading.textContent = entry.title;
+      const meta = document.createElement("p"), recording = entry.recording || {}, config = recording.config || {};
+      meta.textContent = [config.resolution?.replace("x", " \xD7 "), config.fps ? config.fps + " \u5E27/\u79D2" : null, config.bitrateKbps ? config.bitrateKbps + " kbps" : null, Number.isFinite(recording.durationSeconds) ? recording.durationSeconds.toFixed(2) + " \u79D2" : null, Number.isFinite(recording.bytes) ? (recording.bytes / 1e6).toFixed(2) + " MB" : null].filter(Boolean).join(" \xB7 ");
+      const video = document.createElement("video");
+      video.controls = true;
+      video.preload = "metadata";
+      video.setAttribute("aria-label", "\u6267\u884C\u5F55\u50CF");
+      video.src = "/recordings/" + encodeURIComponent(entry.id);
+      const download = document.createElement("a");
+      download.textContent = "\u4E0B\u8F7D\u5F55\u50CF\uFF08MP4\uFF09";
+      download.href = video.src + "/download";
+      download.setAttribute("download", "");
+      const error = document.createElement("p");
+      error.className = "error";
+      error.hidden = true;
+      video.addEventListener("error", () => {
+        error.hidden = false;
+        error.textContent = "\u5F55\u50CF\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5C1D\u8BD5\u4E0B\u8F7D\u6216\u5728\u622A\u56FE\u62A5\u544A\u4E2D\u6838\u5BF9\u5F55\u50CF\u72B6\u6001\u3002";
+      });
+      content.append(heading, meta, video, error, download);
+      body.append(content);
+      return;
     }
     if (entry.kind === "case" || entry.kind === "source") {
       const description = document.createElement("article");
@@ -614,6 +650,8 @@ function installDetailPreview(readCase, canPreview = () => true) {
   if (history.state?.mwPreview) show(history.state.mwPreview);
   return { openScript(script) {
     open({ kind: "case", id: script.id, title: script.name + " \xB7 \u7528\u4F8B\u63CF\u8FF0" });
+  }, openRecording(job) {
+    if (job.recording?.available) open({ kind: "recording", id: job.id, title: job.name + " \xB7 \u6267\u884C\u5F55\u50CF", recording: job.recording });
   } };
 }
 
@@ -710,9 +748,13 @@ if (traceId) {
         status.title = failed.map((c) => c.name).join("\uFF1B") || job.result?.error || "";
         if (failed.length && failed.every((c) => c.category === "skill-invocation")) status.append(el2("small", "Skill \u8C03\u7528\u65AD\u8A00\u672A\u901A\u8FC7"));
         recent.append(el2("span", job.startedAt ? batchDate(job.startedAt) : job.queuedAt ? "\u6392\u961F\u4E8E " + batchDate(job.queuedAt) : "\u65F6\u95F4\u672A\u8BB0\u5F55", "script-time"));
-        const evidence = el2("div", void 0, "script-evidence"), report = el2("a", "\u622A\u56FE\u62A5\u544A", "script-link"), log = el2("button", "\u6267\u884C\u65E5\u5FD7", "script-link");
+        const evidence = el2("div", void 0, "script-evidence"), report = el2("a", "\u622A\u56FE\u62A5\u544A", "script-link"), video = el2("button", "\u5F55\u50CF", "script-link"), log = el2("button", "\u6267\u884C\u65E5\u5FD7", "script-link");
         report.href = "/reports/" + encodeURIComponent(job.id);
         evidence.append(report);
+        video.disabled = !job.recording?.available;
+        video.title = job.recording?.available ? "\u64AD\u653E\u6216\u4E0B\u8F7D\u672C\u6B21\u6267\u884C\u5F55\u50CF" : { STARTING: "\u5F55\u50CF\u51C6\u5907\u4E2D", RECORDING: "\u5F55\u5236\u4E2D\uFF0C\u4FDD\u5B58\u540E\u53EF\u67E5\u770B", FINALIZING: "\u5F55\u50CF\u4FDD\u5B58\u4E2D", ERROR: "\u5F55\u50CF\u5931\u8D25\uFF1A" + (job.recording?.error || "\u8BF7\u67E5\u770B\u62A5\u544A"), INTERRUPTED: "\u5F55\u50CF\u4FDD\u5B58\u4E2D\u65AD\uFF0C\u8BF7\u67E5\u770B\u62A5\u544A", DISABLED: "\u672C\u6B21\u6267\u884C\u672A\u5F00\u542F\u5F55\u50CF" }[job.recording?.status] || "\u672C\u6B21\u6267\u884C\u6CA1\u6709\u5DF2\u4FDD\u5B58\u7684\u5F55\u50CF";
+        video.onclick = () => preview.openRecording(job);
+        evidence.append(video);
         log.onclick = () => showExecutionLog(job);
         evidence.append(log);
         if (job.sessionId || job.result?.sessionId) {

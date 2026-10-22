@@ -92,7 +92,10 @@ function renderScripts(){
   const recent=el('td',undefined,'script-recent'),actions=el('td'),actionGroup=el('div',undefined,'script-row-actions'),run=el('button','执行','primary'),stop=el('button','强制停止','danger'),remove=el('button','移除','script-remove');
   if(job){const failed=(job.result?.checks||[]).filter(c=>!c.pass);status.title=failed.map(c=>c.name).join('；')||job.result?.error||'';if(failed.length&&failed.every(c=>c.category==='skill-invocation'))status.append(el('small','Skill 调用断言未通过'));
    recent.append(el('span',job.startedAt?batchDate(job.startedAt):job.queuedAt?'排队于 '+batchDate(job.queuedAt):'时间未记录','script-time'));
-   const evidence=el('div',undefined,'script-evidence'),report=el('a','截图报告','script-link'),log=el('button','执行日志','script-link');report.href='/reports/'+encodeURIComponent(job.id);evidence.append(report);log.onclick=()=>showExecutionLog(job);evidence.append(log);
+   const evidence=el('div',undefined,'script-evidence'),report=el('a','截图报告','script-link'),video=el('button','录像','script-link'),log=el('button','执行日志','script-link');report.href='/reports/'+encodeURIComponent(job.id);evidence.append(report);
+   video.disabled=!job.recording?.available;
+   video.title=job.recording?.available?'播放或下载本次执行录像':({STARTING:'录像准备中',RECORDING:'录制中，保存后可查看',FINALIZING:'录像保存中',ERROR:'录像失败：'+(job.recording?.error||'请查看报告'),INTERRUPTED:'录像保存中断，请查看报告',DISABLED:'本次执行未开启录像'}[job.recording?.status]||'本次执行没有已保存的录像');
+   video.onclick=()=>preview.openRecording(job);evidence.append(video);log.onclick=()=>showExecutionLog(job);evidence.append(log);
    if(job.sessionId||job.result?.sessionId){const traceLink=el('a','Trace 记录','script-link');traceLink.href='/?trace='+encodeURIComponent(job.id);evidence.append(traceLink);}recent.append(evidence);
   }else recent.append(el('span','—','hint'));
   tr.append(recent);

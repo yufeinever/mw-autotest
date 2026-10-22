@@ -14,7 +14,7 @@ export function findScriptCase(script,projectRoot){
  return clientCases.find(item=>normalizedPath(projectRoot+'/'+item.entry)===normalizedPath(script.path))||null;
 }
 export function installDetailPreview(readCase,canPreview=()=>true){
- if(window.top!==window)return {openScript:()=>{}};
+ if(window.top!==window)return {openScript:()=>{},openRecording:()=>{}};
  const dialog=document.createElement('dialog');dialog.className='detail-preview';
  dialog.setAttribute('aria-label','详情预览');
  const bar=document.createElement('div');bar.className='detail-preview-bar';
@@ -27,7 +27,8 @@ export function installDetailPreview(readCase,canPreview=()=>true){
   return u.origin===location.origin&&(/^\/reports\/[\w-]+$/.test(u.pathname)||/^\/traces\/[\w-]+$/.test(u.pathname)||(u.pathname==='/'&&(u.searchParams.has('trace')||u.searchParams.has('batch'))))?u.pathname+u.search:null;
  };
  function closeToList(){const depth=history.state?.mwPreview?.depth;if(depth)history.go(-depth);else hide();}
- function hide(){generation++;current=null;body.replaceChildren();if(dialog.open)dialog.close();window.scrollTo(0,scrollY);if(anchor?.isConnected)anchor.focus({preventScroll:true});}
+ function clearBody(){for(const video of body.querySelectorAll('video')){video.pause();video.removeAttribute('src');video.load();}body.replaceChildren();}
+ function hide(){generation++;current=null;clearBody();if(dialog.open)dialog.close();window.scrollTo(0,scrollY);if(anchor?.isConnected)anchor.focus({preventScroll:true});}
  function intercept(event){
   if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
   const a=event.target.closest('a[href]');if(!a||a.hasAttribute('download')||a.target==='_blank')return;
@@ -37,7 +38,18 @@ export function installDetailPreview(readCase,canPreview=()=>true){
  }
  async function show(entry){
   const request=++generation;current=entry;title.textContent=entry.title;
-  body.replaceChildren();if(!dialog.open){anchor=document.activeElement;scrollY=window.scrollY;dialog.showModal();}
+  clearBody();if(!dialog.open){anchor=document.activeElement;scrollY=window.scrollY;dialog.showModal();}
+  if(entry.kind==='recording'){
+   const content=document.createElement('article');content.className='recording-preview';
+   const heading=document.createElement('h2');heading.textContent=entry.title;
+   const meta=document.createElement('p'),recording=entry.recording||{},config=recording.config||{};
+   meta.textContent=[config.resolution?.replace('x',' × '),config.fps?config.fps+' 帧/秒':null,config.bitrateKbps?config.bitrateKbps+' kbps':null,Number.isFinite(recording.durationSeconds)?recording.durationSeconds.toFixed(2)+' 秒':null,Number.isFinite(recording.bytes)?(recording.bytes/1e6).toFixed(2)+' MB':null].filter(Boolean).join(' · ');
+   const video=document.createElement('video');video.controls=true;video.preload='metadata';video.setAttribute('aria-label','执行录像');video.src='/recordings/'+encodeURIComponent(entry.id);
+   const download=document.createElement('a');download.textContent='下载录像（MP4）';download.href=video.src+'/download';download.setAttribute('download','');
+   const error=document.createElement('p');error.className='error';error.hidden=true;
+   video.addEventListener('error',()=>{error.hidden=false;error.textContent='录像加载失败，请尝试下载或在截图报告中核对录像状态。';});
+   content.append(heading,meta,video,error,download);body.append(content);return;
+  }
   if(entry.kind==='case'||entry.kind==='source'){
    const description=document.createElement('article');description.className='case-description';body.append(description);
    try{
@@ -71,5 +83,5 @@ export function installDetailPreview(readCase,canPreview=()=>true){
  window.addEventListener('popstate',()=>{const entry=history.state?.mwPreview;if(entry)show(entry);else hide();});
  document.addEventListener('click',intercept);
  if(history.state?.mwPreview)show(history.state.mwPreview);
- return {openScript(script){open({kind:'case',id:script.id,title:script.name+' · 用例描述'});}};
+ return {openScript(script){open({kind:'case',id:script.id,title:script.name+' · 用例描述'});},openRecording(job){if(job.recording?.available)open({kind:'recording',id:job.id,title:job.name+' · 执行录像',recording:job.recording});}};
 }

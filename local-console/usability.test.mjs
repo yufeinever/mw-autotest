@@ -47,7 +47,7 @@ test('源码接口只读已登记脚本且要求凭证，勾选批次按序号�
  }finally{await new Promise(r=>server.close(r));}
 });
 
-async function withUI(run){
+async function withUI(run,prepare=()=>{}){
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-usability-')),{server,url}=await createConsole({port:0,dataDir:dir});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
@@ -56,6 +56,7 @@ async function withUI(run){
   const scripts=Array.from({length:8},(_,i)=>({id:'s'+(i+1),name:'用例 '+(i+1),path:i===6?'D:/custom/run-client-case007.mjs':projectRoot+'/scripts/run-client-case'+String(i+1).padStart(3,'0')+'.mjs',exists:true,integrated:true}));
   const jobs=scripts.map((s,i)=>({id:'j'+(i+1),scriptId:s.id,name:s.name,status:'PASS',sessionId:'ses_test',startedAt:'2026-10-22T01:00:00Z'}));
   const state={projectRoot,token:'test',config:normalizeConfig(),capabilities:{taskIsolation:2,taskScheduling:1,serialOnly:1,scriptSource:1,detailPreview:1},scripts,jobs,batches:[],active:0};
+  prepare(state);
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/**',async route=>{
    const req=route.request(),pathname=new URL(req.url()).pathname;
@@ -117,4 +118,34 @@ test('报告和Trace加载中可立即返回，保留页码勾选滚动；脚本
  await page.getByRole('button',{name:'关闭 · 返回列表',exact:true}).click();
  await page.waitForFunction(()=>!document.querySelector('.detail-preview').open);release?.();
  assert.equal(await page.evaluate(()=>window.retainedList),true);
+}));
+
+test('录像紧跟截图报告且绑定最新运行，缺失禁用、失败可退出并保留列表状态',async()=>withUI(async({page,url,requests})=>{
+ const row=page.locator('#scripts tr').first();
+ assert.deepEqual(await row.locator('.script-evidence > *').allTextContents(),['截图报告','录像','执行日志','Trace 记录']);
+ assert.equal(await row.getByRole('button',{name:'录像',exact:true}).isEnabled(),true);
+ const missing=page.locator('#scripts tr').nth(1).getByRole('button',{name:'录像',exact:true});
+ assert.equal(await missing.isDisabled(),true);assert.match(await missing.getAttribute('title'),/没有已保存/);
+ assert.match(await page.locator('#scripts tr').nth(2).getByRole('button',{name:'录像',exact:true}).getAttribute('title'),/录制中/);
+ assert.match(await page.locator('#scripts tr').nth(3).getByRole('button',{name:'录像',exact:true}).getAttribute('title'),/录像失败/);
+ await page.locator('#scripts .script-choice').first().check();await page.locator('#stepInterval').fill('1.9');
+ await page.route('**/recordings/j1-new',route=>route.fulfill({status:404,body:'missing fixture'}));
+ await page.locator('#scripts tr').first().getByRole('button',{name:'录像',exact:true}).click();
+ await page.getByRole('heading',{name:'用例 1 · 执行录像',exact:true}).waitFor();
+ assert.equal(await page.locator('.recording-preview video').getAttribute('src'),'/recordings/j1-new');
+ assert.equal(await page.getByRole('link',{name:'下载录像（MP4）'}).getAttribute('href'),url+'/recordings/j1-new/download');
+ assert.match(await page.locator('.recording-preview').innerText(),/49.97 秒 · 1.52 MB/);
+ await page.getByText('录像加载失败，请尝试下载或在截图报告中核对录像状态。',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'关闭 · 返回列表',exact:true}).click();
+ await page.waitForFunction(()=>!document.querySelector('.detail-preview').open);
+ assert.equal(await page.locator('video').count(),0);assert.equal(await page.locator('#scripts .script-choice').first().isChecked(),true);
+ assert.equal(await page.locator('#stepInterval').inputValue(),'1.9');assert.deepEqual(requests,[]);
+ await page.locator('#scripts tr').first().getByRole('button',{name:'录像',exact:true}).click();
+ await page.getByRole('heading',{name:'用例 1 · 执行录像',exact:true}).waitFor();await page.goBack();
+ await page.waitForFunction(()=>!document.querySelector('.detail-preview').open);assert.equal(await page.locator('video').count(),0);
+},state=>{
+ const recording={available:true,status:'COMPLETED',durationSeconds:49.97,bytes:1517103,config:{resolution:'960x540',fps:30,bitrateKbps:400}};
+ state.jobs[0].recording=recording;state.jobs[1].recording=recording;
+ state.jobs[2].recording={available:false,status:'RECORDING'};state.jobs[3].recording={available:false,status:'ERROR',error:'编码失败'};
+ state.jobs.push({...state.jobs[0],id:'j1-new'}, {...state.jobs[1],id:'j2-new',recording:undefined});
 }));
