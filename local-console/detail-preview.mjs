@@ -13,7 +13,7 @@ export function findScriptCase(script,projectRoot){
  if(!projectRoot||!script?.path)return null;
  return clientCases.find(item=>normalizedPath(projectRoot+'/'+item.entry)===normalizedPath(script.path))||null;
 }
-export function installDetailPreview(readCase,canPreview=()=>true){
+export function installDetailPreview(readCase,canPreview=()=>true,recordingActions={}){
  if(window.top!==window)return {openScript:()=>{},openRecording:()=>{}};
  const dialog=document.createElement('dialog');dialog.className='detail-preview';
  dialog.setAttribute('aria-label','详情预览');
@@ -48,7 +48,31 @@ export function installDetailPreview(readCase,canPreview=()=>true){
    const download=document.createElement('a');download.textContent='下载录像（MP4）';download.href=video.src+'/download';download.setAttribute('download','');
    const error=document.createElement('p');error.className='error';error.hidden=true;
    video.addEventListener('error',()=>{error.hidden=false;error.textContent='录像加载失败，请尝试下载或在截图报告中核对录像状态。';});
-   content.append(heading,meta,video,error,download);body.append(content);return;
+   const actions=document.createElement('div');actions.className='recording-actions';
+   const openFolder=document.createElement('button');openFolder.textContent='打开所在文件夹';openFolder.disabled=true;actions.append(download,openFolder);
+   const paths=document.createElement('div');paths.className='recording-locations';
+   const folderMessage=document.createElement('p');folderMessage.className='hint';folderMessage.textContent='正在读取本地保存位置…';folderMessage.setAttribute('role','status');
+   content.append(heading,meta,video,error,actions,paths,folderMessage);body.append(content);
+   const openLocation=async(button,key)=>{
+    button.disabled=true;folderMessage.textContent='正在打开文件夹…';
+    try{const result=await recordingActions.openFolder(entry.id,key);if(request===generation)folderMessage.textContent=result.message;}
+    catch(e){if(request===generation)folderMessage.textContent='打开失败：'+e.message;}
+    finally{if(request===generation)button.disabled=false;}
+   };
+   try{
+    const info=await recordingActions.readLocations(entry.id);if(request!==generation)return;
+    const primary=info.locations.find(item=>item.key==='primary');
+    openFolder.disabled=!primary?.directoryExists;openFolder.onclick=()=>openLocation(openFolder,'primary');
+    for(const item of info.locations){
+     const row=document.createElement('div'),label=document.createElement('strong'),text=document.createElement('code');
+     label.textContent=item.label+(item.exists?'':'（录像已删除或未保存）');text.textContent=item.file;row.append(label,text);
+     if(item.key!=='primary'){const link=document.createElement('button');link.textContent='打开历史副本文件夹';link.onclick=()=>openLocation(link,item.key);row.append(link);}
+     paths.append(row);
+    }
+    folderMessage.textContent=info.locations.length>1?'这条历史录像还有报告副本，释放全部空间需分别清理两处MP4；请保留报告和日志文件。':info.legacy?'此旧版目录含运行资料，请只删除MP4，保留报告和日志文件。':'本次录像只保存一份，报告和播放器共用此文件。可手动删除MP4，报告和日志保留。';
+    if(primary&&!primary.exists){video.hidden=true;video.removeAttribute('src');video.load();download.hidden=true;error.hidden=false;error.textContent='录像文件已被移动或删除，报告和日志仍保留。';}
+   }catch(e){if(request===generation)folderMessage.textContent='保存位置读取失败：'+e.message;}
+   return;
   }
   if(entry.kind==='case'||entry.kind==='source'){
    const description=document.createElement('article');description.className='case-description';body.append(description);

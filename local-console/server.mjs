@@ -16,7 +16,8 @@ import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {killScript,stopSession,releaseOwnedLock} from './stop-job.mjs';
 import {canStopJob} from './stop-all.mjs';
-import {startRecording,recordingFile} from './recording.mjs';
+import {startRecording} from './recording.mjs';
+import {recordingLocation,recordingLocations,openWindowsFolder} from './recording-storage.mjs';
 import {withClientCases} from './case-registry.mjs';
 import {loadJobTrace,jobSessionId} from './trace-store.mjs';
 import {renderTrace} from './trace.mjs';
@@ -37,7 +38,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,recorderFactory=startRecording,cdpConfigFile=buildInfoPath}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -81,10 +82,6 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  const finishRecording=async(job,reason)=>{
   const pending=recordings.get(job.id);
   if(pending){const recorder=await pending;await recorder?.stop(reason);recordings.delete(job.id);}
-  if(job.recording?.available&&job.reportPath){
-   const relative=path.relative(path.join(projectRoot,'runs'),path.dirname(job.reportPath));
-   if(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative))await fs.copyFile(path.join(dataDir,'jobs',job.id,recordingFile),path.join(path.dirname(job.reportPath),recordingFile)).catch(()=>{});
-  }
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
  const recovering=new Set();
@@ -175,7 +172,18 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
+   if(recordingFolder&&((req.method==='GET'&&recordingFolder[2]==='locations')||(req.method==='POST'&&recordingFolder[2]==='folder'))){
+    if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
+    const job=jobs.find(j=>j.id===recordingFolder[1]);if(!job)return send(404,{error:'运行记录不存在'});
+    const info=await recordingLocations(job,{dataDir,runsDir:path.join(projectRoot,'runs')});
+    if(req.method==='GET')return send(200,info);
+    if(!['primary','report'].includes(body.location))return send(400,{error:'录像位置无效'});
+    const target=info.locations.find(item=>item.key===body.location);
+    if(!target?.directoryExists)return send(404,{error:'录像文件夹不存在或已被删除'});
+    await folderOpener(target.directory);return send(200,{message:'已请求打开文件夹',directory:target.directory});
+   }
    const sourceMatch=url.pathname.match(/^\/api\/scripts\/([\w-]+)\/source$/);
    if(req.method==='GET'&&sourceMatch){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -318,14 +326,14 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      await writeJob(job);
      if(job.stopRequested||job.status!=='RUNNING')return;
      if(config.recording.enabled&&!runArgs.includes('--check')){
-      const pending=recorderFactory({config:config.recording,directory:jobDir,cdpPort:config.cdpPort,onChange:async metadata=>{
-       const previous=job.recording?.status;job.recording=metadata;
+      const pending=recorderFactory({config:config.recording,directory:path.join(dataDir,'recordings',job.id),cdpPort:config.cdpPort,onChange:async metadata=>{
+       const previous=job.recording?.status;job.recording={...metadata,storage:'recordings'};
        if(previous!==metadata.status){
         const stamp=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date());
         const message=`\n[${stamp}] 录像 ${metadata.status}${metadata.stopReason==='limit'?'：达到时长上限，用例继续执行':''}${metadata.error?'：'+metadata.error:''}\n`;
         append(job,message);await fs.appendFile(path.join(jobDir,'执行日志.txt'),message);
        }
-       await fs.writeFile(path.join(jobDir,'录像信息.json'),JSON.stringify(metadata,null,2));await writeJob(job);
+       await fs.writeFile(path.join(jobDir,'录像信息.json'),JSON.stringify(job.recording,null,2));await writeJob(job);
       }}).catch(async error=>{job.recording={status:'ERROR',error:error.message};await writeJob(job);return null;});
       recordings.set(job.id,pending);await pending;
      }else job.recording={status:config.recording.enabled?'SKIPPED':'DISABLED',config:config.recording};
@@ -434,7 +442,8 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    const video=url.pathname.match(/^\/recordings\/([\w-]+)(\/download)?$/);
    if(req.method==='GET'&&video){
     const job=jobs.find(j=>j.id===video[1]);if(!job?.recording?.available)return send(404,{error:'本次尚无已保存录像'});
-    const file=path.join(dataDir,'jobs',job.id,recordingFile),stat=await fs.stat(file);
+    const stored=await recordingLocation(job,dataDir);if(!stored.exists)return send(404,{error:'录像文件已被移动或删除，报告和日志仍保留'});
+    const file=stored.file,stat=await fs.stat(file);
     res.setHeader('Content-Type','video/mp4');res.setHeader('Accept-Ranges','bytes');res.setHeader('Cache-Control','no-store');
     if(video[2])res.setHeader('Content-Disposition',"attachment; filename*=UTF-8''"+encodeURIComponent(job.name+'-'+job.id+'.mp4'));
     let start=0,end=stat.size-1;

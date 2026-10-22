@@ -76,3 +76,60 @@ test('控制台强制停止保存真实隔离录像，排队不录，配置快�
   await new Promise(r=>server.close(r));await browser.close();
  }
 });
+
+test('录像本地位置按运行ID限定，兼容历史副本及手动删除，打开文件夹要求凭证',async()=>{
+ const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-video-folder-'));
+ const reportDir=await fs.mkdtemp(path.join(projectRoot,'runs','录像目录回归-')),opened=[];
+ const oldDir=path.join(dataDir,'jobs','legacy'),singleDir=path.join(dataDir,'recordings','single');
+ for(const dir of [oldDir,singleDir,path.join(dataDir,'jobs','single')])await fs.mkdir(dir,{recursive:true});
+ const old={id:'legacy',name:'历史录像',status:'PASS',startedAt:'2026-10-22T01:00:00Z',reportPath:path.join(reportDir,'执行报告.md'),recording:{available:true,status:'COMPLETED'}};
+ const single={...old,id:'single',reportPath:path.join(dataDir,'outside','执行报告.md'),recording:{...old.recording,storage:'recordings'}};
+ for(const job of [old,single])await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
+ for(const dir of [oldDir,singleDir,reportDir])await fs.writeFile(path.join(dir,recordingFile),'fixture-mp4');
+ const {server,url}=await createConsole({port:0,dataDir,folderOpener:async directory=>{opened.push(directory);}});
+ try{
+  const state=await fetch(url+'/api/state').then(r=>r.json()),headers={'x-console-token':state.token,'content-type':'application/json'};
+  const read=id=>fetch(url+'/api/jobs/'+id+'/recording-locations',{headers});
+  const open=(id,body,auth=headers)=>fetch(url+'/api/jobs/'+id+'/recording-folder',{method:'POST',headers:auth,body:JSON.stringify(body)});
+  assert.equal((await fetch(url+'/api/jobs/legacy/recording-locations')).status,403);
+  assert.equal((await open('legacy',{location:'primary'},{})).status,403);
+  assert.equal((await read('unknown')).status,404);
+  const info=await read('legacy').then(r=>r.json());assert.equal(info.legacy,true);assert.deepEqual(info.locations.map(l=>l.key),['primary','report']);
+  assert.equal(info.locations[0].file,path.join(oldDir,recordingFile));assert.ok(info.locations.every(l=>l.exists));
+  assert.equal((await open('legacy',{location:'C:/Windows'})).status,400);
+  assert.equal((await open('legacy',{location:'primary',path:'C:/Windows'})).status,200);
+  assert.equal((await open('legacy',{location:'report'})).status,200);assert.deepEqual(opened,[oldDir,reportDir]);
+  const next=await read('single').then(r=>r.json());assert.equal(next.legacy,false);assert.equal(next.locations.length,1);assert.equal(next.locations[0].directory,singleDir);
+  assert.equal((await open('single',{location:'report'})).status,404);
+  assert.equal(await fetch(url+'/recordings/single').then(r=>r.text()),'fixture-mp4');
+  await fs.unlink(path.join(oldDir,recordingFile));
+  assert.equal((await fetch(url+'/recordings/legacy')).status,404);
+  const removed=await read('legacy').then(r=>r.json());assert.equal(removed.locations[0].exists,false);assert.equal(removed.locations[1].exists,true);
+  assert.equal((await fetch(url+'/api/jobs/legacy').then(r=>r.json())).status,'PASS');
+  assert.equal(await fs.readFile(path.join(reportDir,recordingFile),'utf8'),'fixture-mp4');
+ }finally{await new Promise(r=>server.close(r));await fs.rm(reportDir,{recursive:true,force:true});await fs.rm(dataDir,{recursive:true,force:true});}
+});
+
+test('新执行录像仅存独立录像目录，报告和播放器共用，不复制到运行或报告目录',async()=>{
+ const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-single-video-'));
+ const reportDir=await fs.mkdtemp(path.join(projectRoot,'runs','单份录像回归-')),scriptPath=path.join(dataDir,'fixture.mjs');
+ await fs.writeFile(path.join(reportDir,'执行报告.md'),'# 隔离测试');await fs.writeFile(path.join(reportDir,'执行结果.json'),JSON.stringify({result:'PASS'}));
+ await fs.writeFile(scriptPath,'// MW_TEST_CONFIG_JSON\nconsole.log("报告："+'+JSON.stringify(path.join(reportDir,'执行报告.md'))+');');
+ let outputDirectory;
+ const {server,url}=await createConsole({port:0,dataDir,recorderFactory:async options=>{
+  outputDirectory=options.directory;await fs.mkdir(outputDirectory,{recursive:true});
+  await options.onChange({status:'RECORDING',available:false,config:options.config});
+  return {stop:async()=>{await fs.writeFile(path.join(outputDirectory,recordingFile),'one-video');await options.onChange({status:'COMPLETED',available:true,config:options.config,bytes:9});}};
+ }});
+ try{
+  const state=await fetch(url+'/api/state').then(r=>r.json()),headers={'x-console-token':state.token,'content-type':'application/json'};
+  const post=(route,body)=>fetch(url+route,{method:'POST',headers,body:JSON.stringify(body)}).then(r=>r.json());
+  const script=await post('/api/scripts',{name:'单份录像夹具',path:scriptPath}),created=await post('/api/run',{scriptId:script.id,config:{}});
+  const job=await until(async()=>{const current=await fetch(url+'/api/jobs/'+created.id).then(r=>r.json());return current.phase==='FINISHED'?current:null;});
+  assert.equal(job.status,'PASS');assert.equal(job.recording.storage,'recordings');assert.equal(job.recording.available,true);
+  assert.equal(outputDirectory,path.join(dataDir,'recordings',job.id));assert.equal(await fs.readFile(path.join(outputDirectory,recordingFile),'utf8'),'one-video');
+  for(const dir of [reportDir,path.join(dataDir,'jobs',job.id)])await assert.rejects(fs.access(path.join(dir,recordingFile)),{code:'ENOENT'});
+  assert.equal(await fetch(url+'/recordings/'+job.id).then(r=>r.text()),'one-video');
+  assert.match(await fetch(url+'/reports/'+job.id).then(r=>r.text()),new RegExp('/recordings/'+job.id));
+ }finally{await new Promise(r=>server.close(r));await fs.rm(reportDir,{recursive:true,force:true});await fs.rm(dataDir,{recursive:true,force:true});}
+});

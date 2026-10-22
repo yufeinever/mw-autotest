@@ -13,7 +13,10 @@ const labels={QUEUED:'排队中',RUNNING:'执行中',PASS:'通过',FAIL:'失败'
 labels.STOPPED='已强制停止';
 function notice(text,error=false){$('#message').textContent=text;$('#message').className=error?'error':'';}
 async function api(url,data,method){const r=await fetch(url,{method:method||(data?'POST':'GET'),headers:{'Content-Type':'application/json','x-console-token':token},body:data?JSON.stringify(data):undefined});const j=await r.json();if(!r.ok)throw Error(j.error);return j;}
-const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script=>script.id===id),state?.projectRoot),()=>state?.capabilities?.detailPreview===1);
+const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script=>script.id===id),state?.projectRoot),()=>state?.capabilities?.detailPreview===1,{
+ readLocations:async id=>{const current=state||await api('/api/state');if(current.capabilities?.recordingFolders!==1)throw Error('请在任务空闲时重启控制台，以启用录像文件夹入口');token=current.token;return api('/api/jobs/'+encodeURIComponent(id)+'/recording-locations');},
+ openFolder:(id,location)=>api('/api/jobs/'+encodeURIComponent(id)+'/recording-folder',{location})
+});
 function recordingConfig(){return {enabled:$('#recordingEnabled').checked,resolution:$('#recordingResolution').value,fps:Number($('#recordingFps').value),bitrateKbps:Number($('#recordingBitrate').value),maxSeconds:Number($('#recordingMaxSeconds').value||180)};}
 function syncRecording(){const c=recordingConfig();for(const id of ['recordingResolution','recordingFps','recordingBitrate','recordingMaxSeconds'])$('#'+id).disabled=!c.enabled;$('#recordingEstimate').textContent=c.enabled?`录满 ${c.maxSeconds} 秒约 ${(c.bitrateKbps*c.maxSeconds/8000).toFixed(1)} MB（按目标平均码率估算）。到时仅停止录像，用例继续执行。`:'录像已关闭。';}
 for(const id of ['recordingEnabled','recordingResolution','recordingFps','recordingBitrate','recordingMaxSeconds'])$('#'+id).addEventListener('input',syncRecording);

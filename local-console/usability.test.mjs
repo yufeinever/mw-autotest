@@ -149,3 +149,24 @@ test('录像紧跟截图报告且绑定最新运行，缺失禁用、失败可�
  state.jobs[2].recording={available:false,status:'RECORDING'};state.jobs[3].recording={available:false,status:'ERROR',error:'编码失败'};
  state.jobs.push({...state.jobs[0],id:'j1-new'}, {...state.jobs[1],id:'j2-new',recording:undefined});
 }));
+
+test('录像页面显示本地文件夹及历史副本，点击按本次运行打开且手动删除提示明确',async()=>withUI(async({page,requests})=>{
+ let deleted=false;const opened=[];
+ await page.route('**/api/jobs/j1/recording-locations',route=>route.fulfill({json:{legacy:true,locations:[
+  {key:'primary',label:'录像文件夹',directory:'C:/fixture/jobs/j1',file:'C:/fixture/jobs/j1/执行录像.mp4',exists:!deleted,directoryExists:true},
+  {key:'report',label:'历史报告副本文件夹',directory:'C:/fixture/runs/case',file:'C:/fixture/runs/case/执行录像.mp4',exists:true,directoryExists:true}
+ ]}}));
+ await page.route('**/api/jobs/j1/recording-folder',route=>{opened.push({body:route.request().postDataJSON(),token:route.request().headers()['x-console-token']});return route.fulfill({json:{message:'已请求打开文件夹'}});});
+ await page.route('**/recordings/j1',route=>route.fulfill({status:404,body:'isolated'}));
+ await page.locator('#scripts tr').first().getByRole('button',{name:'录像',exact:true}).click();
+ await page.getByText('这条历史录像还有报告副本，释放全部空间需分别清理两处MP4；请保留报告和日志文件。',{exact:true}).waitFor();
+ assert.match(await page.locator('.recording-locations').innerText(),/C:\/fixture\/jobs\/j1\/执行录像.mp4/);
+ await page.getByRole('button',{name:'打开所在文件夹',exact:true}).click();await page.getByText('已请求打开文件夹',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'打开历史副本文件夹',exact:true}).click();await page.getByText('已请求打开文件夹',{exact:true}).waitFor();
+ assert.deepEqual(opened,[{body:{location:'primary'},token:'test'},{body:{location:'report'},token:'test'}]);
+ await page.getByRole('button',{name:'关闭 · 返回列表',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.detail-preview').open);
+ deleted=true;await page.locator('#scripts tr').first().getByRole('button',{name:'录像',exact:true}).click();
+ await page.getByText('录像文件已被移动或删除，报告和日志仍保留。',{exact:true}).waitFor();
+ assert.equal(await page.locator('.recording-preview video').isVisible(),false);assert.equal(await page.getByRole('link',{name:'下载录像（MP4）'}).count(),0);
+ assert.deepEqual(requests,[]);
+},state=>{state.capabilities.recordingFolders=1;state.jobs[0].recording={available:true,status:'COMPLETED'};}));

@@ -492,7 +492,7 @@ function findScriptCase(script, projectRoot) {
   if (!projectRoot || !script?.path) return null;
   return clientCases.find((item) => normalizedPath(projectRoot + "/" + item.entry) === normalizedPath(script.path)) || null;
 }
-function installDetailPreview(readCase, canPreview = () => true) {
+function installDetailPreview(readCase, canPreview = () => true, recordingActions = {}) {
   if (window.top !== window) return { openScript: () => {
   }, openRecording: () => {
   } };
@@ -581,8 +581,63 @@ function installDetailPreview(readCase, canPreview = () => true) {
         error.hidden = false;
         error.textContent = "\u5F55\u50CF\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u5C1D\u8BD5\u4E0B\u8F7D\u6216\u5728\u622A\u56FE\u62A5\u544A\u4E2D\u6838\u5BF9\u5F55\u50CF\u72B6\u6001\u3002";
       });
-      content.append(heading, meta, video, error, download);
+      const actions = document.createElement("div");
+      actions.className = "recording-actions";
+      const openFolder = document.createElement("button");
+      openFolder.textContent = "\u6253\u5F00\u6240\u5728\u6587\u4EF6\u5939";
+      openFolder.disabled = true;
+      actions.append(download, openFolder);
+      const paths = document.createElement("div");
+      paths.className = "recording-locations";
+      const folderMessage = document.createElement("p");
+      folderMessage.className = "hint";
+      folderMessage.textContent = "\u6B63\u5728\u8BFB\u53D6\u672C\u5730\u4FDD\u5B58\u4F4D\u7F6E\u2026";
+      folderMessage.setAttribute("role", "status");
+      content.append(heading, meta, video, error, actions, paths, folderMessage);
       body.append(content);
+      const openLocation = async (button, key) => {
+        button.disabled = true;
+        folderMessage.textContent = "\u6B63\u5728\u6253\u5F00\u6587\u4EF6\u5939\u2026";
+        try {
+          const result = await recordingActions.openFolder(entry.id, key);
+          if (request === generation) folderMessage.textContent = result.message;
+        } catch (e) {
+          if (request === generation) folderMessage.textContent = "\u6253\u5F00\u5931\u8D25\uFF1A" + e.message;
+        } finally {
+          if (request === generation) button.disabled = false;
+        }
+      };
+      try {
+        const info = await recordingActions.readLocations(entry.id);
+        if (request !== generation) return;
+        const primary = info.locations.find((item) => item.key === "primary");
+        openFolder.disabled = !primary?.directoryExists;
+        openFolder.onclick = () => openLocation(openFolder, "primary");
+        for (const item of info.locations) {
+          const row = document.createElement("div"), label = document.createElement("strong"), text = document.createElement("code");
+          label.textContent = item.label + (item.exists ? "" : "\uFF08\u5F55\u50CF\u5DF2\u5220\u9664\u6216\u672A\u4FDD\u5B58\uFF09");
+          text.textContent = item.file;
+          row.append(label, text);
+          if (item.key !== "primary") {
+            const link2 = document.createElement("button");
+            link2.textContent = "\u6253\u5F00\u5386\u53F2\u526F\u672C\u6587\u4EF6\u5939";
+            link2.onclick = () => openLocation(link2, item.key);
+            row.append(link2);
+          }
+          paths.append(row);
+        }
+        folderMessage.textContent = info.locations.length > 1 ? "\u8FD9\u6761\u5386\u53F2\u5F55\u50CF\u8FD8\u6709\u62A5\u544A\u526F\u672C\uFF0C\u91CA\u653E\u5168\u90E8\u7A7A\u95F4\u9700\u5206\u522B\u6E05\u7406\u4E24\u5904MP4\uFF1B\u8BF7\u4FDD\u7559\u62A5\u544A\u548C\u65E5\u5FD7\u6587\u4EF6\u3002" : info.legacy ? "\u6B64\u65E7\u7248\u76EE\u5F55\u542B\u8FD0\u884C\u8D44\u6599\uFF0C\u8BF7\u53EA\u5220\u9664MP4\uFF0C\u4FDD\u7559\u62A5\u544A\u548C\u65E5\u5FD7\u6587\u4EF6\u3002" : "\u672C\u6B21\u5F55\u50CF\u53EA\u4FDD\u5B58\u4E00\u4EFD\uFF0C\u62A5\u544A\u548C\u64AD\u653E\u5668\u5171\u7528\u6B64\u6587\u4EF6\u3002\u53EF\u624B\u52A8\u5220\u9664MP4\uFF0C\u62A5\u544A\u548C\u65E5\u5FD7\u4FDD\u7559\u3002";
+        if (primary && !primary.exists) {
+          video.hidden = true;
+          video.removeAttribute("src");
+          video.load();
+          download.hidden = true;
+          error.hidden = false;
+          error.textContent = "\u5F55\u50CF\u6587\u4EF6\u5DF2\u88AB\u79FB\u52A8\u6216\u5220\u9664\uFF0C\u62A5\u544A\u548C\u65E5\u5FD7\u4ECD\u4FDD\u7559\u3002";
+        }
+      } catch (e) {
+        if (request === generation) folderMessage.textContent = "\u4FDD\u5B58\u4F4D\u7F6E\u8BFB\u53D6\u5931\u8D25\uFF1A" + e.message;
+      }
       return;
     }
     if (entry.kind === "case" || entry.kind === "source") {
@@ -858,7 +913,15 @@ if (traceId) {
     if (!r.ok) throw Error(j.error);
     return j;
   }
-  const preview = installDetailPreview((id) => findScriptCase(state?.scripts.find((script) => script.id === id), state?.projectRoot), () => state?.capabilities?.detailPreview === 1);
+  const preview = installDetailPreview((id) => findScriptCase(state?.scripts.find((script) => script.id === id), state?.projectRoot), () => state?.capabilities?.detailPreview === 1, {
+    readLocations: async (id) => {
+      const current = state || await api("/api/state");
+      if (current.capabilities?.recordingFolders !== 1) throw Error("\u8BF7\u5728\u4EFB\u52A1\u7A7A\u95F2\u65F6\u91CD\u542F\u63A7\u5236\u53F0\uFF0C\u4EE5\u542F\u7528\u5F55\u50CF\u6587\u4EF6\u5939\u5165\u53E3");
+      token = current.token;
+      return api("/api/jobs/" + encodeURIComponent(id) + "/recording-locations");
+    },
+    openFolder: (id, location2) => api("/api/jobs/" + encodeURIComponent(id) + "/recording-folder", { location: location2 })
+  });
   for (const id of ["recordingEnabled", "recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).addEventListener("input", syncRecording);
   document.querySelectorAll("[name=question]").forEach((e) => e.onchange = syncCustom);
   let cdpBusy = false;
