@@ -1,5 +1,6 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID,randomBytes} from 'node:crypto';
@@ -15,6 +16,7 @@ import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {killScript,stopSession,releaseOwnedLock} from './stop-job.mjs';
 import {canStopJob} from './stop-all.mjs';
+import {startRecording,recordingFile} from './recording.mjs';
 import {withClientCases} from './case-registry.mjs';
 import {loadJobTrace,jobSessionId} from './trace-store.mjs';
 import {renderTrace} from './trace.mjs';
@@ -35,7 +37,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,cdpConfigFile=buildInfoPath}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,recorderFactory=startRecording,cdpConfigFile=buildInfoPath}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -49,6 +51,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  await persist();
  const savedJobs=await fs.readdir(path.join(dataDir,'jobs')).catch(()=>[]);
  for(const name of savedJobs){try{const job=JSON.parse(await fs.readFile(path.join(dataDir,'jobs',name,'job.json'),'utf8'));if(['RUNNING','QUEUED'].includes(job.status)){job.status='INTERRUPTED';job.error='控制台重启，未自动重跑；请核对客户端状态';}jobs.push(job);}catch{}}
+ for(const job of jobs)if(['STARTING','RECORDING','FINALIZING'].includes(job.recording?.status))job.recording={...job.recording,status:'INTERRUPTED',available:false,error:'控制台已重启，原录像未确认完整保存'};
  jobs.sort((a,b)=>(a.queuedAt||a.startedAt).localeCompare(b.queuedAt||b.startedAt));
  const batchDir=path.join(dataDir,'batches');await fs.mkdir(batchDir,{recursive:true});
  const writeBatch=async batch=>{const file=path.join(batchDir,batch.id+'.json'),temp=file+'.'+randomUUID()+'.tmp';await fs.writeFile(temp,JSON.stringify(batch,null,2));await fs.rename(temp,file);};
@@ -73,6 +76,15 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   const contents=JSON.stringify(job,null,2),file=path.join(dataDir,'jobs',job.id,'job.json');
   const write=(jobWrites.get(job.id)||Promise.resolve()).catch(()=>{}).then(async()=>{const temp=file+'.tmp';await fs.writeFile(temp,contents);await fs.rename(temp,file);});
   jobWrites.set(job.id,write);return write;
+ };
+ const recordings=new Map();
+ const finishRecording=async(job,reason)=>{
+  const pending=recordings.get(job.id);
+  if(pending){const recorder=await pending;await recorder?.stop(reason);recordings.delete(job.id);}
+  if(job.recording?.available&&job.reportPath){
+   const relative=path.relative(path.join(projectRoot,'runs'),path.dirname(job.reportPath));
+   if(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative))await fs.copyFile(path.join(dataDir,'jobs',job.id,recordingFile),path.join(path.dirname(job.reportPath),recordingFile)).catch(()=>{});
+  }
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
  const recovering=new Set();
@@ -163,7 +175,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSource:1,detailPreview:1,executeNext:0},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    const sourceMatch=url.pathname.match(/^\/api\/scripts\/([\w-]+)\/source$/);
    if(req.method==='GET'&&sourceMatch){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -305,6 +317,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      scheduler.enqueue(job,{cooperative:info.cooperative,start:async()=>{
      await writeJob(job);
      if(job.stopRequested||job.status!=='RUNNING')return;
+     if(config.recording.enabled&&!runArgs.includes('--check')){
+      const pending=recorderFactory({config:config.recording,directory:jobDir,cdpPort:config.cdpPort,onChange:async metadata=>{
+       const previous=job.recording?.status;job.recording=metadata;
+       if(previous!==metadata.status){
+        const stamp=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date());
+        const message=`\n[${stamp}] 录像 ${metadata.status}${metadata.stopReason==='limit'?'：达到时长上限，用例继续执行':''}${metadata.error?'：'+metadata.error:''}\n`;
+        append(job,message);await fs.appendFile(path.join(jobDir,'执行日志.txt'),message);
+       }
+       await fs.writeFile(path.join(jobDir,'录像信息.json'),JSON.stringify(metadata,null,2));await writeJob(job);
+      }}).catch(async error=>{job.recording={status:'ERROR',error:error.message};await writeJob(job);return null;});
+      recordings.set(job.id,pending);await pending;
+     }else job.recording={status:config.recording.enabled?'SKIPPED':'DISABLED',config:config.recording};
+     if(job.stopRequested||job.status!=='RUNNING'){await finishRecording(job,'stopped');return;}
      const taskToken=randomBytes(24).toString('hex');taskTokens.set(job.id,taskToken);
      const child=spawn(command,argv,{cwd:projectRoot,windowsHide:true,shell:false,env:{...process.env,MW_TEST_CONFIG_JSON:JSON.stringify(config),MW_MODEL_CONFIG_JSON:JSON.stringify(config.provider),MW_CDP_PORT:String(config.cdpPort),MW_CONSOLE_JOB_ID:job.id,...(info.cooperative?{MW_TASK_CONTROL_URL:`http://${expectedHost}/api/task-control/${job.id}`,MW_TASK_CONTROL_TOKEN:taskToken}:{}),PYTHONIOENCODING:'utf-8'},stdio:['ignore','pipe','pipe']});
      job.pid=child.pid;await writeJob(job);
@@ -324,6 +349,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
        try{const result=JSON.parse(await fs.readFile(path.join(path.dirname(job.reportPath),'执行结果.json'),'utf8'));if(['PASS','FAIL','BLOCKED','RESUMED','CHECKED'].includes(result.result))job.status=result.result;job.result=result;}catch{}
       }
       job.sessionId??=jobSessionId(job);
+      await finishRecording(job,'completed');
       job.phase='VERIFYING';
       const unresolved=info.cooperative?!await reconcileHandoff(job,{allowAbort:['FAIL','BLOCKED'].includes(job.status)}):Boolean(job.sessionId&&!job.modelCompleted);
       job.phase='FINISHED';
@@ -358,7 +384,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      await fs.appendFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'\n'+job.error+'\n');
      delete job.stopRequested;
      await writeJob(job);return send(200,{message:job.error});
-    }finally{active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved:Boolean(job.schedulingHold)});delete job.stopRequested;}
+    }finally{await finishRecording(job,'stopped').catch(()=>{});active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved:Boolean(job.schedulingHold)});delete job.stopRequested;await writeJob(job);}
    }
    const jobMatch=url.pathname.match(/^\/api\/jobs\/([\w-]+)$/);
    const traceMatch=url.pathname.match(/^\/traces\/([\w-]+)(\/download|\/observatory)?$/);
@@ -405,6 +431,22 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    }
    if(req.method==='GET'&&jobMatch){const job=jobs.find(j=>j.id===jobMatch[1]);if(!job)return send(404,{error:'运行记录不存在'});return send(200,job);}
    const artifact=url.pathname.match(/^\/artifacts\/([\w-]+)\/(.+)$/);
+   const video=url.pathname.match(/^\/recordings\/([\w-]+)(\/download)?$/);
+   if(req.method==='GET'&&video){
+    const job=jobs.find(j=>j.id===video[1]);if(!job?.recording?.available)return send(404,{error:'本次尚无已保存录像'});
+    const file=path.join(dataDir,'jobs',job.id,recordingFile),stat=await fs.stat(file);
+    res.setHeader('Content-Type','video/mp4');res.setHeader('Accept-Ranges','bytes');res.setHeader('Cache-Control','no-store');
+    if(video[2])res.setHeader('Content-Disposition',"attachment; filename*=UTF-8''"+encodeURIComponent(job.name+'-'+job.id+'.mp4'));
+    let start=0,end=stat.size-1;
+    if(req.headers.range){
+     const match=req.headers.range.match(/^bytes=(\d*)-(\d*)$/);
+     if(!match||!match[1]&&!match[2]){res.writeHead(416,{'Content-Range':'bytes */'+stat.size});return res.end();}
+     if(!match[1])start=Math.max(0,stat.size-Number(match[2]));else {start=Number(match[1]);if(match[2])end=Math.min(Number(match[2]),end);}
+     if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start>end||start>=stat.size){res.writeHead(416,{'Content-Range':'bytes */'+stat.size});return res.end();}
+     res.statusCode=206;res.setHeader('Content-Range',`bytes ${start}-${end}/${stat.size}`);
+    }
+    res.setHeader('Content-Length',end-start+1);const stream=createReadStream(file,{start,end});stream.on('error',()=>res.destroy());res.on('close',()=>stream.destroy());stream.pipe(res);return;
+   }
    if(req.method==='GET'&&artifact){
     const job=jobs.find(j=>j.id===artifact[1]);if(!job?.reportPath)throw Error('报告尚未生成');
     const base=await fs.realpath(path.dirname(job.reportPath));
@@ -424,7 +466,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    send(404,{error:'未找到入口'});
   }catch(e){send(400,{error:e.message});}
  });
- server.on('close',()=>clearInterval(recoveryTimer));
+ server.on('close',()=>{clearInterval(recoveryTimer);for(const job of jobs.filter(j=>recordings.has(j.id)))void finishRecording(job,'console-closed');});
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
  return {server,url:`http://127.0.0.1:${server.address().port}`,dataDir};
 }

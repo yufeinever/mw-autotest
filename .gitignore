@@ -49,6 +49,9 @@
 !/local-console/launch.mjs
 !/local-console/model-config.mjs
 !/local-console/policy.mjs
+!/local-console/recording-config.mjs
+!/local-console/recording.mjs
+!/local-console/recording.test.mjs
 !/local-console/report.mjs
 !/local-console/server.mjs
 !/local-console/session-log.mjs

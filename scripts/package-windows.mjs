@@ -4,6 +4,7 @@ import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
+import ffmpegPath from 'ffmpeg-static';
 import {unzipSync,strFromU8} from 'fflate';
 import {clientCases,caseWorkbook} from './client-case-catalog.mjs';
 
@@ -53,6 +54,7 @@ async function stageSources(target,files){
  pkg.description='MobileWork 前16条客户端用例、本地测试控制台及自动化脚本';
  pkg.scripts={'build:console':'node scripts/build-console-app.mjs','start':'node local-console/launch.mjs','check':'node scripts/check-package.mjs','check:package':'node scripts/check-package.mjs --self-test','package:windows':'node scripts/package-windows.mjs',test:'node --test --test-concurrency=1 scripts/client-cases.test.mjs scripts/mobilework-run-policy.test.mjs scripts/case002-meeting.test.mjs local-console/console.test.mjs local-console/batches.test.mjs local-console/trace.test.mjs local-console/session-log.test.mjs local-console/cdp-config.test.mjs local-console/cdp-restart.test.mjs local-console/stop-job.test.mjs local-console/environment.test.mjs'};
  pkg.scripts.test+=' local-console/task-scheduler.test.mjs scripts/mobilework-task-control.test.mjs';
+ pkg.scripts['recording:setup']='node node_modules/ffmpeg-static/install.js';
  await fs.writeFile(path.join(target,'package.json'),JSON.stringify(pkg,null,2)+'\n');
  // Never copy local runtime configuration or client account data.
  await fs.writeFile(path.join(target,'config','environment.json'),JSON.stringify({clientExecutable:'',clientHome:'',skillsRoot:'',taskRoot:'',browserExecutable:''},null,2)+'\n');
@@ -85,6 +87,13 @@ export async function packageWindows(){
  console.log('安装便携包生产依赖…');
  try{await run('cmd.exe',['/d','/c','npm ci --omit=dev --ignore-scripts --no-audit --no-fund --offline'],{cwd:portable});}
  catch{await run('cmd.exe',['/d','/c','npm ci --omit=dev --ignore-scripts --no-audit --no-fund'],{cwd:portable});}
+ // npm ci skips install scripts. Include the encoder and upstream notices
+ // explicitly so the portable package records without another download.
+ if(!ffmpegPath)throw Error('缺少录像编码器，请运行 npm run recording:setup 后打包');
+ for(const suffix of ['','.LICENSE','.README']){
+  const source=ffmpegPath+suffix;await fs.access(source);
+  await fs.copyFile(source,path.join(portable,'node_modules','ffmpeg-static',path.basename(source)));
+ }
  await fs.mkdir(path.join(portable,'runtime'),{recursive:true});await fs.copyFile(process.execPath,path.join(portable,'runtime','node.exe'));
  const licenseUrl='https://raw.githubusercontent.com/nodejs/node/'+process.version+'/LICENSE';
  const license=await fetch(licenseUrl,{signal:AbortSignal.timeout(60000)});if(!license.ok)throw Error('下载Node许可证失败 HTTP '+license.status);

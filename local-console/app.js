@@ -629,9 +629,15 @@ if (traceId) {
   let notice = function(text, error = false) {
     $("#message").textContent = text;
     $("#message").className = error ? "error" : "";
+  }, recordingConfig = function() {
+    return { enabled: $("#recordingEnabled").checked, resolution: $("#recordingResolution").value, fps: Number($("#recordingFps").value), bitrateKbps: Number($("#recordingBitrate").value), maxSeconds: Number($("#recordingMaxSeconds").value || 180) };
+  }, syncRecording = function() {
+    const c = recordingConfig();
+    for (const id of ["recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).disabled = !c.enabled;
+    $("#recordingEstimate").textContent = c.enabled ? `\u5F55\u6EE1 ${c.maxSeconds} \u79D2\u7EA6 ${(c.bitrateKbps * c.maxSeconds / 8e3).toFixed(1)} MB\uFF08\u6309\u76EE\u6807\u5E73\u5747\u7801\u7387\u4F30\u7B97\uFF09\u3002\u5230\u65F6\u4EC5\u505C\u6B62\u5F55\u50CF\uFF0C\u7528\u4F8B\u7EE7\u7EED\u6267\u884C\u3002` : "\u5F55\u50CF\u5DF2\u5173\u95ED\u3002";
   }, config = function() {
     const interval = $("#stepInterval").value.trim();
-    return { executionStrategy: "serial", maxParallel: 1, question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
+    return { recording: recordingConfig(), executionStrategy: "serial", maxParallel: 1, question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
   }, modelOption = function(name) {
     if (![...$("#model").options].some((o) => o.value === name)) $("#model").add(new Option(name, name));
   }, syncCustom = function() {
@@ -681,6 +687,9 @@ if (traceId) {
       }
       const status = el2("td"), statusText = job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
       status.append(el2("span", statusText, "script-status " + resultClass(job?.status)));
+      if (job?.recording?.status === "RECORDING") status.append(el2("small", "\u25CF \u5F55\u5236\u4E2D"));
+      else if (job?.recording?.status === "FINALIZING") status.append(el2("small", "\u5F55\u50CF\u4FDD\u5B58\u4E2D"));
+      else if (job?.recording?.status === "ERROR") status.append(el2("small", "\u5F55\u50CF\u5931\u8D25\uFF1A" + job.recording.error));
       if (job?.queueHold) status.append(el2("small", "\u7B49\u5F85\u6062\u590D\uFF1A" + job.queueHold));
       const number = el2("td"), choice = el2("input");
       choice.type = "checkbox";
@@ -808,6 +817,7 @@ if (traceId) {
     return j;
   }
   const preview = installDetailPreview((id) => findScriptCase(state?.scripts.find((script) => script.id === id), state?.projectRoot), () => state?.capabilities?.detailPreview === 1);
+  for (const id of ["recordingEnabled", "recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).addEventListener("input", syncRecording);
   document.querySelectorAll("[name=question]").forEach((e) => e.onchange = syncCustom);
   let cdpBusy = false;
   async function refreshCdp() {
@@ -864,6 +874,13 @@ if (traceId) {
       $("#customText").value = c.customText;
       $("#cdpPort").value = c.cdpPort;
       $("#stepInterval").value = c.stepInterval ?? 0.5;
+      const v = c.recording || {};
+      $("#recordingEnabled").checked = v.enabled ?? true;
+      $("#recordingResolution").value = v.resolution || "960x540";
+      $("#recordingFps").value = v.fps || 30;
+      $("#recordingBitrate").value = v.bitrateKbps || 600;
+      $("#recordingMaxSeconds").value = v.maxSeconds || 180;
+      syncRecording();
       if (c.model) modelOption(c.model);
       $("#model").value = c.model;
       const p = c.provider || {};
@@ -937,6 +954,10 @@ if (traceId) {
   }
   logRefresh.onclick = readExecutionLog;
   async function startScripts(scripts, label, batch = false) {
+    if (config().recording.enabled && state.capabilities?.recording !== 1) {
+      batchNotice("\u5F55\u50CF\u529F\u80FD\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u7A7A\u95F2\u65F6\u91CD\u542F\u63A7\u5236\u53F0\u540E\u6267\u884C\u3002", true);
+      return;
+    }
     if (state.capabilities?.serialOnly !== 1) {
       batchNotice("\u8BF7\u5148\u5728\u7A7A\u95F2\u65F6\u91CD\u542F\u63A7\u5236\u53F0\u52A0\u8F7D\u4E32\u884C\u8C03\u5EA6\uFF0C\u672A\u63D0\u4EA4\u4EFB\u52A1\u3002", true);
       return;

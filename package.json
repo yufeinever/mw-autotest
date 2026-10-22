@@ -1,6 +1,6 @@
 {
   "name": "mw-autotest",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "private": true,
   "type": "module",
   "description": "MobileWork 前16条客户端用例、本地测试控制台及自动化脚本",
@@ -8,12 +8,14 @@
     "package:windows": "node scripts/package-windows.mjs",
     "check:package": "node scripts/check-package.mjs --self-test",
     "build:console": "node scripts/build-console-app.mjs",
+    "recording:setup": "node node_modules/ffmpeg-static/install.js",
     "start": "node local-console/launch.mjs",
     "check": "node scripts/check-package.mjs"
   },
   "dependencies": {
     "@opencode-ai/sdk": "1.18.15",
     "fflate": "^0.8.3",
+    "ffmpeg-static": "5.3.0",
     "playwright-core": "1.62.1",
     "yaml": "^2.9.1"
   },

@@ -14,7 +14,10 @@ labels.STOPPED='已强制停止';
 function notice(text,error=false){$('#message').textContent=text;$('#message').className=error?'error':'';}
 async function api(url,data,method){const r=await fetch(url,{method:method||(data?'POST':'GET'),headers:{'Content-Type':'application/json','x-console-token':token},body:data?JSON.stringify(data):undefined});const j=await r.json();if(!r.ok)throw Error(j.error);return j;}
 const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script=>script.id===id),state?.projectRoot),()=>state?.capabilities?.detailPreview===1);
-function config(){const interval=$('#stepInterval').value.trim();return {executionStrategy:'serial',maxParallel:1,question:$('[name=question]:checked').value,customText:$('#customText').value,approval:$('[name=approval]:checked').value,model:$('#model').value,cdpPort:Number($('#cdpPort').value),stepInterval:interval===''?0.5:Number(interval),provider:{url:$('#providerUrl').value,key:$('#providerKey').value,model:$('#providerModel').value,multimodal:$('#providerMulti').checked,inputTokens:Number($('#inputTokens').value),outputTokens:Number($('#outputTokens').value)}};}
+function recordingConfig(){return {enabled:$('#recordingEnabled').checked,resolution:$('#recordingResolution').value,fps:Number($('#recordingFps').value),bitrateKbps:Number($('#recordingBitrate').value),maxSeconds:Number($('#recordingMaxSeconds').value||180)};}
+function syncRecording(){const c=recordingConfig();for(const id of ['recordingResolution','recordingFps','recordingBitrate','recordingMaxSeconds'])$('#'+id).disabled=!c.enabled;$('#recordingEstimate').textContent=c.enabled?`录满 ${c.maxSeconds} 秒约 ${(c.bitrateKbps*c.maxSeconds/8000).toFixed(1)} MB（按目标平均码率估算）。到时仅停止录像，用例继续执行。`:'录像已关闭。';}
+for(const id of ['recordingEnabled','recordingResolution','recordingFps','recordingBitrate','recordingMaxSeconds'])$('#'+id).addEventListener('input',syncRecording);
+function config(){const interval=$('#stepInterval').value.trim();return {recording:recordingConfig(),executionStrategy:'serial',maxParallel:1,question:$('[name=question]:checked').value,customText:$('#customText').value,approval:$('[name=approval]:checked').value,model:$('#model').value,cdpPort:Number($('#cdpPort').value),stepInterval:interval===''?0.5:Number(interval),provider:{url:$('#providerUrl').value,key:$('#providerKey').value,model:$('#providerModel').value,multimodal:$('#providerMulti').checked,inputTokens:Number($('#inputTokens').value),outputTokens:Number($('#outputTokens').value)}};}
 function modelOption(name){if(![...$('#model').options].some(o=>o.value===name))$('#model').add(new Option(name,name));}
 function syncCustom(){$('#customText').disabled=$('[name=question]:checked').value!=='custom';}
 document.querySelectorAll('[name=question]').forEach(e=>e.onchange=syncCustom);
@@ -29,7 +32,7 @@ $('#restartCdp').onclick=async()=>{cdpBusy=true;$('#restartCdp').disabled=true;$
 $('#enableCdp').onclick=async()=>{cdpBusy=true;$('#enableCdp').disabled=true;try{const r=await api('/api/cdp-config/enable',{});$('#cdpMessage').textContent=r.changed?'已设为 true，备份：'+r.backup+'。请在当前任务结束后，以 CDP 启动配置重启客户端。':'已是 true，无需修改。';}catch(e){$('#cdpMessage').textContent=e.message;}finally{cdpBusy=false;await refreshCdp();}};
 async function refresh(){
  state=await api('/api/state');token=state.token;
- if(!initialized){const c=state.config;$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
+ if(!initialized){const c=state.config;$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;const v=c.recording||{};$('#recordingEnabled').checked=v.enabled??true;$('#recordingResolution').value=v.resolution||'960x540';$('#recordingFps').value=v.fps||30;$('#recordingBitrate').value=v.bitrateKbps||600;$('#recordingMaxSeconds').value=v.maxSeconds||180;syncRecording();if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
  $('#connection').textContent=state.active?'脚本执行中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
  if(state.capabilities?.taskIsolation!==2)batchNotice('任务隔离升级尚未加载：请先关闭旧控制台服务，再运行“启动测试平台.cmd”，仍使用18888端口；仅刷新页面不能升级服务。',true);
  if(state.capabilities?.serialOnly!==1)batchNotice('串行调度升级尚未加载，请在任务空闲后重启控制台，仍使用18888端口。',true);
@@ -79,6 +82,7 @@ function renderScripts(){
   }
   const status=el('td'),statusText=job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
   status.append(el('span',statusText,'script-status '+resultClass(job?.status)));
+  if(job?.recording?.status==='RECORDING')status.append(el('small','● 录制中'));else if(job?.recording?.status==='FINALIZING')status.append(el('small','录像保存中'));else if(job?.recording?.status==='ERROR')status.append(el('small','录像失败：'+job.recording.error));
   if(job?.queueHold)status.append(el('small','等待恢复：'+job.queueHold));
   const number=el('td'),choice=el('input');choice.type='checkbox';choice.className='script-choice';choice.setAttribute('aria-label','选择用例 '+(start+offset+1)+' '+script.name);choice.checked=selectedScripts.has(script.id);
   choice.disabled=$('[name=selectionMode]:checked').value!=='selected'||batchBusy||!script.exists||!script.integrated;
@@ -118,6 +122,7 @@ function renderScripts(){
  $('#stopAll').textContent=stopAllBusy?'正在停止…':'强制停止全部';
 }
 async function startScripts(scripts,label,batch=false){
+ if(config().recording.enabled&&state.capabilities?.recording!==1){batchNotice('录像功能尚未加载，请在空闲时重启控制台后执行。',true);return;}
  if(state.capabilities?.serialOnly!==1){batchNotice('请先在空闲时重启控制台加载串行调度，未提交任务。',true);return;}
  if(state.capabilities?.taskIsolation!==2){batchNotice('请先重启本项目18888控制台加载任务隔离升级，未提交新任务。',true);return;}
  if(state.capabilities?.taskScheduling!==1){batchNotice('当前服务尚未加载执行策略，请从“启动测试平台.cmd”打开新版控制台后执行。',true);return;}

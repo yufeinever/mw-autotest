@@ -1,3 +1,4 @@
+import {normalizeRecording} from './recording-config.mjs';
 export const approvalLabels = {reject:'拒绝',once:'允许一次',session:'在会话期间允许',full:'开启完全访问权限'};
 export function normalizeConfig(input={}) {
  const provider=input.provider||{};
@@ -19,5 +20,6 @@ export function normalizeConfig(input={}) {
  if(!Number.isInteger(c.provider.inputTokens)||c.provider.inputTokens<1||c.provider.inputTokens>10000000)throw Error('输入模型长度无效');
  if(!Number.isInteger(c.provider.outputTokens)||c.provider.outputTokens<1||c.provider.outputTokens>10000000)throw Error('输出模型长度无效');
  if(!Number.isInteger(c.cdpPort)||c.cdpPort<1||c.cdpPort>65535)throw Error('CDP端口无效');
+ c.recording=normalizeRecording(input.recording);
  return c;
 }
