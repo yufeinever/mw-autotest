@@ -478,6 +478,93 @@ async function showBatch(id) {
   window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
 }
 
+// local-console/recording-timeline.mjs
+var timestamp = (value) => typeof value === "string" && value ? Date.parse(value) : NaN;
+var positive = (value) => typeof value === "number" && Number.isFinite(value) && value > 0;
+var clock = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+function recordingTime(seconds) {
+  const value = Math.max(0, Math.floor(seconds)), h = Math.floor(value / 3600), m = Math.floor(value / 60) % 60, s = value % 60;
+  return (h ? String(h).padStart(2, "0") + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+function recordingMarks(recording, evidence, mediaDuration) {
+  const start = timestamp(recording?.startedAt), duration = positive(mediaDuration) ? mediaDuration : positive(recording?.durationSeconds) ? recording.durationSeconds : null;
+  return (Array.isArray(evidence) ? evidence : []).filter((item) => typeof item?.screenshot === "string" && item.screenshot).map((item, index) => {
+    const at = timestamp(item.time), offset = (at - start) / 1e3;
+    const reason = !Number.isFinite(at) ? "\u622A\u56FE\u672A\u8BB0\u5F55\u6709\u6548\u65F6\u95F4" : !Number.isFinite(start) ? "\u7F3A\u5C11\u5F55\u50CF\u5F00\u59CB\u65F6\u95F4" : duration === null ? "\u5C1A\u672A\u53D6\u5F97\u5F55\u50CF\u65F6\u957F" : offset < 0 ? "\u65E9\u4E8E\u5F55\u50CF\u5F00\u59CB" : offset > duration ? "\u8D85\u51FA\u5F55\u50CF\u8303\u56F4" : "";
+    return { step: item.step || "\u622A\u56FE " + (index + 1), screenshot: item.screenshot, time: item.time, clock: Number.isFinite(at) ? clock.format(at) : "\u65F6\u95F4\u672A\u8BB0\u5F55", offsetSeconds: Number.isFinite(offset) ? offset : null, label: Number.isFinite(offset) && offset >= 0 ? recordingTime(offset) : "\u2014", reason };
+  });
+}
+function renderRecordingTimeline(container, { video, jobId, recording, evidence }) {
+  container.className = "recording-timeline";
+  const heading = document.createElement("h3");
+  heading.textContent = "\u5173\u952E\u622A\u56FE\u5B9A\u4F4D";
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "\u70B9\u51FB\u65F6\u95F4\u8DF3\u8F6C\u5E76\u6682\u505C\uFF0C\u65B9\u4FBF\u5BF9\u7167\u622A\u56FE\u3002\u6309\u622A\u56FE\u8BB0\u5F55\u65F6\u95F4\u5B9A\u4F4D\uFF0C\u91C7\u96C6\u53EF\u80FD\u5B58\u5728\u5C11\u91CF\u5EF6\u8FDF\u3002";
+  const list = document.createElement("ol"), message = document.createElement("p");
+  message.className = "hint";
+  message.setAttribute("role", "status");
+  container.replaceChildren(heading, hint, list, message);
+  let entries = [];
+  function highlight() {
+    let active = -1;
+    for (let i = 0; i < entries.length; i++) if (!entries[i].button.disabled && entries[i].mark.offsetSeconds <= video.currentTime + 1e-3 && (active < 0 || entries[i].mark.offsetSeconds >= entries[active].mark.offsetSeconds)) active = i;
+    entries.forEach((entry, i) => entry.button.setAttribute("aria-pressed", String(i === active)));
+  }
+  function render() {
+    entries = [];
+    list.replaceChildren();
+    const marks = recordingMarks(recording, evidence, video.duration);
+    if (!marks.length) {
+      message.textContent = "\u672C\u6B21\u8FD0\u884C\u5C1A\u65E0\u5173\u952E\u622A\u56FE\u8BB0\u5F55\u3002";
+      return;
+    }
+    message.textContent = "\u5171 " + marks.length + " \u5F20\u5173\u952E\u622A\u56FE \xB7 \u622A\u56FE\u65F6\u95F4\u4E3A\u5317\u4EAC\u65F6\u95F4";
+    for (const mark of marks) {
+      const row = document.createElement("li"), button = document.createElement("button"), position = document.createElement("span"), step = document.createElement("span"), at = document.createElement("small"), image = document.createElement("a");
+      button.className = "recording-marker";
+      button.type = "button";
+      position.className = "marker-position";
+      position.textContent = mark.label;
+      step.className = "marker-step";
+      step.textContent = mark.step;
+      const loaded = video.readyState >= 1 && positive(video.duration);
+      at.textContent = mark.clock + (mark.reason ? " \xB7 " + mark.reason : "");
+      button.append(position, step, at);
+      button.disabled = !!mark.reason || !!video.error || !loaded;
+      button.title = mark.reason || (video.error ? "\u5F55\u50CF\u65E0\u6CD5\u64AD\u653E" : !loaded ? "\u6B63\u5728\u52A0\u8F7D\u5F55\u50CF" : "\u8DF3\u8F6C\u5230 " + mark.offsetSeconds.toFixed(3) + " \u79D2\u5E76\u6682\u505C");
+      button.setAttribute("aria-label", (mark.reason ? "\u65E0\u6CD5\u5B9A\u4F4D\uFF1A" : "\u8DF3\u5230\u5F55\u50CF " + mark.label + "\uFF1A") + mark.step);
+      button.setAttribute("aria-pressed", "false");
+      button.onclick = () => {
+        try {
+          video.pause();
+          video.currentTime = Math.min(mark.offsetSeconds, Math.max(0, video.duration - 1e-3));
+          highlight();
+          message.textContent = "\u5DF2\u5B9A\u4F4D " + mark.label + " \xB7 " + mark.step + "\uFF08\u5DF2\u6682\u505C\uFF09";
+          video.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch {
+          message.textContent = "\u5B9A\u4F4D\u5931\u8D25\uFF0C\u8BF7\u786E\u8BA4\u5F55\u50CF\u5DF2\u52A0\u8F7D\u4E14\u6587\u4EF6\u672A\u88AB\u5220\u9664\u3002";
+        }
+      };
+      image.textContent = "\u67E5\u770B\u622A\u56FE";
+      image.href = "/artifacts/" + encodeURIComponent(jobId) + "/" + encodeURIComponent(mark.screenshot);
+      image.target = "_blank";
+      image.rel = "noopener";
+      image.setAttribute("aria-label", "\u67E5\u770B\u622A\u56FE\uFF1A" + mark.step);
+      row.append(button, image);
+      list.append(row);
+      entries.push({ mark, button });
+    }
+    highlight();
+  }
+  video.addEventListener("loadedmetadata", render);
+  video.addEventListener("durationchange", render);
+  video.addEventListener("timeupdate", highlight);
+  video.addEventListener("seeked", highlight);
+  video.addEventListener("error", render);
+  render();
+}
+
 // local-console/detail-preview.mjs
 var normalizedPath = (value) => {
   const parts = [];
@@ -593,8 +680,21 @@ function installDetailPreview(readCase, canPreview = () => true, recordingAction
       folderMessage.className = "hint";
       folderMessage.textContent = "\u6B63\u5728\u8BFB\u53D6\u672C\u5730\u4FDD\u5B58\u4F4D\u7F6E\u2026";
       folderMessage.setAttribute("role", "status");
-      content.append(heading, meta, video, error, actions, paths, folderMessage);
+      const timeline = document.createElement("div");
+      content.append(heading, meta, video, error, timeline, actions, paths, folderMessage);
       body.append(content);
+      const loadTimeline = async () => {
+        try {
+          const data = Array.isArray(entry.evidence) ? { recording: entry.recording, evidence: entry.evidence } : await recordingActions.readEvidence(entry.id);
+          if (request === generation) renderRecordingTimeline(timeline, { video, jobId: entry.id, recording: data.recording, evidence: data.evidence });
+        } catch (e) {
+          if (request === generation) {
+            timeline.className = "recording-timeline";
+            timeline.textContent = "\u5173\u952E\u622A\u56FE\u8BFB\u53D6\u5931\u8D25\uFF1A" + e.message;
+          }
+        }
+      };
+      void loadTimeline();
       const openLocation = async (button, key) => {
         button.disabled = true;
         folderMessage.textContent = "\u6B63\u5728\u6253\u5F00\u6587\u4EF6\u5939\u2026";
@@ -706,7 +806,7 @@ function installDetailPreview(readCase, canPreview = () => true, recordingAction
   return { openScript(script) {
     open({ kind: "case", id: script.id, title: script.name + " \xB7 \u7528\u4F8B\u63CF\u8FF0" });
   }, openRecording(job) {
-    if (job.recording?.available) open({ kind: "recording", id: job.id, title: job.name + " \xB7 \u6267\u884C\u5F55\u50CF", recording: job.recording });
+    if (job.recording?.available) open({ kind: "recording", id: job.id, title: job.name + " \xB7 \u6267\u884C\u5F55\u50CF", recording: job.recording, evidence: job.result?.evidence || [] });
   } };
 }
 
@@ -919,6 +1019,10 @@ if (traceId) {
       if (current.capabilities?.recordingFolders !== 1) throw Error("\u8BF7\u5728\u4EFB\u52A1\u7A7A\u95F2\u65F6\u91CD\u542F\u63A7\u5236\u53F0\uFF0C\u4EE5\u542F\u7528\u5F55\u50CF\u6587\u4EF6\u5939\u5165\u53E3");
       token = current.token;
       return api("/api/jobs/" + encodeURIComponent(id) + "/recording-locations");
+    },
+    readEvidence: async (id) => {
+      const job = await api("/api/jobs/" + encodeURIComponent(id));
+      return { recording: job.recording, evidence: job.result?.evidence || [] };
     },
     openFolder: (id, location2) => api("/api/jobs/" + encodeURIComponent(id) + "/recording-folder", { location: location2 })
   });

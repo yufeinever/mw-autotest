@@ -52,6 +52,7 @@
 !/local-console/recording-config.mjs
 !/local-console/recording.mjs
 !/local-console/recording-storage.mjs
+!/local-console/recording-timeline.mjs
 !/local-console/recording.test.mjs
 !/local-console/report.mjs
 !/local-console/server.mjs

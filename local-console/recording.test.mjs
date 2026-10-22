@@ -12,7 +12,19 @@ import {normalizeConfig} from './policy.mjs';
 import {recordingDefaults} from './recording-config.mjs';
 import {PageRecorder,recordingFile,encoderArgs} from './recording.mjs';
 import {createConsole,projectRoot} from './server.mjs';
+import {recordingMarks,recordingTime} from './recording-timeline.mjs';
 const exec=promisify(execFile);
+test('截图时间以录像实际开始计算，保持小数精度，范围和缺失时间不能伪造定位',()=>{
+ const recording={startedAt:'2026-10-22T06:04:52.520Z',durationSeconds:10};
+ const evidence=[{step:'第一张',time:'2026-10-22T06:04:55.939Z',screenshot:'a.png'},{step:'早于开始',time:'2026-10-22T06:04:51Z',screenshot:'b.png'},{step:'超时',time:'2026-10-22T06:05:03Z',screenshot:'c.png'},{step:'无时间',screenshot:'d.png'},{step:'非法时间',time:'invalid',screenshot:'e.png'},{step:'不是截图',time:'2026-10-22T06:04:56Z'}];
+ const marks=recordingMarks(recording,evidence);assert.equal(marks.length,5);
+ assert.equal(marks[0].offsetSeconds,3.419);assert.equal(marks[0].clock,'14:04:55');assert.equal(marks[0].label,'00:03');assert.equal(marks[0].reason,'');
+ assert.match(marks[1].reason,/早于/);assert.match(marks[2].reason,/超出/);assert.match(marks[3].reason,/有效时间/);assert.match(marks[4].reason,/有效时间/);
+ assert.match(recordingMarks({},evidence)[0].reason,/缺少录像开始/);
+ assert.match(recordingMarks({startedAt:recording.startedAt},evidence)[0].reason,/尚未取得/);
+ assert.match(recordingMarks(recording,evidence,2)[0].reason,/超出/,'浏览器实际时长优先');
+ assert.equal(recordingTime(3661.9),'01:01:01');
+});
 async function until(fn){for(let n=0;n<150;n++){const result=await fn();if(result)return result;await delay(100);}throw Error('等待定向验证超时');}
 async function fixture(){
  const browser=await chromium.launch({channel:'chrome',headless:true});

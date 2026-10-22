@@ -9,6 +9,9 @@ import {normalizeConfig} from './policy.mjs';
 import {TaskScheduler} from './task-scheduler.mjs';
 import {renderReport} from './report.mjs';
 import {findScriptCase} from './detail-preview.mjs';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import ffmpeg from 'ffmpeg-static';
 
 test('用例描述按完整路径映射，覆盖独立入口001/002并排除同名自定义脚本',()=>{
  const root='D:\\workspace\\Mobilework-test';
@@ -170,3 +173,39 @@ test('录像页面显示本地文件夹及历史副本，点击按本次运行�
  assert.equal(await page.locator('.recording-preview video').isVisible(),false);assert.equal(await page.getByRole('link',{name:'下载录像（MP4）'}).count(),0);
  assert.deepEqual(requests,[]);
 },state=>{state.capabilities.recordingFolders=1;state.jobs[0].recording={available:true,status:'COMPLETED'};}));
+
+test('关键截图时间可定位并暂停真实视频，只读本次证据且旧历史预览刷新可恢复',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-video-markers-')),file=path.join(dir,'clip.mp4');
+ try{
+  await promisify(execFile)(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=320x180:rate=30','-t','3','-an','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',file],{windowsHide:true});
+  const clip=await fs.readFile(file),recording={available:true,status:'COMPLETED',startedAt:'2026-10-22T06:00:00.000Z',durationSeconds:3,config:{fps:30}};
+  const evidence=[{step:'连接客户端',time:'2026-10-22T06:00:00.500Z',screenshot:'连接.png'},{step:'发送成功',time:'2026-10-22T06:00:02.125Z',screenshot:'发送.png'},{step:'录制结束后',time:'2026-10-22T06:00:05Z',screenshot:'超时.png'},{step:'未记录时间',screenshot:'无时间.png'}];
+  await withUI(async({page,url,requests})=>{
+   await page.route('**/recordings/j1-new',route=>{
+    const range=route.request().headers().range?.match(/^bytes=(\d+)-(\d*)$/),start=range?Number(range[1]):0,end=range?.[2]?Math.min(Number(range[2]),clip.length-1):clip.length-1;
+    return route.fulfill({status:range?206:200,contentType:'video/mp4',headers:{'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${clip.length}`}:{})},body:clip.subarray(start,end+1)});
+   });
+   await page.route('**/api/jobs/j1-new/recording-locations',route=>route.fulfill({json:{legacy:false,locations:[{key:'primary',label:'录像文件夹',file:'C:/fixture/clip.mp4',directoryExists:true,exists:true}]}}));
+   await page.route('**/api/jobs/j1-new',route=>route.fulfill({json:{recording,result:{evidence}}}));
+   await page.locator('#scripts tr').first().getByRole('button',{name:'录像',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
+   const target=page.getByRole('button',{name:'跳到录像 00:02：发送成功',exact:true});
+   await target.waitFor();await page.locator('video').evaluate(v=>v.play());
+   await target.click();await page.waitForFunction(()=>!document.querySelector('video').seeking);
+   const actual=await page.locator('video').evaluate(v=>({time:v.currentTime,paused:v.paused,duration:v.duration,seekable:Array.from({length:v.seekable.length},(_,i)=>[v.seekable.start(i),v.seekable.end(i)]),error:v.error?.message}));
+   assert.ok(Math.abs(actual.time-2.125)<0.05,JSON.stringify(actual));assert.equal(actual.paused,true);assert.equal(await target.getAttribute('aria-pressed'),'true');
+   assert.equal(await page.getByRole('button',{name:'无法定位：录制结束后',exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'无法定位：未记录时间',exact:true}).isDisabled(),true);
+   assert.equal(await page.getByRole('link',{name:'查看截图：发送成功',exact:true}).getAttribute('href'),'/artifacts/j1-new/'+encodeURIComponent('发送.png'));
+   assert.equal(await page.getByText('旧运行截图',{exact:true}).count(),0);
+   // An old browser history entry may predate screenshot markers.
+   await page.evaluate(()=>{const state=structuredClone(history.state);delete state.mwPreview.evidence;history.replaceState(state,'',location.href);});
+   await page.reload();await page.getByRole('button',{name:'跳到录像 00:02：发送成功',exact:true}).waitFor();
+   await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);await page.getByRole('button',{name:'跳到录像 00:02：发送成功',exact:true}).click();
+   await page.waitForFunction(()=>Math.abs(document.querySelector('video').currentTime-2.125)<0.05);
+   assert.deepEqual(requests,[]);assert.equal(await page.url(),url+'/');
+  },state=>{
+   state.capabilities.recordingFolders=1;state.jobs[0].recording=recording;state.jobs[0].result={evidence:[{step:'旧运行截图',time:'2026-10-22T06:00:01Z',screenshot:'old.png'}]};
+   state.jobs.push({...state.jobs[0],id:'j1-new',result:{evidence}});
+  });
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});

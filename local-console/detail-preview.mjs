@@ -1,5 +1,6 @@
 // Keep the list DOM alive: returning never reloads configuration or CDP status.
 import {clientCases,caseWorkbook,caseSheet} from '../scripts/client-case-catalog.mjs';
+import {renderRecordingTimeline} from './recording-timeline.mjs';
 
 const normalizedPath=value=>{
  const parts=[];
@@ -52,7 +53,15 @@ export function installDetailPreview(readCase,canPreview=()=>true,recordingActio
    const openFolder=document.createElement('button');openFolder.textContent='打开所在文件夹';openFolder.disabled=true;actions.append(download,openFolder);
    const paths=document.createElement('div');paths.className='recording-locations';
    const folderMessage=document.createElement('p');folderMessage.className='hint';folderMessage.textContent='正在读取本地保存位置…';folderMessage.setAttribute('role','status');
-   content.append(heading,meta,video,error,actions,paths,folderMessage);body.append(content);
+   const timeline=document.createElement('div');
+   content.append(heading,meta,video,error,timeline,actions,paths,folderMessage);body.append(content);
+   const loadTimeline=async()=>{
+    try{
+     const data=Array.isArray(entry.evidence)?{recording:entry.recording,evidence:entry.evidence}:await recordingActions.readEvidence(entry.id);
+     if(request===generation)renderRecordingTimeline(timeline,{video,jobId:entry.id,recording:data.recording,evidence:data.evidence});
+    }catch(e){if(request===generation){timeline.className='recording-timeline';timeline.textContent='关键截图读取失败：'+e.message;}}
+   };
+   void loadTimeline();
    const openLocation=async(button,key)=>{
     button.disabled=true;folderMessage.textContent='正在打开文件夹…';
     try{const result=await recordingActions.openFolder(entry.id,key);if(request===generation)folderMessage.textContent=result.message;}
@@ -107,5 +116,5 @@ export function installDetailPreview(readCase,canPreview=()=>true,recordingActio
  window.addEventListener('popstate',()=>{const entry=history.state?.mwPreview;if(entry)show(entry);else hide();});
  document.addEventListener('click',intercept);
  if(history.state?.mwPreview)show(history.state.mwPreview);
- return {openScript(script){open({kind:'case',id:script.id,title:script.name+' · 用例描述'});},openRecording(job){if(job.recording?.available)open({kind:'recording',id:job.id,title:job.name+' · 执行录像',recording:job.recording});}};
+ return {openScript(script){open({kind:'case',id:script.id,title:script.name+' · 用例描述'});},openRecording(job){if(job.recording?.available)open({kind:'recording',id:job.id,title:job.name+' · 执行录像',recording:job.recording,evidence:job.result?.evidence||[]});}};
 }
