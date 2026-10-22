@@ -174,7 +174,7 @@ test('录像页面显示本地文件夹及历史副本，点击按本次运行�
  assert.deepEqual(requests,[]);
 },state=>{state.capabilities.recordingFolders=1;state.jobs[0].recording={available:true,status:'COMPLETED'};}));
 
-test('关键截图时间可定位并暂停真实视频，只读本次证据且旧历史预览刷新可恢复',async()=>{
+test('关键截图时间保留播放状态，原图弹框不离开录像且旧历史预览刷新可恢复',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-video-markers-')),file=path.join(dir,'clip.mp4');
  try{
   await promisify(execFile)(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc2=size=320x180:rate=30','-t','3','-an','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',file],{windowsHide:true});
@@ -187,21 +187,44 @@ test('关键截图时间可定位并暂停真实视频，只读本次证据且�
    });
    await page.route('**/api/jobs/j1-new/recording-locations',route=>route.fulfill({json:{legacy:false,locations:[{key:'primary',label:'录像文件夹',file:'C:/fixture/clip.mp4',directoryExists:true,exists:true}]}}));
    await page.route('**/api/jobs/j1-new',route=>route.fulfill({json:{recording,result:{evidence}}}));
+   await page.route('**/artifacts/j1-new/*',route=>route.request().url().endsWith(encodeURIComponent('发送.png'))?route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=','base64')}):route.fulfill({status:404,body:'missing screenshot'}));
    await page.locator('#scripts tr').first().getByRole('button',{name:'录像',exact:true}).click();
    await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);
    const target=page.getByRole('button',{name:'跳到录像 00:02：发送成功',exact:true});
-   await target.waitFor();await page.locator('video').evaluate(v=>v.play());
+   await target.waitFor();
    await target.click();await page.waitForFunction(()=>!document.querySelector('video').seeking);
    const actual=await page.locator('video').evaluate(v=>({time:v.currentTime,paused:v.paused,duration:v.duration,seekable:Array.from({length:v.seekable.length},(_,i)=>[v.seekable.start(i),v.seekable.end(i)]),error:v.error?.message}));
    assert.ok(Math.abs(actual.time-2.125)<0.05,JSON.stringify(actual));assert.equal(actual.paused,true);assert.equal(await target.getAttribute('aria-pressed'),'true');
    assert.equal(await page.getByRole('button',{name:'无法定位：录制结束后',exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'无法定位：未记录时间',exact:true}).isDisabled(),true);
-   assert.equal(await page.getByRole('link',{name:'查看截图：发送成功',exact:true}).getAttribute('href'),'/artifacts/j1-new/'+encodeURIComponent('发送.png'));
+   await page.locator('video').evaluate(v=>v.play());
+   await page.getByRole('button',{name:'跳到录像 00:00：连接客户端',exact:true}).click();
+   await page.waitForFunction(()=>{const v=document.querySelector('video');return !v.seeking&&!v.paused&&v.currentTime>=0.5&&v.currentTime<1.5;});
+   const playingAt=await page.locator('video').evaluate(v=>v.currentTime);
+   await page.waitForFunction(time=>document.querySelector('video').currentTime>time+0.12,playingAt);
+   await page.locator('video').evaluate(v=>v.pause());await target.click();
+   await page.waitForFunction(()=>!document.querySelector('video').seeking);
+   const beforeImage=await page.locator('video').evaluate(v=>v.currentTime),tabs=page.context().pages().length;
+   await page.getByRole('button',{name:'查看截图：发送成功',exact:true}).click();
+   const imageDialog=page.getByRole('dialog',{name:'关键截图预览',exact:true});await imageDialog.waitFor();
+   await page.waitForFunction(()=>document.querySelector('.recording-screenshot-dialog img')?.naturalWidth>0);
+   assert.equal(await imageDialog.locator('img').getAttribute('src'),'/artifacts/j1-new/'+encodeURIComponent('发送.png'));
+   assert.equal(page.context().pages().length,tabs);assert.equal(page.url(),url+'/');
+   await page.getByRole('button',{name:'关闭截图',exact:true}).click();
+   assert.equal(await imageDialog.isVisible(),false);assert.equal(await page.locator('.detail-preview').evaluate(d=>d.open),true);
+   assert.deepEqual(await page.locator('video').evaluate(v=>({time:v.currentTime,paused:v.paused})),{time:beforeImage,paused:true});
+   await page.getByRole('button',{name:'查看截图：发送成功',exact:true}).click();await page.keyboard.press('Escape');
+   assert.equal(await imageDialog.isVisible(),false);assert.equal(await page.locator('.detail-preview').evaluate(d=>d.open),true);
+   await page.getByRole('button',{name:'查看截图：未记录时间',exact:true}).click();await imageDialog.getByText('截图加载失败，文件可能已被移动或删除。',{exact:true}).waitFor();
+   await page.getByRole('button',{name:'关闭截图',exact:true}).click();
    assert.equal(await page.getByText('旧运行截图',{exact:true}).count(),0);
    // An old browser history entry may predate screenshot markers.
    await page.evaluate(()=>{const state=structuredClone(history.state);delete state.mwPreview.evidence;history.replaceState(state,'',location.href);});
    await page.reload();await page.getByRole('button',{name:'跳到录像 00:02：发送成功',exact:true}).waitFor();
    await page.waitForFunction(()=>document.querySelector('video')?.readyState>=2);await page.getByRole('button',{name:'跳到录像 00:02：发送成功',exact:true}).click();
    await page.waitForFunction(()=>Math.abs(document.querySelector('video').currentTime-2.125)<0.05);
+   await page.getByRole('button',{name:'查看截图：发送成功',exact:true}).click();await imageDialog.waitFor();await page.goBack();
+   await page.waitForFunction(()=>!document.querySelector('.detail-preview').open);
+   assert.equal(await page.locator('.recording-screenshot-dialog').count(),0);
    assert.deepEqual(requests,[]);assert.equal(await page.url(),url+'/');
   },state=>{
    state.capabilities.recordingFolders=1;state.jobs[0].recording=recording;state.jobs[0].result={evidence:[{step:'旧运行截图',time:'2026-10-22T06:00:01Z',screenshot:'old.png'}]};

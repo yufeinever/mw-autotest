@@ -500,11 +500,57 @@ function renderRecordingTimeline(container, { video, jobId, recording, evidence 
   heading.textContent = "\u5173\u952E\u622A\u56FE\u5B9A\u4F4D";
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = "\u70B9\u51FB\u65F6\u95F4\u8DF3\u8F6C\u5E76\u6682\u505C\uFF0C\u65B9\u4FBF\u5BF9\u7167\u622A\u56FE\u3002\u6309\u622A\u56FE\u8BB0\u5F55\u65F6\u95F4\u5B9A\u4F4D\uFF0C\u91C7\u96C6\u53EF\u80FD\u5B58\u5728\u5C11\u91CF\u5EF6\u8FDF\u3002";
+  hint.textContent = "\u70B9\u51FB\u65F6\u95F4\u8DF3\u8F6C\uFF0C\u4FDD\u6301\u5F53\u524D\u64AD\u653E\u6216\u6682\u505C\u72B6\u6001\uFF1B\u67E5\u770B\u622A\u56FE\u5C06\u5728\u5F39\u6846\u5185\u6253\u5F00\u3002\u6309\u622A\u56FE\u8BB0\u5F55\u65F6\u95F4\u5B9A\u4F4D\uFF0C\u91C7\u96C6\u53EF\u80FD\u5B58\u5728\u5C11\u91CF\u5EF6\u8FDF\u3002";
   const list = document.createElement("ol"), message = document.createElement("p");
   message.className = "hint";
   message.setAttribute("role", "status");
-  container.replaceChildren(heading, hint, list, message);
+  const preview = document.createElement("dialog");
+  preview.className = "recording-screenshot-dialog";
+  preview.setAttribute("aria-label", "\u5173\u952E\u622A\u56FE\u9884\u89C8");
+  const bar = document.createElement("div");
+  bar.className = "screenshot-preview-bar";
+  const title = document.createElement("h3"), close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "\u5173\u95ED\u622A\u56FE";
+  close.autofocus = true;
+  bar.append(title, close);
+  const details = document.createElement("p"), status = document.createElement("p"), picture = document.createElement("img");
+  details.className = status.className = "hint";
+  status.setAttribute("role", "status");
+  picture.hidden = true;
+  preview.append(bar, details, status, picture);
+  container.replaceChildren(heading, hint, list, message, preview);
+  close.onclick = () => preview.close();
+  preview.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    preview.close();
+  });
+  preview.addEventListener("close", () => {
+    picture.removeAttribute("src");
+    picture.hidden = true;
+  });
+  picture.onload = () => {
+    if (preview.open) {
+      picture.hidden = false;
+      status.textContent = "";
+    }
+  };
+  picture.onerror = () => {
+    if (preview.open) {
+      picture.hidden = true;
+      status.textContent = "\u622A\u56FE\u52A0\u8F7D\u5931\u8D25\uFF0C\u6587\u4EF6\u53EF\u80FD\u5DF2\u88AB\u79FB\u52A8\u6216\u5220\u9664\u3002";
+    }
+  };
+  const showScreenshot = (mark) => {
+    title.textContent = mark.step;
+    details.textContent = mark.clock + "\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09" + (mark.label === "\u2014" ? "" : " \xB7 \u5F55\u50CF " + mark.label);
+    status.textContent = "\u6B63\u5728\u52A0\u8F7D\u622A\u56FE\u2026";
+    picture.hidden = true;
+    picture.alt = mark.step + " \xB7 " + mark.clock;
+    preview.showModal();
+    picture.src = "/artifacts/" + encodeURIComponent(jobId) + "/" + encodeURIComponent(mark.screenshot);
+  };
   let entries = [];
   function highlight() {
     let active = -1;
@@ -521,7 +567,7 @@ function renderRecordingTimeline(container, { video, jobId, recording, evidence 
     }
     message.textContent = "\u5171 " + marks.length + " \u5F20\u5173\u952E\u622A\u56FE \xB7 \u622A\u56FE\u65F6\u95F4\u4E3A\u5317\u4EAC\u65F6\u95F4";
     for (const mark of marks) {
-      const row = document.createElement("li"), button = document.createElement("button"), position = document.createElement("span"), step = document.createElement("span"), at = document.createElement("small"), image = document.createElement("a");
+      const row = document.createElement("li"), button = document.createElement("button"), position = document.createElement("span"), step = document.createElement("span"), at = document.createElement("small"), image = document.createElement("button");
       button.className = "recording-marker";
       button.type = "button";
       position.className = "marker-position";
@@ -532,25 +578,25 @@ function renderRecordingTimeline(container, { video, jobId, recording, evidence 
       at.textContent = mark.clock + (mark.reason ? " \xB7 " + mark.reason : "");
       button.append(position, step, at);
       button.disabled = !!mark.reason || !!video.error || !loaded;
-      button.title = mark.reason || (video.error ? "\u5F55\u50CF\u65E0\u6CD5\u64AD\u653E" : !loaded ? "\u6B63\u5728\u52A0\u8F7D\u5F55\u50CF" : "\u8DF3\u8F6C\u5230 " + mark.offsetSeconds.toFixed(3) + " \u79D2\u5E76\u6682\u505C");
+      button.title = mark.reason || (video.error ? "\u5F55\u50CF\u65E0\u6CD5\u64AD\u653E" : !loaded ? "\u6B63\u5728\u52A0\u8F7D\u5F55\u50CF" : "\u8DF3\u8F6C\u5230 " + mark.offsetSeconds.toFixed(3) + " \u79D2\uFF0C\u4FDD\u6301\u5F53\u524D\u64AD\u653E\u72B6\u6001");
       button.setAttribute("aria-label", (mark.reason ? "\u65E0\u6CD5\u5B9A\u4F4D\uFF1A" : "\u8DF3\u5230\u5F55\u50CF " + mark.label + "\uFF1A") + mark.step);
       button.setAttribute("aria-pressed", "false");
       button.onclick = () => {
         try {
-          video.pause();
+          const paused = video.paused;
           video.currentTime = Math.min(mark.offsetSeconds, Math.max(0, video.duration - 1e-3));
           highlight();
-          message.textContent = "\u5DF2\u5B9A\u4F4D " + mark.label + " \xB7 " + mark.step + "\uFF08\u5DF2\u6682\u505C\uFF09";
+          message.textContent = "\u5DF2\u5B9A\u4F4D " + mark.label + " \xB7 " + mark.step + (paused ? "\uFF08\u4FDD\u6301\u6682\u505C\uFF09" : "\uFF08\u7EE7\u7EED\u64AD\u653E\uFF09");
           video.scrollIntoView({ block: "nearest", behavior: "smooth" });
         } catch {
           message.textContent = "\u5B9A\u4F4D\u5931\u8D25\uFF0C\u8BF7\u786E\u8BA4\u5F55\u50CF\u5DF2\u52A0\u8F7D\u4E14\u6587\u4EF6\u672A\u88AB\u5220\u9664\u3002";
         }
       };
       image.textContent = "\u67E5\u770B\u622A\u56FE";
-      image.href = "/artifacts/" + encodeURIComponent(jobId) + "/" + encodeURIComponent(mark.screenshot);
-      image.target = "_blank";
-      image.rel = "noopener";
+      image.type = "button";
+      image.className = "screenshot-view";
       image.setAttribute("aria-label", "\u67E5\u770B\u622A\u56FE\uFF1A" + mark.step);
+      image.onclick = () => showScreenshot(mark);
       row.append(button, image);
       list.append(row);
       entries.push({ mark, button });
@@ -607,6 +653,7 @@ function installDetailPreview(readCase, canPreview = () => true, recordingAction
     else hide();
   }
   function clearBody() {
+    for (const nested of body.querySelectorAll("dialog[open]")) nested.close();
     for (const video of body.querySelectorAll("video")) {
       video.pause();
       video.removeAttribute("src");

@@ -16,9 +16,22 @@ export function recordingMarks(recording,evidence,mediaDuration){
 export function renderRecordingTimeline(container,{video,jobId,recording,evidence}){
  container.className='recording-timeline';
  const heading=document.createElement('h3');heading.textContent='关键截图定位';
- const hint=document.createElement('p');hint.className='hint';hint.textContent='点击时间跳转并暂停，方便对照截图。按截图记录时间定位，采集可能存在少量延迟。';
+ const hint=document.createElement('p');hint.className='hint';hint.textContent='点击时间跳转，保持当前播放或暂停状态；查看截图将在弹框内打开。按截图记录时间定位，采集可能存在少量延迟。';
  const list=document.createElement('ol'),message=document.createElement('p');message.className='hint';message.setAttribute('role','status');
- container.replaceChildren(heading,hint,list,message);
+ const preview=document.createElement('dialog');preview.className='recording-screenshot-dialog';preview.setAttribute('aria-label','关键截图预览');
+ const bar=document.createElement('div');bar.className='screenshot-preview-bar';
+ const title=document.createElement('h3'),close=document.createElement('button');close.type='button';close.textContent='关闭截图';close.autofocus=true;bar.append(title,close);
+ const details=document.createElement('p'),status=document.createElement('p'),picture=document.createElement('img');details.className=status.className='hint';status.setAttribute('role','status');picture.hidden=true;
+ preview.append(bar,details,status,picture);container.replaceChildren(heading,hint,list,message,preview);
+ close.onclick=()=>preview.close();
+ preview.addEventListener('cancel',event=>{event.preventDefault();event.stopPropagation();preview.close();});
+ preview.addEventListener('close',()=>{picture.removeAttribute('src');picture.hidden=true;});
+ picture.onload=()=>{if(preview.open){picture.hidden=false;status.textContent='';}};
+ picture.onerror=()=>{if(preview.open){picture.hidden=true;status.textContent='截图加载失败，文件可能已被移动或删除。';}};
+ const showScreenshot=mark=>{
+  title.textContent=mark.step;details.textContent=mark.clock+'（北京时间）'+(mark.label==='—'?'':' · 录像 '+mark.label);status.textContent='正在加载截图…';picture.hidden=true;picture.alt=mark.step+' · '+mark.clock;
+  preview.showModal();picture.src='/artifacts/'+encodeURIComponent(jobId)+'/'+encodeURIComponent(mark.screenshot);
+ };
  let entries=[];
  function highlight(){
   let active=-1;
@@ -31,16 +44,16 @@ export function renderRecordingTimeline(container,{video,jobId,recording,evidenc
   if(!marks.length){message.textContent='本次运行尚无关键截图记录。';return;}
   message.textContent='共 '+marks.length+' 张关键截图 · 截图时间为北京时间';
   for(const mark of marks){
-   const row=document.createElement('li'),button=document.createElement('button'),position=document.createElement('span'),step=document.createElement('span'),at=document.createElement('small'),image=document.createElement('a');
+   const row=document.createElement('li'),button=document.createElement('button'),position=document.createElement('span'),step=document.createElement('span'),at=document.createElement('small'),image=document.createElement('button');
    button.className='recording-marker';button.type='button';position.className='marker-position';position.textContent=mark.label;step.className='marker-step';step.textContent=mark.step;
    const loaded=video.readyState>=1&&positive(video.duration);
    at.textContent=mark.clock+(mark.reason?' · '+mark.reason:'');button.append(position,step,at);button.disabled=!!mark.reason||!!video.error||!loaded;
-   button.title=mark.reason||(video.error?'录像无法播放':!loaded?'正在加载录像':'跳转到 '+mark.offsetSeconds.toFixed(3)+' 秒并暂停');button.setAttribute('aria-label',(mark.reason?'无法定位：':'跳到录像 '+mark.label+'：')+mark.step);button.setAttribute('aria-pressed','false');
+   button.title=mark.reason||(video.error?'录像无法播放':!loaded?'正在加载录像':'跳转到 '+mark.offsetSeconds.toFixed(3)+' 秒，保持当前播放状态');button.setAttribute('aria-label',(mark.reason?'无法定位：':'跳到录像 '+mark.label+'：')+mark.step);button.setAttribute('aria-pressed','false');
    button.onclick=()=>{
-    try{video.pause();video.currentTime=Math.min(mark.offsetSeconds,Math.max(0,video.duration-0.001));highlight();message.textContent='已定位 '+mark.label+' · '+mark.step+'（已暂停）';video.scrollIntoView({block:'nearest',behavior:'smooth'});}
+    try{const paused=video.paused;video.currentTime=Math.min(mark.offsetSeconds,Math.max(0,video.duration-0.001));highlight();message.textContent='已定位 '+mark.label+' · '+mark.step+(paused?'（保持暂停）':'（继续播放）');video.scrollIntoView({block:'nearest',behavior:'smooth'});}
     catch{message.textContent='定位失败，请确认录像已加载且文件未被删除。';}
    };
-   image.textContent='查看截图';image.href='/artifacts/'+encodeURIComponent(jobId)+'/'+encodeURIComponent(mark.screenshot);image.target='_blank';image.rel='noopener';image.setAttribute('aria-label','查看截图：'+mark.step);
+   image.textContent='查看截图';image.type='button';image.className='screenshot-view';image.setAttribute('aria-label','查看截图：'+mark.step);image.onclick=()=>showScreenshot(mark);
    row.append(button,image);list.append(row);entries.push({mark,button});
   }
   highlight();

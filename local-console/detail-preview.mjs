@@ -28,7 +28,7 @@ export function installDetailPreview(readCase,canPreview=()=>true,recordingActio
   return u.origin===location.origin&&(/^\/reports\/[\w-]+$/.test(u.pathname)||/^\/traces\/[\w-]+$/.test(u.pathname)||(u.pathname==='/'&&(u.searchParams.has('trace')||u.searchParams.has('batch'))))?u.pathname+u.search:null;
  };
  function closeToList(){const depth=history.state?.mwPreview?.depth;if(depth)history.go(-depth);else hide();}
- function clearBody(){for(const video of body.querySelectorAll('video')){video.pause();video.removeAttribute('src');video.load();}body.replaceChildren();}
+ function clearBody(){for(const nested of body.querySelectorAll('dialog[open]'))nested.close();for(const video of body.querySelectorAll('video')){video.pause();video.removeAttribute('src');video.load();}body.replaceChildren();}
  function hide(){generation++;current=null;clearBody();if(dialog.open)dialog.close();window.scrollTo(0,scrollY);if(anchor?.isConnected)anchor.focus({preventScroll:true});}
  function intercept(event){
   if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
