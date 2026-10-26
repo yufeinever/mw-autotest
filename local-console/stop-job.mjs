@@ -1,3 +1,4 @@
+import {uniqueClientPage} from './client-page.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
@@ -32,7 +33,7 @@ export async function stopSession(job,{connection}={}){
  }
  const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000});
  try{
-  const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+  const page=uniqueClientPage(browser);
   if(!page)throw Error('未找到客户端主界面');
   await bounded(page.evaluate(async id=>{
    const i=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');

@@ -119,7 +119,14 @@ test('两个模型任务串行等待；真实DOM独立回答和审批；外部�
   const control=route.pathname.match(/^\/control\/([AB])\/(\w[\w-]*)$/);
   if(control){let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):{},id=control[1],action=control[2];
    if(action==='acquire'){const r=scheduler.acquire(id,body.phase);if(r.granted)turns.push({id,phase:body.phase});return send(r);}
-   if(action==='release'){scheduler.release(id,body);return send({ok:true});}
+   if(action==='release'){
+    // The fixture is served over HTTP; production accepts only native app URLs.
+    const nativeUrl='mobilework-shell://app/index.html'+new URL(body.url).hash;
+    scheduler.release(id,{...body,url:nativeUrl});
+    scheduler.renderer(jobs.find(j=>j.id===id).config.cdpPort).expectedUrl=body.url;
+    if(body.sessionId)jobs.find(j=>j.id===id).sessionUrl=body.url;
+    return send({ok:true});
+   }
    if(action==='completed'){jobs.find(j=>j.id===id).modelCompleted=true;return send({ok:true});}
    if(action==='checkpoint')return send({ok:true});
    if(action==='is-managed')return send({managed:jobs.some(j=>j.sessionUrl===body.url)});

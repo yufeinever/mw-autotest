@@ -1,3 +1,4 @@
+import {isClientPageUrl} from './client-page.mjs';
 // One script runs through completion and handoff before admitting the next.
 // Renderer ownership checks still protect interactions, evidence and recovery.
 export class TaskScheduler {
@@ -41,7 +42,7 @@ export class TaskScheduler {
  release(id,{url,sessionId,phase='WAITING_MODEL'}={}){
   const entry=this.entry(id),{job}=entry,r=this.renderer(job.config.cdpPort);
   if(r.owner!==id)throw Error('本任务没有页面操作权');
-  if(typeof url!=='string'||!url.includes('MobileWork/resources/app-dist/index.html'))throw Error('页面地址无效');
+  if(typeof url!=='string'||!isClientPageUrl(url))throw Error('页面地址无效');
   if(!['WAITING_MODEL','VERIFYING','PREPARING'].includes(phase))throw Error('任务阶段无效');
   if(sessionId){
    if(!/^ses_[A-Za-z0-9]+$/.test(sessionId)||!url.endsWith('/session/'+sessionId))throw Error('会话与页面地址不一致');

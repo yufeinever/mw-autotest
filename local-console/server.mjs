@@ -1,3 +1,4 @@
+import {isClientPageUrl} from './client-page.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
@@ -165,7 +166,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(action==='completed'){job.modelCompleted=true;job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});}
     if(action==='checkpoint'){
      if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
-     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!d.url.includes('MobileWork/resources/app-dist/index.html')||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
+     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
      if(body.submitting)job.submissionPending=true;
      if(body.sessionId){if(!/^ses_[A-Za-z0-9]+$/.test(body.sessionId)||!body.sessionUrl?.endsWith('/session/'+body.sessionId)||job.sessionId&&job.sessionId!==body.sessionId)throw Error('会话登记不一致');job.sessionId=body.sessionId;job.sessionUrl=body.sessionUrl;job.submissionPending=false;if(job.ownedDraft)job.submittedSelection=job.ownedDraft.selection;delete job.ownedDraft;}
      await writeJob(job);return send(200,{ok:true});
@@ -292,7 +293,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      if(modelReader)return send(200,await modelReader(c));
      const browser=await chromium.connectOverCDP(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
      try{
-      const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+      const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的MobileWork主界面');
       const page=pages[0];
       if(await page.getByRole('button',{name:'停止',exact:true}).filter({visible:true}).count())throw Error('MobileWork 正在运行，请结束后读取模型');
@@ -402,7 +403,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     let trace,error;
     try{trace=await loadJobTrace(job,traceReader||(async sessionId=>{
      const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000});
-     try{const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+     try{const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
       return await pages[0].evaluate(readSessionLog,{sessionId,includeChildren:true});
      }finally{await browser.close();}
@@ -427,7 +428,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(!/^ses_[A-Za-z0-9]+$/.test(sessionId))throw Error('会话 ID 无效');
     const browser=await chromium.connectOverCDP(`http://127.0.0.1:${state.config.cdpPort||9223}`,{timeout:8000});
     try{
-     const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+     const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
      if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
      const page=pages[0],base=page.url().split('#')[0];
      if(sessionMatch[2]==='download'){

@@ -30,7 +30,7 @@ async function fixture(){
  const browser=await chromium.launch({channel:'chrome',headless:true});
  const page=await browser.newPage({viewport:{width:1000,height:650}});
  await page.setContent('<h1>隔离录像验证，无产品任务</h1><div style="font-size:50px" id="counter"></div><script>setInterval(()=>counter.textContent=Date.now(),100)</script>');
- const connect=async()=>({contexts:()=>[{pages:()=>[{url:()=>'/MobileWork/resources/app-dist/index.html',context:()=>({newCDPSession:()=>page.context().newCDPSession(page)})}]}],close:async()=>{}});
+ const connect=async()=>({contexts:()=>[{pages:()=>[{url:()=> 'mobilework-shell://app/index.html',context:()=>({newCDPSession:()=>page.context().newCDPSession(page)})}]}],close:async()=>{}});
  return {browser,connect};
 }
 

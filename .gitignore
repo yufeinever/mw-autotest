@@ -40,6 +40,8 @@
 !/local-console/cdp-config.test.mjs
 !/local-console/cdp-restart.mjs
 !/local-console/cdp-restart.test.mjs
+!/local-console/client-page.mjs
+!/local-console/client-page.test.mjs
 !/local-console/console.test.mjs
 !/local-console/environment.mjs
 !/local-console/environment.test.mjs

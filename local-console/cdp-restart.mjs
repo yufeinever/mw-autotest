@@ -1,3 +1,4 @@
+import {isClientPageUrl,uniqueClientPage} from './client-page.mjs';
 import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
@@ -9,7 +10,7 @@ const executable=testEnvironment.clientExecutable;
 const ps=async script=>(await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:15000})).stdout.trim();
 export async function probeCdp(port=9223){
  if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
- try{const r=await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1200)});const rows=await r.json();return {connected:r.ok&&Array.isArray(rows)&&rows.some(x=>x.type==='page'&&x.url?.includes('MobileWork/resources/app-dist/index.html')),port};}catch{return {connected:false,port};}
+ try{const r=await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1200)});const rows=await r.json();return {connected:r.ok&&Array.isArray(rows)&&rows.filter(x=>x.type==='page'&&isClientPageUrl(x.url)).length===1,port};}catch{return {connected:false,port};}
 }
 async function processes(){
  const escaped=executable.replaceAll("'","''");
@@ -19,7 +20,7 @@ async function processes(){
 async function assertIdle(port){
  if((await probeCdp(port)).connected){
   const browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:5000});
-  try{const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+  try{const page=uniqueClientPage(browser);
    const busy=await page.evaluate(async()=>{
     const buttons=[...document.querySelectorAll('button')].filter(b=>b.getClientRects().length).map(b=>b.textContent.trim());
     const draft=[...document.querySelectorAll('[contenteditable="true"]')].some(e=>e.getClientRects().length&&e.innerText.trim());
@@ -48,7 +49,7 @@ export async function requestClientQuit(connected,connect){
  if(!connected)throw Error('配置已启用，但当前客户端没有开启 CDP，无法自动正常退出。请右键系统托盘中的 MobileWork 图标选择“退出”（不是关闭窗口），然后再次点击“一键启用并重启”；按钮将自动带 CDP 参数启动。');
  const browser=await connect();
  try{
-  const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+  const page=uniqueClientPage(browser);
   if(!page)throw Error('未找到 MobileWork 主界面，未执行退出');
   await page.evaluate(()=>{
    if(typeof window.__OPENWORK_ELECTRON__?.shell?.quit!=='function')throw Error('当前版本没有正常退出接口');

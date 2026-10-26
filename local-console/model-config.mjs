@@ -1,3 +1,4 @@
+import {isClientPageUrl} from './client-page.mjs';
 import {chromium} from 'playwright-core';
 import {normalizeConfig} from './policy.mjs';
 export async function saveClientModel(input){
@@ -6,7 +7,7 @@ export async function saveClientModel(input){
  const url=new URL(p.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('请输入有效的 HTTP/HTTPS URL');
  const browser=await chromium.connectOverCDP(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
  try{
-  const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+  const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
   const page=pages[0];if(await page.getByRole('button',{name:'停止',exact:true}).filter({visible:true}).count())throw Error('客户端正在执行任务，请结束后保存模型');
   return await page.evaluate(async p=>{

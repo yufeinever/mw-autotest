@@ -1,3 +1,4 @@
+import {isClientPageUrl} from '../local-console/client-page.mjs';
 import fs from 'node:fs/promises';
 import {beijingLogTime} from './mobilework-evidence.mjs';
 import path from 'node:path';
@@ -56,7 +57,7 @@ try{
  const port=Number(runConfig?.cdpPort||process.env.MW_CDP_PORT||9223),timeout=Number(process.env.MW_CASE_TIMEOUT_MS||600000);
  if(!Number.isInteger(port)||port<1||port>65535||!Number.isFinite(timeout)||timeout<1000)block('端口或超时参数无效');
  browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
- const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+ const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
  if(pages.length!==1)block('MobileWork主界面数量不是1');
  page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:runConfig.stepInterval});await capture('连接客户端');
  const build=JSON.parse(await fs.readFile(testEnvironment.buildInfoPath,'utf8'));

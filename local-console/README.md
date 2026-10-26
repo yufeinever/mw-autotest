@@ -75,6 +75,8 @@ v0.0.14调整：点击时间戳保持原播放状态（播放中继续播放，�
 
 v0.0.15起，客户端 CDP 配置区的按钮明确显示为“修改 CDP 为 true”，只备份并修改 `packagedCdpAllowed`，不重启客户端；“一键启用并重启”会再次校验修改结果必须是 true，未核对通过时不退出、不启动客户端。
 
+v0.0.16统一兼容新版 `mobilework-shell://app/index.html` 和旧版安装目录的 file 主界面。连接、模型、用例、录像、停止及恢复共用地址判断，排除普通网页和多主界面歧义。后端需在空闲时重启控制台加载；已开启CDP的MobileWork无需再次重启。
+
 验证：`node --test local-console/console.test.mjs`。使用隔离临时目录和模拟页面，不向 MobileWork 发送任务。
 
 执行调度验证覆盖串行顺序、旧并行参数兼容、队列取消、阻塞暂停、重启不补跑及Session归属。开发后按最多5例约定选取定向测试，不默认运行整套历史文件；模拟通过不代表前16条产品实机全部通过。此次易用性定向回归入口：`node --test local-console/usability.test.mjs`（4项）。

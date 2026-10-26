@@ -1,3 +1,4 @@
+import {isClientPageUrl} from './client-page.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
@@ -35,7 +36,7 @@ export class PageRecorder {
   await fs.access(this.executable).catch(()=>{throw Error('缺少录像编码器，请运行 npm run recording:setup');});
   this.browser=await this.connect();
   if(this.stopping)return;
-  const pages=this.browser.contexts().flatMap(c=>c.pages()).filter(p=>p.url().includes('MobileWork/resources/app-dist/index.html'));
+  const pages=this.browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('录像未找到唯一 MobileWork 主页面');
   this.session=await timeout(pages[0].context().newCDPSession(pages[0]),2000,'建立页面录像连接超时');
   const [maxWidth,maxHeight]=this.config.resolution.split('x').map(Number);
