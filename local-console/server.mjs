@@ -12,7 +12,7 @@ import {normalizeConfig} from './policy.mjs';
 import {readModelOptions} from '../scripts/mobilework-run-policy.mjs';
 import {renderReport} from './report.mjs';
 import {saveClientModel} from './model-config.mjs';
-import {readSessionLog} from './session-log.mjs';
+import {readSessionLogFromPage} from './session-log.mjs';
 import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {killScript,stopSession,releaseOwnedLock} from './stop-job.mjs';
@@ -405,7 +405,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000});
      try{const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
-      return await pages[0].evaluate(readSessionLog,{sessionId,includeChildren:true});
+      return await readSessionLogFromPage(pages[0],{sessionId,includeChildren:true});
      }finally{await browser.close();}
     }));}catch(e){error=e.message;}
     res.setHeader('Cache-Control','no-store');
@@ -432,7 +432,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
      const page=pages[0],base=page.url().split('#')[0];
      if(sessionMatch[2]==='download'){
-      const data=await page.evaluate(readSessionLog,{sessionId,includeChildren:true});
+      const data=await readSessionLogFromPage(page,{sessionId,includeChildren:true});
       res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
       res.setHeader('Content-Disposition',`attachment; filename="${sessionId}-session-log.json"`);res.end(JSON.stringify(data,null,2));return;
      }

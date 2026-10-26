@@ -1,3 +1,4 @@
+import {readEngineConnection} from './engine-client.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -35,17 +36,7 @@ export async function stopSession(job,{connection}={}){
  try{
   const page=uniqueClientPage(browser);
   if(!page)throw Error('未找到客户端主界面');
-  await bounded(page.evaluate(async id=>{
-   const i=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
-   if(typeof i?.baseUrl!=='string'||!i.baseUrl.trim())throw Error('客户端引擎尚未就绪：缺少引擎地址，未确认会话停止');
-   const base=i.baseUrl.replace(/\/$/,''),headers={Authorization:'Basic '+btoa(i.opencodeUsername+':'+i.opencodePassword)};
-   const get=await fetch(base+'/session/'+id,{headers,signal:AbortSignal.timeout(5000)});
-   if(!get.ok)throw Error('核对会话失败 HTTP '+get.status);
-   const s=await get.json();if(s.id!==id)throw Error('会话 ID 不一致');
-   const r=await fetch(base+'/session/'+id+'/abort'+(s.directory?'?directory='+encodeURIComponent(s.directory):''),{method:'POST',headers,signal:AbortSignal.timeout(5000)});
-   if(!r.ok||await r.json()!==true)throw Error('客户端未确认停止会话');
-  },id),15000);
-  return '客户端已确认停止本次会话 '+id;
+  return await bounded(stopSession(job,{connection:await readEngineConnection(page)}),15000);
  }finally{await browser.close();}
 }
 export async function releaseOwnedLock(job,root){

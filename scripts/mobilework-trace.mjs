@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {readSessionLog} from '../local-console/session-log.mjs';
+import {readSessionLogFromPage} from '../local-console/session-log.mjs';
 import {buildTrace,traceRuleVersion} from '../local-console/trace.mjs';
 import {getClientCase} from './client-case-catalog.mjs';
 import {toObservatory} from '../local-console/observatory-data.mjs';
@@ -10,7 +10,7 @@ import {toObservatory} from '../local-console/observatory-data.mjs';
 export async function saveRunTrace({page,sessionId,number,dir,checks,log=()=>{},readLog}){
  const definition=getClientCase(number);
  try{
-  const data=readLog?await readLog(true):await page.evaluate(readSessionLog,{sessionId,includeChildren:true});
+  const data=readLog?await readLog(true):await readSessionLogFromPage(page,{sessionId,includeChildren:true});
   if(data.sessionId!==sessionId)throw Error('Trace返回的会话ID与本次执行不一致');
   await fs.writeFile(path.join(dir,sessionId+'-session-log.json'),JSON.stringify(data,null,2));
   const trace=buildTrace(data,{expectedSkills:definition.skills,caseId:definition.id,origin:'run-snapshot'});

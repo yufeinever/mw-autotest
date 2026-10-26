@@ -8,7 +8,7 @@ export async function waitStep(page,config={}){
 export function readRunConfig(){return process.env.MW_TEST_CONFIG_JSON?normalizeConfig(JSON.parse(process.env.MW_TEST_CONFIG_JSON)):null;}
 export async function modelTrigger(page){
  const candidates=page.locator('button[aria-expanded][aria-label]').filter({visible:true});
- const excluded=new Set(['上传文件','模式','技能','专家','工具','知识库','权限']);
+ const excluded=new Set(['上传文件','模式','技能','专家','工具','知识库','权限','上下文用量']);
  const found=[];
  for(let i=0;i<await candidates.count();i++){
   const b=candidates.nth(i), label=await b.getAttribute('aria-label');
@@ -71,7 +71,7 @@ async function stableModelSnapshot(page,name,{timeoutMs=10000,stableMs=1000}={})
 }
 export async function readModelOptions(page,config={}){
  const trigger=await modelTrigger(page);
- const current=await trigger.innerText();
+ const current=(await trigger.innerText()).trim()||await trigger.getAttribute('aria-label');
  await waitStep(page,config);await trigger.click();
  try{
   await page.getByRole('listbox').filter({visible:true}).waitFor({timeout:5000});

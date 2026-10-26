@@ -1,3 +1,4 @@
+import {readEngineConnection,engineRequest} from './engine-client.mjs';
 import {isClientPageUrl,uniqueClientPage} from './client-page.mjs';
 import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -22,14 +23,12 @@ async function assertIdle(port){
   const browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:5000});
   try{const page=uniqueClientPage(browser);
    const busy=await page.evaluate(async()=>{
-    const buttons=[...document.querySelectorAll('button')].filter(b=>b.getClientRects().length).map(b=>b.textContent.trim());
+    const buttons=[...document.querySelectorAll('button')].filter(b=>b.getClientRects().length).map(b=>(b.getAttribute('aria-label')||b.textContent).trim());
     const draft=[...document.querySelectorAll('[contenteditable="true"]')].some(e=>e.getClientRects().length&&e.innerText.trim());
-    const info=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
-    if(typeof info?.baseUrl!=='string'||!info.baseUrl.trim())throw Error('客户端引擎尚未就绪：缺少引擎地址，无法核实空闲；未退出或重启客户端');
-    const r=await fetch(info.baseUrl.replace(/\/$/,'')+'/session/status',{headers:{Authorization:'Basic '+btoa(info.opencodeUsername+':'+info.opencodePassword)}});
-    if(!r.ok)throw Error('无法核实会话状态');const states=await r.json();
-    return draft||buttons.some(b=>['停止','允许一次','跳过'].includes(b))||Object.values(states).some(s=>s.type!=='idle');
-   });if(busy)throw Error('客户端存在运行任务、待处理交互或未发送草稿，请处理后再重启');
+    return draft||buttons.some(b=>['停止','允许一次','跳过'].includes(b));
+   });
+   const states=await engineRequest(await readEngineConnection(page),'/session/status');
+   if(busy||Object.values(states).some(s=>s.type!=='idle'))throw Error('客户端存在运行任务、待处理交互或未发送草稿，请处理后再重启');
   }finally{await browser.close();}return;
  }
  // CDP is off: use the application's local UI bridge, never assume idle from a closed port.

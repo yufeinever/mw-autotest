@@ -1,4 +1,9 @@
-// Runs inside the existing renderer; reads the engine without navigating the UI.
+import {readEngineConnection} from './engine-client.mjs';
+// Production uses Node HTTP; retain the serializable core for historical fixtures.
+export async function readSessionLogFromPage(page,request){
+ const connection=await readEngineConnection(page);
+ return readSessionLog({...(typeof request==='string'?{sessionId:request}:request),connection});
+}
 export async function readSessionLog(request){
  const sessionId=typeof request==='string'?request:request?.sessionId;
  const includeChildren=typeof request==='object'&&request.includeChildren===true;
@@ -8,7 +13,7 @@ export async function readSessionLog(request){
  const base=String(info.baseUrl||'').replace(/\/$/,'');
  const headers={Authorization:'Basic '+btoa(info.opencodeUsername+':'+info.opencodePassword)};
  async function get(route){
-  const res=await fetch(base+route,{headers,signal:AbortSignal.timeout(20000)});
+  const res=await fetch(base+route,{headers,redirect:'error',signal:AbortSignal.timeout(20000)});
   if(res.status===404)throw Error('当前客户端找不到该会话或消息（HTTP 404），可能已删除或不在当前引擎中；不是执行失败导致禁止下载');
   if(!res.ok)throw Error('读取 session 日志失败：HTTP '+res.status);
   return res.json();

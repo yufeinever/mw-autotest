@@ -150,3 +150,5 @@
 !/测试用例与脚本/首条用例脚本验证记录.md
 !/测试用例与脚本/首条用例自动化说明.md
 !/环境检查.cmd
+!/local-console/engine-client.mjs
+!/local-console/native-compat.test.mjs

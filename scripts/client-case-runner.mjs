@@ -1,10 +1,11 @@
+import {readEngineConnection,engineRequest} from '../local-console/engine-client.mjs';
 import {isClientPageUrl} from '../local-console/client-page.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
 import {normalizeConfig} from '../local-console/policy.mjs';
-import {readSessionLog} from '../local-console/session-log.mjs';
+import {readSessionLogFromPage} from '../local-console/session-log.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
 import {selectModel,handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
@@ -32,7 +33,7 @@ export async function waitSentInput(page,sessionId,input,{timeoutMs=10000}={}){
  const deadline=Date.now()+timeoutMs;let data;
  do{
   if(!page.url().endsWith('/session/'+sessionId))throw blocked('核对发送消息时页面已离开本次会话');
-  data=await page.evaluate(readSessionLog,sessionId);
+  data=await readSessionLogFromPage(page,sessionId);
   const text=data.messages.filter(m=>m.info?.role==='user').flatMap(m=>(m.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'')).join('\n');
   if(containsComposerText(text,input))return {data,complete:true};
   await page.waitForTimeout(300);
@@ -117,12 +118,9 @@ export async function fillScenario(page,definition,config,{capture=async()=>{},l
  await capture('场景自动填充');log('场景自动填充已核对',definition.category+' → '+definition.button);
  return {editor,url,text,skills,previousSelection,selection:await selectionState(page)};
 }
-async function sessionStatus(sessionId){
- const info=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
- if(typeof info?.baseUrl!=='string'||!info.baseUrl.trim())throw Error('客户端引擎尚未就绪：缺少引擎地址');
- const res=await fetch(info.baseUrl.replace(/\/$/,'')+'/session/status',{headers:{Authorization:'Basic '+btoa(info.opencodeUsername+':'+info.opencodePassword)},signal:AbortSignal.timeout(15000)});
- if(!res.ok)throw Error('读取会话运行状态失败：HTTP '+res.status);
- return (await res.json())[sessionId]?.type||'idle';
+async function sessionStatus(page,sessionId){
+ const states=await engineRequest(await readEngineConnection(page),'/session/status');
+ return states[sessionId]?.type||'idle';
 }
 export async function waitScenario(page,sessionId,config,{timeoutMs,capture,log}){
  const deadline=Date.now()+timeoutMs;let lastLog=0;
@@ -136,9 +134,9 @@ export async function waitScenario(page,sessionId,config,{timeoutMs,capture,log}
   if(/等待确认/.test(body)&&await button(page,'发送').count())throw blocked('出现未识别的待回答问题，保留现场');
   if(await page.getByText('执行失败',{exact:true}).filter({visible:true}).count())throw Error('客户端显示执行失败');
   if(!await button(page,'停止').count()){
-   const status=await page.evaluate(sessionStatus,sessionId);
+   const status=await sessionStatus(page,sessionId);
    if(status==='idle'){
-    const data=await page.evaluate(readSessionLog,sessionId),last=data.messages.at(-1);
+    const data=await readSessionLogFromPage(page,sessionId),last=data.messages.at(-1);
     if(last?.info?.error)throw Error('引擎会话错误：'+JSON.stringify(last.info.error));
     const complete=last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool');
     if(finalAssistantText(data).trim()&&(complete||await page.getByText('执行成功',{exact:true}).filter({visible:true}).count()))return data;
@@ -191,7 +189,7 @@ export async function runScenarioCase(number,inputConfig){
   else{
    if(resumeId){
     if(!page.url().endsWith('/session/'+resumeId))throw blocked('续跑ID与当前页面会话不一致');
-    const prior=await page.evaluate(readSessionLog,resumeId);
+    const prior=await readSessionLogFromPage(page,resumeId);
     const userText=prior.messages.filter(m=>m.info?.role==='user').flatMap(m=>(m.parts||[]).filter(p=>p.type==='text').map(p=>p.text)).join('\n');
     // 只允许续跑本脚本创建的会话，并复用它自己的原输出目录。
     const match=userText.match(/本次独立输出目录 (.+?) 中新增/);

@@ -77,6 +77,8 @@ v0.0.15起，客户端 CDP 配置区的按钮明确显示为“修改 CDP 为 tr
 
 v0.0.16统一兼容新版 `mobilework-shell://app/index.html` 和旧版安装目录的 file 主界面。连接、模型、用例、录像、停止及恢复共用地址判断，排除普通网页和多主界面歧义。后端需在空闲时重启控制台加载；已开启CDP的MobileWork无需再次重启。
 
+v0.0.17将受页面CORS限制的引擎状态、日志/Trace和停止回退请求移到Node执行，页面只提供运行时连接信息，继续校验会话归属及脱敏。模型定位排除新版“上下文用量”，图标按钮使用aria-label回读名称；仍拒绝多候选。升级后空闲时重启控制台即可，无需重新登录或重启MobileWork。
+
 验证：`node --test local-console/console.test.mjs`。使用隔离临时目录和模拟页面，不向 MobileWork 发送任务。
 
 执行调度验证覆盖串行顺序、旧并行参数兼容、队列取消、阻塞暂停、重启不补跑及Session归属。开发后按最多5例约定选取定向测试，不默认运行整套历史文件；模拟通过不代表前16条产品实机全部通过。此次易用性定向回归入口：`node --test local-console/usability.test.mjs`（4项）。
