@@ -40,7 +40,7 @@ async function assertIdle(port){
  if(!s.ok||!stop||!send||s.busyActionId||stop.disabled!==true||send.disabled!==true)throw Error('客户端有任务或草稿，或无法确认空闲；请处理后再重试');
 }
 export async function restartFlow({checkIdle,enable,close,launch,probe,wait=ms=>new Promise(r=>setTimeout(r,ms)),attempts=40}){
- await checkIdle();const config=await enable();await close();await launch();
+ await checkIdle();const config=await enable();if(config?.allowed!==true)throw Error('CDP 配置核对失败：packagedCdpAllowed 未确认是 true，未退出或启动客户端');await close();await launch();
  for(let i=0;i<attempts;i++){const state=await probe();if(state.connected)return {...config,...state,restarted:true};await wait(500);}
  throw Error('客户端已启动，但未能连接 CDP 主界面。请检查客户端启动提示后刷新状态；未强制结束新进程');
 }

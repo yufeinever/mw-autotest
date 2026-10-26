@@ -19,11 +19,14 @@ test('重启依次检查、备份修改、退出、启动、验证',async()=>{
  const r=await restartFlow({checkIdle:async()=>calls.push('check'),enable:async()=>{calls.push('enable');return {allowed:true};},close:async()=>calls.push('close'),launch:async()=>calls.push('launch'),probe:async()=>({connected:++count===2,port:9223}),wait:async()=>{}});
  assert.deepEqual(calls,['check','enable','close','launch']);assert.equal(r.connected,true);
 });
+test('一键重启未核对到 true 时不退出或启动客户端',async()=>{
+ const calls=[];await assert.rejects(()=>restartFlow({checkIdle:async()=>calls.push('check'),enable:async()=>{calls.push('enable');return {allowed:false};},close:async()=>calls.push('close'),launch:async()=>calls.push('launch')}),/未确认是 true/);assert.deepEqual(calls,['check','enable']);
+});
 test('有任务或无法确认状态时不修改、不关闭、不启动',async()=>{
  let touched=false;await assert.rejects(()=>restartFlow({checkIdle:async()=>{throw Error('运行中');},enable:async()=>{touched=true;}}),/运行中/);assert.equal(touched,false);
 });
 test('正常退出失败时不启动第二个进程；端口未连通不报告成功',async()=>{
- let launched=false;await assert.rejects(()=>restartFlow({checkIdle:async()=>{},enable:async()=>({}),close:async()=>{throw Error('仍在后台');},launch:async()=>{launched=true;}}),/仍在后台/);assert.equal(launched,false);
- await assert.rejects(()=>restartFlow({checkIdle:async()=>{},enable:async()=>({}),close:async()=>{},launch:async()=>{},probe:async()=>({connected:false}),wait:async()=>{},attempts:2}),/未能连接/);
+ let launched=false;await assert.rejects(()=>restartFlow({checkIdle:async()=>{},enable:async()=>({allowed:true}),close:async()=>{throw Error('仍在后台');},launch:async()=>{launched=true;}}),/仍在后台/);assert.equal(launched,false);
+ await assert.rejects(()=>restartFlow({checkIdle:async()=>{},enable:async()=>({allowed:true}),close:async()=>{},launch:async()=>{},probe:async()=>({connected:false}),wait:async()=>{},attempts:2}),/未能连接/);
  await assert.rejects(()=>probeCdp(-1),/端口无效/);
 });
