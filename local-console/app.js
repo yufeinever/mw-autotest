@@ -356,135 +356,6 @@ async function stopAllJobs(api, progress = () => {
   return { total: targets.length, stopped, remaining: remaining.map((j) => ({ id: j.id, name: j.name || j.id, message: errors.get(j.id) || j.error || "\u505C\u6B62\u5C1A\u672A\u786E\u8BA4" })) };
 }
 
-// local-console/batch-browser.mjs
-var el = (tag, text, cls) => {
-  const node = document.createElement(tag);
-  if (text !== void 0) node.textContent = text;
-  if (cls) node.className = cls;
-  return node;
-};
-var link = (text, href) => {
-  const a = el("a", text);
-  a.href = href;
-  return a;
-};
-async function showBatch(id) {
-  document.title = "\u6267\u884C\u6279\u6B21\u8BE6\u60C5 \xB7 MobileWork";
-  const main = document.querySelector("main");
-  main.className = "batch-detail";
-  main.replaceChildren();
-  const header = el("header"), heading = el("div");
-  heading.append(el("small", "MOBILEWORK \xB7 EXECUTION BATCH"), el("h1", "\u6267\u884C\u6279\u6B21\u8BE6\u60C5"));
-  header.className = "detail-return";
-  header.append(heading, link("\u8FD4\u56DE\u6267\u884C\u6279\u6B21", "/#batchSection"));
-  main.append(header);
-  const error = el("p", void 0, "result-fail"), content = el("div");
-  error.setAttribute("role", "status");
-  main.append(error, content);
-  let stopped = false, fingerprint;
-  window.addEventListener("pagehide", () => stopped = true, { once: true });
-  async function refresh() {
-    if (stopped) return;
-    try {
-      if (!/^[\w-]+$/.test(id)) throw Error("\u6267\u884C\u6279\u6B21 ID \u65E0\u6548");
-      const response = await fetch("/api/batches/" + encodeURIComponent(id), { cache: "no-store" }), batch = await response.json();
-      if (!response.ok) throw Error(batch.error || "\u8BFB\u53D6\u6267\u884C\u6279\u6B21\u5931\u8D25");
-      error.textContent = "";
-      const nextFingerprint = JSON.stringify(batch);
-      if (nextFingerprint === fingerprint) return;
-      const expanded = new Set([...content.querySelectorAll("details[open]")].map((e) => e.dataset.expansionKey));
-      const summary = el("section"), top = el("div", void 0, "heading");
-      top.append(el("h2", batch.name), el("span", batchLabels[batch.status] || batch.status, "badge " + batchResultClass(batch.status)));
-      summary.append(top);
-      summary.append(el("p", "\u6279\u6B21 ID\uFF1A" + batch.id), el("p", "\u8303\u56F4\uFF1A" + batch.scope), el("p", `\u5F00\u59CB\uFF1A${batchDate(batch.startedAt)}\u3000\u7ED3\u675F\uFF1A${batchDate(batch.endedAt)}\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09`));
-      if (batch.config) summary.append(el("p", "\u6267\u884C\u7B56\u7565\uFF1A" + (batch.config.executionStrategy === "parallel" ? `\u4EFB\u52A1\u5E76\u884C \xB7 \u6700\u591A ${batch.config.maxParallel || 3} \u4E2A\u4EFB\u52A1` : "\u4E32\u884C\u6267\u884C") + `\u3000\u6392\u961F ${batch.queued || 0} \u6761\u3000\u6267\u884C\u4E2D ${batch.running} \u6761`));
-      const metrics = el("div", void 0, "batch-metrics");
-      for (const [name, value] of [["\u8BA1\u5212\u7528\u4F8B", batch.total], ["\u5DF2\u767B\u8BB0", batch.launched], ["\u5DF2\u7ED3\u675F", batch.finished], ["\u901A\u8FC7", batch.counts.PASS || 0], ["\u5931\u8D25 / \u963B\u585E", (batch.counts.FAIL || 0) + (batch.counts.BLOCKED || 0)], ["\u65AD\u8A00\u901A\u8FC7\u7387", assertionRate(batch.checks)]]) {
-        const metric = el("div");
-        metric.append(el("small", name), el("strong", String(value)));
-        metrics.append(metric);
-      }
-      summary.append(metrics);
-      if (batch.note) summary.append(el("p", batch.note, "hint"));
-      if (batch.error) summary.append(el("p", "\u6279\u6B21\u63D0\u4EA4\u672A\u5B8C\u6210\uFF1A" + batch.error, "result-fail"));
-      summary.append(el("p", `\u672A\u6267\u884C ${batch.counts.NOT_RUN || 0} \u6761 \xB7 \u505C\u6B62 ${batch.counts.STOPPED || 0} \u6761 \xB7 \u4E2D\u65AD ${batch.counts.INTERRUPTED || 0} \u6761 \xB7 ${batch.checks.missing} \u6761\u5C1A\u65E0\u65AD\u8A00\uFF1B\u6C47\u603B\u53EA\u7EDF\u8BA1\u5DF2\u7ECF\u4EA7\u751F\u7684\u65AD\u8A00\u3002`, "hint"));
-      const parameters = el("details"), parameterTitle = el("summary", "\u672C\u6279\u6B21\u6267\u884C\u53C2\u6570");
-      parameters.dataset.expansionKey = "parameters";
-      parameters.append(parameterTitle);
-      const c = batch.config;
-      if (c) {
-        parameters.append(el("p", `\u9009\u9879\uFF1A${{ first: "\u7B2C\u4E00\u9879", second: "\u7B2C\u4E8C\u9879", custom: "\u81EA\u5B9A\u4E49" }[c.question] || c.question}\u3000\u5BA1\u6279\uFF1A${approvalLabels[c.approval] || c.approval}\u3000\u6A21\u578B\uFF1A${c.model || "\u6CBF\u7528\u5BA2\u6237\u7AEF\u5F53\u524D\u6A21\u578B"}\u3000CDP\uFF1A${c.cdpPort}`));
-        if (c.question === "custom") parameters.append(el("p", "\u81EA\u5B9A\u4E49\u56DE\u7B54\uFF1A" + c.customText));
-      } else parameters.append(el("p", "\u5386\u53F2\u8BB0\u5F55\u7684\u53C2\u6570\u5206\u522B\u4FDD\u5B58\u5728\u5404\u7528\u4F8B\u62A5\u544A\u4E2D\u3002"));
-      summary.append(parameters);
-      const section = el("section");
-      section.append(el("h2", "\u7528\u4F8B\u6267\u884C\u660E\u7EC6"), el("p", "\u67E5\u770B\u62A5\u544A\u53EF\u5C55\u5F00\u8FC7\u7A0B\u3001\u622A\u56FE\u4E0E\u65AD\u8A00\uFF1BSession \u65E5\u5FD7\u548C Trace \u6309\u5BF9\u5E94\u4F1A\u8BDD\u4FDD\u7559\u3002", "hint"));
-      const scroll = el("div", void 0, "table batch-case-table"), table = el("table"), thead = el("thead"), head = el("tr");
-      for (const name of ["\u5E8F\u53F7", "\u7528\u4F8B", "\u5F00\u59CB / \u7ED3\u675F", "\u6267\u884C\u7ED3\u679C", "\u65AD\u8A00\u901A\u8FC7\u7387", "\u8BE6\u60C5"]) head.append(el("th", name));
-      thead.append(head);
-      table.append(thead);
-      const tbody = el("tbody");
-      tbody.id = "batchCaseRows";
-      for (const entry of batch.entries) {
-        const job = entry.job, status = job?.status || "NOT_RUN", tr = el("tr");
-        tr.dataset.jobId = job?.id || "";
-        const name = el("td", entry.name);
-        name.title = entry.path || "";
-        tr.append(el("td", String(entry.number).padStart(2, "0")), name, el("td", job ? batchDate(job.startedAt) + "\n" + batchDate(job.endedAt) : "\u2014"), el("td", (batchLabels[status] || status) + (status === "RUNNING" && job.phase ? "\n" + (phaseLabels[job.phase] || job.phase) : ""), batchResultClass(status)));
-        const checks = job?.result?.checks || [], rate = el("td", assertionRate({ total: checks.length, passed: checks.filter((c2) => c2.pass === true).length }));
-        if (checks.some((c2) => c2.pass !== true)) rate.className = "result-fail";
-        tr.append(rate);
-        const actions = el("td");
-        if (job) {
-          actions.append(link("\u67E5\u770B\u62A5\u544A", "/reports/" + encodeURIComponent(job.id)), link("Trace \u8BB0\u5F55", "/?trace=" + encodeURIComponent(job.id)));
-          if (job.sessionId) actions.append(link("\u4E0B\u8F7D Session \u65E5\u5FD7", "/sessions/" + encodeURIComponent(job.sessionId) + "/download"));
-          else actions.append(el("span", "\u672A\u83B7\u53D6\u4F1A\u8BDD ID", "hint"));
-        } else actions.append(el("span", "\u5C1A\u672A\u542F\u52A8", "hint"));
-        if (job && !job.stopRequested && canStopJob(job)) {
-          const stop = el("button", job.status === "QUEUED" ? "\u53D6\u6D88\u6392\u961F" : "\u5F3A\u5236\u505C\u6B62", "result-fail");
-          stop.onclick = async () => {
-            stop.disabled = true;
-            try {
-              const stateResponse = await fetch("/api/state"), state = await stateResponse.json();
-              const response2 = await fetch("/api/jobs/" + encodeURIComponent(job.id) + "/stop", { method: "POST", headers: { "content-type": "application/json", "x-console-token": state.token }, body: "{}" }), result = await response2.json();
-              if (!response2.ok) throw Error(result.error);
-              await refresh();
-            } catch (e) {
-              error.textContent = e.message;
-              stop.disabled = false;
-            }
-          };
-          actions.append(stop);
-        }
-        if (job?.error) actions.append(el("p", job.error, "result-fail"));
-        if (job?.queueHold) actions.append(el("p", "\u7B49\u5F85\u5BA2\u6237\u7AEF\u6062\u590D\uFF1A" + job.queueHold, "result-fail"));
-        if (job?.handoff) actions.append(el("p", "\u9875\u9762\u4EA4\u63A5\uFF1A" + job.handoff.reason, job.handoff.ready ? "" : "result-fail"));
-        const failed = checks.filter((c2) => c2.pass !== true);
-        if (failed.length) {
-          const details = el("details"), label = el("summary", `\u5931\u8D25\u65AD\u8A00 ${failed.length} \u9879`, "result-fail");
-          details.dataset.expansionKey = "checks-" + job.id;
-          details.append(label);
-          for (const check of failed) details.append(el("p", check.name + (check.actual !== void 0 ? " \xB7 " + (typeof check.actual === "string" ? check.actual : JSON.stringify(check.actual)) : ""), "result-fail"));
-          actions.append(details);
-        }
-        tr.append(actions);
-        tbody.append(tr);
-      }
-      table.append(tbody);
-      scroll.append(table);
-      section.append(scroll);
-      content.replaceChildren(summary, section);
-      for (const details of content.querySelectorAll("details")) details.open = expanded.has(details.dataset.expansionKey);
-      fingerprint = nextFingerprint;
-    } catch (e) {
-      error.textContent = e.message;
-    }
-  }
-  await refresh();
-  const timer = setInterval(refresh, 2e3);
-  window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
-}
-
 // scripts/permission-case-catalog.mjs
 var rows = [
   ["\u666E\u901A\u6587\u4EF6\u8BFB\u53D6", "read", "continue", "\u8BFB\u53D6\u666E\u901A\u6750\u6599\u540E\u6982\u62EC\u5185\u5BB9\u3002"],
@@ -745,7 +616,11 @@ function installDetailPreview(readCase, canPreview = () => true, recordingAction
     const a = event.target.closest("a[href]");
     if (!a || a.hasAttribute("download") || a.target === "_blank") return;
     const href = new URL(a.href, location.href), target = previewUrl(href.href);
-    if (target && canPreview()) {
+    const recording = href.origin === location.origin && href.pathname.match(/^\/recordings\/([\w-]+)$/);
+    if (recording && canPreview()) {
+      event.preventDefault();
+      open({ kind: "recording", id: recording[1], title: "\u6267\u884C\u5F55\u50CF" });
+    } else if (target && canPreview()) {
       event.preventDefault();
       open({ kind: "page", url: target, title: a.textContent.trim() || "\u8BE6\u60C5" });
     } else if (current && href.origin === location.origin && href.pathname === "/" && !href.search) {
@@ -764,6 +639,25 @@ function installDetailPreview(readCase, canPreview = () => true, recordingAction
       dialog.showModal();
     }
     if (entry.kind === "recording") {
+      if (!entry.recording) {
+        const loading = document.createElement("p");
+        loading.textContent = "\u6B63\u5728\u8BFB\u53D6\u5F55\u50CF\u2026";
+        body.append(loading);
+        try {
+          const data = await recordingActions.readEvidence(entry.id);
+          if (request !== generation) return;
+          if (!data.recording?.available) throw Error("\u672C\u6B21\u5C1A\u65E0\u5DF2\u4FDD\u5B58\u5F55\u50CF\uFF0C\u8BF7\u8FD4\u56DE\u6279\u6B21\u67E5\u770B\u5F55\u50CF\u72B6\u6001\u3002");
+          entry = { ...entry, ...data, title: (data.name || "\u672C\u6B21\u6267\u884C") + " \xB7 \u6267\u884C\u5F55\u50CF" };
+          title.textContent = entry.title;
+          body.replaceChildren();
+        } catch (e) {
+          if (request === generation) {
+            loading.textContent = "\u8BFB\u53D6\u5F55\u50CF\u5931\u8D25\uFF1A" + e.message;
+            loading.className = "error";
+          }
+          return;
+        }
+      }
       const content = document.createElement("article");
       content.className = "recording-preview";
       const heading = document.createElement("h2");
@@ -938,6 +832,161 @@ function installDetailPreview(readCase, canPreview = () => true, recordingAction
   }, openRecording(job) {
     if (job.recording?.available) open({ kind: "recording", id: job.id, title: job.name + " \xB7 \u6267\u884C\u5F55\u50CF", recording: job.recording, evidence: job.result?.evidence || [] });
   } };
+}
+
+// local-console/batch-browser.mjs
+var el = (tag, text, cls) => {
+  const node = document.createElement(tag);
+  if (text !== void 0) node.textContent = text;
+  if (cls) node.className = cls;
+  return node;
+};
+var link = (text, href) => {
+  const a = el("a", text);
+  a.href = href;
+  return a;
+};
+async function showBatch(id) {
+  document.title = "\u6267\u884C\u6279\u6B21\u8BE6\u60C5 \xB7 MobileWork";
+  const recordingApi = async (route, data) => {
+    const state = await (await fetch("/api/state", { cache: "no-store" })).json();
+    const response = await fetch(route, { method: data ? "POST" : "GET", cache: "no-store", headers: { "content-type": "application/json", "x-console-token": state.token }, body: data ? JSON.stringify(data) : void 0 });
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error || "\u5F55\u50CF\u8BFB\u53D6\u5931\u8D25");
+    return result;
+  };
+  installDetailPreview(() => null, () => true, {
+    readEvidence: async (id2) => {
+      const job = await recordingApi("/api/jobs/" + encodeURIComponent(id2));
+      return { name: job.name, recording: job.recording, evidence: job.result?.evidence || [] };
+    },
+    readLocations: (id2) => recordingApi("/api/jobs/" + encodeURIComponent(id2) + "/recording-locations"),
+    openFolder: (id2, location2) => recordingApi("/api/jobs/" + encodeURIComponent(id2) + "/recording-folder", { location: location2 })
+  });
+  const main = document.querySelector("main");
+  main.className = "batch-detail";
+  main.replaceChildren();
+  const header = el("header"), heading = el("div");
+  heading.append(el("small", "MOBILEWORK \xB7 EXECUTION BATCH"), el("h1", "\u6267\u884C\u6279\u6B21\u8BE6\u60C5"));
+  header.className = "detail-return";
+  header.append(heading, link("\u8FD4\u56DE\u6267\u884C\u6279\u6B21", "/#batchSection"));
+  main.append(header);
+  const error = el("p", void 0, "result-fail"), content = el("div");
+  error.setAttribute("role", "status");
+  main.append(error, content);
+  let stopped = false, fingerprint;
+  window.addEventListener("pagehide", () => stopped = true, { once: true });
+  async function refresh() {
+    if (stopped) return;
+    try {
+      if (!/^[\w-]+$/.test(id)) throw Error("\u6267\u884C\u6279\u6B21 ID \u65E0\u6548");
+      const response = await fetch("/api/batches/" + encodeURIComponent(id), { cache: "no-store" }), batch = await response.json();
+      if (!response.ok) throw Error(batch.error || "\u8BFB\u53D6\u6267\u884C\u6279\u6B21\u5931\u8D25");
+      error.textContent = "";
+      const nextFingerprint = JSON.stringify(batch);
+      if (nextFingerprint === fingerprint) return;
+      const expanded = new Set([...content.querySelectorAll("details[open]")].map((e) => e.dataset.expansionKey));
+      const summary = el("section"), top = el("div", void 0, "heading");
+      top.append(el("h2", batch.name), el("span", batchLabels[batch.status] || batch.status, "badge " + batchResultClass(batch.status)));
+      summary.append(top);
+      summary.append(el("p", "\u6279\u6B21 ID\uFF1A" + batch.id), el("p", "\u8303\u56F4\uFF1A" + batch.scope), el("p", `\u5F00\u59CB\uFF1A${batchDate(batch.startedAt)}\u3000\u7ED3\u675F\uFF1A${batchDate(batch.endedAt)}\uFF08\u5317\u4EAC\u65F6\u95F4\uFF09`));
+      if (batch.config) summary.append(el("p", "\u6267\u884C\u7B56\u7565\uFF1A" + (batch.config.executionStrategy === "parallel" ? `\u4EFB\u52A1\u5E76\u884C \xB7 \u6700\u591A ${batch.config.maxParallel || 3} \u4E2A\u4EFB\u52A1` : "\u4E32\u884C\u6267\u884C") + `\u3000\u6392\u961F ${batch.queued || 0} \u6761\u3000\u6267\u884C\u4E2D ${batch.running} \u6761`));
+      const metrics = el("div", void 0, "batch-metrics");
+      for (const [name, value] of [["\u8BA1\u5212\u7528\u4F8B", batch.total], ["\u5DF2\u767B\u8BB0", batch.launched], ["\u5DF2\u7ED3\u675F", batch.finished], ["\u901A\u8FC7", batch.counts.PASS || 0], ["\u5931\u8D25 / \u963B\u585E", (batch.counts.FAIL || 0) + (batch.counts.BLOCKED || 0)], ["\u65AD\u8A00\u901A\u8FC7\u7387", assertionRate(batch.checks)]]) {
+        const metric = el("div");
+        metric.append(el("small", name), el("strong", String(value)));
+        metrics.append(metric);
+      }
+      summary.append(metrics);
+      if (batch.note) summary.append(el("p", batch.note, "hint"));
+      if (batch.error) summary.append(el("p", "\u6279\u6B21\u63D0\u4EA4\u672A\u5B8C\u6210\uFF1A" + batch.error, "result-fail"));
+      summary.append(el("p", `\u672A\u6267\u884C ${batch.counts.NOT_RUN || 0} \u6761 \xB7 \u505C\u6B62 ${batch.counts.STOPPED || 0} \u6761 \xB7 \u4E2D\u65AD ${batch.counts.INTERRUPTED || 0} \u6761 \xB7 ${batch.checks.missing} \u6761\u5C1A\u65E0\u65AD\u8A00\uFF1B\u6C47\u603B\u53EA\u7EDF\u8BA1\u5DF2\u7ECF\u4EA7\u751F\u7684\u65AD\u8A00\u3002`, "hint"));
+      const parameters = el("details"), parameterTitle = el("summary", "\u672C\u6279\u6B21\u6267\u884C\u53C2\u6570");
+      parameters.dataset.expansionKey = "parameters";
+      parameters.append(parameterTitle);
+      const c = batch.config;
+      if (c) {
+        parameters.append(el("p", `\u9009\u9879\uFF1A${{ first: "\u7B2C\u4E00\u9879", second: "\u7B2C\u4E8C\u9879", custom: "\u81EA\u5B9A\u4E49" }[c.question] || c.question}\u3000\u5BA1\u6279\uFF1A${approvalLabels[c.approval] || c.approval}\u3000\u6A21\u578B\uFF1A${c.model || "\u6CBF\u7528\u5BA2\u6237\u7AEF\u5F53\u524D\u6A21\u578B"}\u3000CDP\uFF1A${c.cdpPort}`));
+        if (c.question === "custom") parameters.append(el("p", "\u81EA\u5B9A\u4E49\u56DE\u7B54\uFF1A" + c.customText));
+      } else parameters.append(el("p", "\u5386\u53F2\u8BB0\u5F55\u7684\u53C2\u6570\u5206\u522B\u4FDD\u5B58\u5728\u5404\u7528\u4F8B\u62A5\u544A\u4E2D\u3002"));
+      summary.append(parameters);
+      const section = el("section");
+      section.append(el("h2", "\u7528\u4F8B\u6267\u884C\u660E\u7EC6"), el("p", "\u67E5\u770B\u62A5\u544A\u53EF\u5C55\u5F00\u8FC7\u7A0B\u3001\u622A\u56FE\u4E0E\u65AD\u8A00\uFF1B\u70B9\u51FB\u5F55\u50CF\u53EF\u64AD\u653E\u3001\u6309\u5173\u952E\u622A\u56FE\u65F6\u95F4\u8DF3\u8F6C\u3001\u4E0B\u8F7D\u6216\u6253\u5F00\u672C\u5730\u6587\u4EF6\u5939\u3002Session \u65E5\u5FD7\u548C Trace \u6309\u5BF9\u5E94\u4F1A\u8BDD\u4FDD\u7559\u3002", "hint"));
+      const scroll = el("div", void 0, "table batch-case-table"), table = el("table"), thead = el("thead"), head = el("tr");
+      for (const name of ["\u5E8F\u53F7", "\u7528\u4F8B", "\u5F00\u59CB / \u7ED3\u675F", "\u6267\u884C\u7ED3\u679C", "\u65AD\u8A00\u901A\u8FC7\u7387", "\u8BE6\u60C5"]) head.append(el("th", name));
+      thead.append(head);
+      table.append(thead);
+      const tbody = el("tbody");
+      tbody.id = "batchCaseRows";
+      for (const entry of batch.entries) {
+        const job = entry.job, status = job?.status || "NOT_RUN", tr = el("tr");
+        tr.dataset.jobId = job?.id || "";
+        const name = el("td", entry.name);
+        name.title = entry.path || "";
+        tr.append(el("td", String(entry.number).padStart(2, "0")), name, el("td", job ? batchDate(job.startedAt) + "\n" + batchDate(job.endedAt) : "\u2014"), el("td", (batchLabels[status] || status) + (status === "RUNNING" && job.phase ? "\n" + (phaseLabels[job.phase] || job.phase) : ""), batchResultClass(status)));
+        const checks = job?.result?.checks || [], rate = el("td", assertionRate({ total: checks.length, passed: checks.filter((c2) => c2.pass === true).length }));
+        if (checks.some((c2) => c2.pass !== true)) rate.className = "result-fail";
+        tr.append(rate);
+        const actions = el("td");
+        if (job) {
+          actions.append(link("\u67E5\u770B\u62A5\u544A", "/reports/" + encodeURIComponent(job.id)));
+          if (job.recording?.available) {
+            const video = link("\u5F55\u50CF", "/recordings/" + encodeURIComponent(job.id));
+            video.title = "\u64AD\u653E\u6216\u4E0B\u8F7D\u672C\u6B21\u6267\u884C\u5F55\u50CF";
+            actions.append(video);
+          } else {
+            const video = el("button", "\u5F55\u50CF");
+            video.disabled = true;
+            video.title = { STARTING: "\u5F55\u50CF\u51C6\u5907\u4E2D", RECORDING: "\u5F55\u5236\u4E2D\uFF0C\u4FDD\u5B58\u540E\u53EF\u67E5\u770B", FINALIZING: "\u5F55\u50CF\u4FDD\u5B58\u4E2D", ERROR: "\u5F55\u50CF\u5931\u8D25\uFF1A" + (job.recording?.error || "\u8BF7\u67E5\u770B\u62A5\u544A"), INTERRUPTED: "\u5F55\u50CF\u4FDD\u5B58\u4E2D\u65AD\uFF0C\u8BF7\u67E5\u770B\u62A5\u544A", DISABLED: "\u672C\u6B21\u6267\u884C\u672A\u5F00\u542F\u5F55\u50CF", SKIPPED: "\u53EA\u8BFB\u9884\u68C0\u4E0D\u5F55\u5236" }[job.recording?.status] || "\u672C\u6B21\u6267\u884C\u6CA1\u6709\u5DF2\u4FDD\u5B58\u7684\u5F55\u50CF";
+            actions.append(video, el("small", video.title, "hint"));
+          }
+          actions.append(link("Trace \u8BB0\u5F55", "/?trace=" + encodeURIComponent(job.id)));
+          if (job.sessionId) actions.append(link("\u4E0B\u8F7D Session \u65E5\u5FD7", "/sessions/" + encodeURIComponent(job.sessionId) + "/download"));
+          else actions.append(el("span", "\u672A\u83B7\u53D6\u4F1A\u8BDD ID", "hint"));
+        } else actions.append(el("span", "\u5C1A\u672A\u542F\u52A8", "hint"));
+        if (job && !job.stopRequested && canStopJob(job)) {
+          const stop = el("button", job.status === "QUEUED" ? "\u53D6\u6D88\u6392\u961F" : "\u5F3A\u5236\u505C\u6B62", "result-fail");
+          stop.onclick = async () => {
+            stop.disabled = true;
+            try {
+              const stateResponse = await fetch("/api/state"), state = await stateResponse.json();
+              const response2 = await fetch("/api/jobs/" + encodeURIComponent(job.id) + "/stop", { method: "POST", headers: { "content-type": "application/json", "x-console-token": state.token }, body: "{}" }), result = await response2.json();
+              if (!response2.ok) throw Error(result.error);
+              await refresh();
+            } catch (e) {
+              error.textContent = e.message;
+              stop.disabled = false;
+            }
+          };
+          actions.append(stop);
+        }
+        if (job?.error) actions.append(el("p", job.error, "result-fail"));
+        if (job?.queueHold) actions.append(el("p", "\u7B49\u5F85\u5BA2\u6237\u7AEF\u6062\u590D\uFF1A" + job.queueHold, "result-fail"));
+        if (job?.handoff) actions.append(el("p", "\u9875\u9762\u4EA4\u63A5\uFF1A" + job.handoff.reason, job.handoff.ready ? "" : "result-fail"));
+        const failed = checks.filter((c2) => c2.pass !== true);
+        if (failed.length) {
+          const details = el("details"), label = el("summary", `\u5931\u8D25\u65AD\u8A00 ${failed.length} \u9879`, "result-fail");
+          details.dataset.expansionKey = "checks-" + job.id;
+          details.append(label);
+          for (const check of failed) details.append(el("p", check.name + (check.actual !== void 0 ? " \xB7 " + (typeof check.actual === "string" ? check.actual : JSON.stringify(check.actual)) : ""), "result-fail"));
+          actions.append(details);
+        }
+        tr.append(actions);
+        tbody.append(tr);
+      }
+      table.append(tbody);
+      scroll.append(table);
+      section.append(scroll);
+      content.replaceChildren(summary, section);
+      for (const details of content.querySelectorAll("details")) details.open = expanded.has(details.dataset.expansionKey);
+      fingerprint = nextFingerprint;
+    } catch (e) {
+      error.textContent = e.message;
+    }
+  }
+  await refresh();
+  const timer = setInterval(refresh, 2e3);
+  window.addEventListener("pagehide", () => clearInterval(timer), { once: true });
 }
 
 // local-console/app-source.js
@@ -1169,7 +1218,7 @@ if (traceId) {
     },
     readEvidence: async (id) => {
       const job = await api("/api/jobs/" + encodeURIComponent(id));
-      return { recording: job.recording, evidence: job.result?.evidence || [] };
+      return { name: job.name, recording: job.recording, evidence: job.result?.evidence || [] };
     },
     openFolder: (id, location2) => api("/api/jobs/" + encodeURIComponent(id) + "/recording-folder", { location: location2 })
   });

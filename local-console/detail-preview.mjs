@@ -35,13 +35,23 @@ export function installDetailPreview(readCase,canPreview=()=>true,recordingActio
   if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
   const a=event.target.closest('a[href]');if(!a||a.hasAttribute('download')||a.target==='_blank')return;
   const href=new URL(a.href,location.href),target=previewUrl(href.href);
-  if(target&&canPreview()){event.preventDefault();open({kind:'page',url:target,title:a.textContent.trim()||'详情'});}
+  const recording=href.origin===location.origin&&href.pathname.match(/^\/recordings\/([\w-]+)$/);
+  if(recording&&canPreview()){event.preventDefault();open({kind:'recording',id:recording[1],title:'执行录像'});}
+  else if(target&&canPreview()){event.preventDefault();open({kind:'page',url:target,title:a.textContent.trim()||'详情'});}
   else if(current&&href.origin===location.origin&&href.pathname==='/'&&!href.search){event.preventDefault();closeToList();}
  }
  async function show(entry){
   const request=++generation;current=entry;title.textContent=entry.title;
   clearBody();if(!dialog.open){anchor=document.activeElement;scrollY=window.scrollY;dialog.showModal();}
   if(entry.kind==='recording'){
+   if(!entry.recording){
+    const loading=document.createElement('p');loading.textContent='正在读取录像…';body.append(loading);
+    try{
+     const data=await recordingActions.readEvidence(entry.id);if(request!==generation)return;
+     if(!data.recording?.available)throw Error('本次尚无已保存录像，请返回批次查看录像状态。');
+     entry={...entry,...data,title:(data.name||'本次执行')+' · 执行录像'};title.textContent=entry.title;body.replaceChildren();
+    }catch(e){if(request===generation){loading.textContent='读取录像失败：'+e.message;loading.className='error';}return;}
+   }
    const content=document.createElement('article');content.className='recording-preview';
    const heading=document.createElement('h2');heading.textContent=entry.title;
    const meta=document.createElement('p'),recording=entry.recording||{},config=recording.config||{};

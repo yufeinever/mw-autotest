@@ -19,7 +19,7 @@ function notice(text,error=false){$('#message').textContent=text;$('#message').c
 async function api(url,data,method){const r=await fetch(url,{method:method||(data?'POST':'GET'),headers:{'Content-Type':'application/json','x-console-token':token},body:data?JSON.stringify(data):undefined});const j=await r.json();if(!r.ok)throw Error(j.error);return j;}
 const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script=>script.id===id),state?.projectRoot),()=>state?.capabilities?.detailPreview===1,{
  readLocations:async id=>{const current=state||await api('/api/state');if(current.capabilities?.recordingFolders!==1)throw Error('请在任务空闲时重启控制台，以启用录像文件夹入口');token=current.token;return api('/api/jobs/'+encodeURIComponent(id)+'/recording-locations');},
- readEvidence:async id=>{const job=await api('/api/jobs/'+encodeURIComponent(id));return {recording:job.recording,evidence:job.result?.evidence||[]};},
+ readEvidence:async id=>{const job=await api('/api/jobs/'+encodeURIComponent(id));return {name:job.name,recording:job.recording,evidence:job.result?.evidence||[]};},
  openFolder:(id,location)=>api('/api/jobs/'+encodeURIComponent(id)+'/recording-folder',{location})
 });
 function recordingConfig(){return {enabled:$('#recordingEnabled').checked,resolution:$('#recordingResolution').value,fps:Number($('#recordingFps').value),bitrateKbps:Number($('#recordingBitrate').value),maxSeconds:Number($('#recordingMaxSeconds').value||180)};}

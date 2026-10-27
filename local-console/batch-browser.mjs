@@ -1,10 +1,23 @@
 import {batchLabels,batchResultClass,assertionRate,batchDate,phaseLabels} from './batches.mjs';
 import {approvalLabels} from './policy.mjs';
 import {canStopJob} from './stop-all.mjs';
+import {installDetailPreview} from './detail-preview.mjs';
 const el=(tag,text,cls)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;};
 const link=(text,href)=>{const a=el('a',text);a.href=href;return a;};
 export async function showBatch(id){
  document.title='执行批次详情 · MobileWork';
+ // Directly opened batches use the same player as the script list. Embedded
+ // batches leave link interception to the outer console's existing preview.
+ const recordingApi=async(route,data)=>{
+  const state=await (await fetch('/api/state',{cache:'no-store'})).json();
+  const response=await fetch(route,{method:data?'POST':'GET',cache:'no-store',headers:{'content-type':'application/json','x-console-token':state.token},body:data?JSON.stringify(data):undefined});
+  const result=await response.json();if(!response.ok)throw Error(result.error||'录像读取失败');return result;
+ };
+ installDetailPreview(()=>null,()=>true,{
+  readEvidence:async id=>{const job=await recordingApi('/api/jobs/'+encodeURIComponent(id));return {name:job.name,recording:job.recording,evidence:job.result?.evidence||[]};},
+  readLocations:id=>recordingApi('/api/jobs/'+encodeURIComponent(id)+'/recording-locations'),
+  openFolder:(id,location)=>recordingApi('/api/jobs/'+encodeURIComponent(id)+'/recording-folder',{location})
+ });
  const main=document.querySelector('main');main.className='batch-detail';main.replaceChildren();
  const header=el('header'),heading=el('div');heading.append(el('small','MOBILEWORK · EXECUTION BATCH'),el('h1','执行批次详情'));
  header.className='detail-return';header.append(heading,link('返回执行批次','/#batchSection'));main.append(header);
@@ -29,7 +42,7 @@ export async function showBatch(id){
    const parameters=el('details'),parameterTitle=el('summary','本批次执行参数');parameters.dataset.expansionKey='parameters';parameters.append(parameterTitle);
    const c=batch.config;if(c){parameters.append(el('p',`选项：${{first:'第一项',second:'第二项',custom:'自定义'}[c.question]||c.question}　审批：${approvalLabels[c.approval]||c.approval}　模型：${c.model||'沿用客户端当前模型'}　CDP：${c.cdpPort}`));if(c.question==='custom')parameters.append(el('p','自定义回答：'+c.customText));}else parameters.append(el('p','历史记录的参数分别保存在各用例报告中。'));
    summary.append(parameters);
-   const section=el('section');section.append(el('h2','用例执行明细'),el('p','查看报告可展开过程、截图与断言；Session 日志和 Trace 按对应会话保留。','hint'));
+   const section=el('section');section.append(el('h2','用例执行明细'),el('p','查看报告可展开过程、截图与断言；点击录像可播放、按关键截图时间跳转、下载或打开本地文件夹。Session 日志和 Trace 按对应会话保留。','hint'));
    const scroll=el('div',undefined,'table batch-case-table'),table=el('table'),thead=el('thead'),head=el('tr');
    for(const name of ['序号','用例','开始 / 结束','执行结果','断言通过率','详情'])head.append(el('th',name));thead.append(head);table.append(thead);
    const tbody=el('tbody');tbody.id='batchCaseRows';
@@ -39,7 +52,12 @@ export async function showBatch(id){
     tr.append(el('td',String(entry.number).padStart(2,'0')),name,el('td',job?batchDate(job.startedAt)+'\n'+batchDate(job.endedAt):'—'),el('td',(batchLabels[status]||status)+(status==='RUNNING'&&job.phase?'\n'+(phaseLabels[job.phase]||job.phase):''),batchResultClass(status)));
     const checks=job?.result?.checks||[],rate=el('td',assertionRate({total:checks.length,passed:checks.filter(c=>c.pass===true).length}));
     if(checks.some(c=>c.pass!==true))rate.className='result-fail';tr.append(rate);
-    const actions=el('td');if(job){actions.append(link('查看报告','/reports/'+encodeURIComponent(job.id)),link('Trace 记录','/?trace='+encodeURIComponent(job.id)));if(job.sessionId)actions.append(link('下载 Session 日志','/sessions/'+encodeURIComponent(job.sessionId)+'/download'));else actions.append(el('span','未获取会话 ID','hint'));}
+    const actions=el('td');if(job){
+     actions.append(link('查看报告','/reports/'+encodeURIComponent(job.id)));
+     if(job.recording?.available){const video=link('录像','/recordings/'+encodeURIComponent(job.id));video.title='播放或下载本次执行录像';actions.append(video);}
+     else{const video=el('button','录像');video.disabled=true;video.title=({STARTING:'录像准备中',RECORDING:'录制中，保存后可查看',FINALIZING:'录像保存中',ERROR:'录像失败：'+(job.recording?.error||'请查看报告'),INTERRUPTED:'录像保存中断，请查看报告',DISABLED:'本次执行未开启录像',SKIPPED:'只读预检不录制'}[job.recording?.status]||'本次执行没有已保存的录像');actions.append(video,el('small',video.title,'hint'));}
+     actions.append(link('Trace 记录','/?trace='+encodeURIComponent(job.id)));if(job.sessionId)actions.append(link('下载 Session 日志','/sessions/'+encodeURIComponent(job.sessionId)+'/download'));else actions.append(el('span','未获取会话 ID','hint'));
+    }
     else actions.append(el('span','尚未启动','hint'));
     if(job&&!job.stopRequested&&canStopJob(job)){
      const stop=el('button',job.status==='QUEUED'?'取消排队':'强制停止','result-fail');
