@@ -29,7 +29,7 @@ export async function selectedFiles(){
  selected.push('local-console/fixtures/long-running.mjs','scripts/fixtures/case002-synthetic-meeting.mjs');
  selected.push(...clientCases.map(c=>c.entry));
  selected.push(...permissionCases.map(c=>c.entry));
- selected.push(...['permission-case-catalog.mjs','permission-case-runner.mjs','permission-fixtures.mjs','permission-observation.mjs','permission-suite.test.mjs'].map(s=>'scripts/'+s));
+ selected.push(...['permission-case-catalog.mjs','permission-case-runner.mjs','permission-fixtures.mjs','permission-observation.mjs','permission-workspace.mjs','permission-suite.test.mjs'].map(s=>'scripts/'+s));
  selected.push('scripts/mobilework-initialize.mjs','scripts/mobilework-initialize.test.mjs');
  selected.push('scripts/mobilework-permission-events.mjs','scripts/mobilework-permission-recovery.test.mjs');
  selected.push('scripts/mobilework-model-selection.test.mjs');

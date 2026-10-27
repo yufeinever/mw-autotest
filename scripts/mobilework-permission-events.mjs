@@ -1,5 +1,6 @@
 // Read-only, per-session fallback for the client's malformed /permission
 // serializer. Never infer requests from text or treat missing events as idle.
+const requestOf=p=>Object.fromEntries(['id','sessionID','permission','patterns','tool','metadata'].filter(key=>p[key]!==undefined).map(key=>[key,p[key]]));
 export class PermissionEvents {
  constructor({connection,directory,sessionId,fetchImpl=fetch,onEvent=()=>{}}){
   this.onEvent=onEvent;
@@ -54,7 +55,7 @@ export class PermissionEvents {
   this.onEvent(event);
   const id=event.type==='permission.asked'?p.id:p.requestID;
   if(typeof id!=='string'||!/^per_[A-Za-z0-9]+$/.test(id))throw Error('permission event lacks request ID');
-  const request=event.type==='permission.asked'?{id,sessionID:p.sessionID,permission:p.permission}:null;
+  const request=event.type==='permission.asked'?requestOf(p):null;
   this.changes.set(id,{sequence:++this.sequence,request});
   if(this.changes.size>1000)throw Error('permission event limit');
   if(request)this.pending.set(id,request);else this.pending.delete(id);
@@ -64,7 +65,7 @@ export class PermissionEvents {
   if(since===null||!this.healthy||!Array.isArray(requests))return;
   const own=requests.filter(p=>p.sessionID===this.sessionId);
   if(own.some(p=>typeof p.id!=='string'||!/^per_[A-Za-z0-9]+$/.test(p.id)))return;
-  const next=new Map(own.map(p=>[p.id,{id:p.id,sessionID:p.sessionID,permission:p.permission}]));
+  const next=new Map(own.map(p=>[p.id,requestOf(p)]));
   // Replay events received during the HTTP snapshot, including tombstones;
   // an older snapshot must never resurrect an already answered request.
   for(const [id,change] of this.changes)if(change.sequence>since){
