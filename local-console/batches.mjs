@@ -1,4 +1,5 @@
 export const batchLabels={SUBMITTING:'提交中',RUNNING:'执行中',PASS:'通过',FAIL:'失败',BLOCKED:'阻塞',STOPPED:'已强制停止',INTERRUPTED:'已中断',CHECKED:'检查完成（含预检）',RESUMED:'续跑完成',EXITED:'已结束（含未判定）',NOT_RUN:'未执行'};
+batchLabels.REVIEW='已观察·待复核';
 export const batchResultClass=status=>['FAIL','BLOCKED','STOPPED','INTERRUPTED'].includes(status)?'result-fail':['PASS','CHECKED','RESUMED'].includes(status)?'result-pass':'';
 export const assertionRate=checks=>checks.total?`${checks.passed}/${checks.total}（${Math.round(100*checks.passed/checks.total)}%）`:'—';
 export const batchDate=value=>value?new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'—';
@@ -21,6 +22,7 @@ export function summarizeBatch(batch,jobs){
  else if(batch.error||counts.BLOCKED||counts.NOT_RUN)status='BLOCKED';
  else if(counts.STOPPED)status='STOPPED';
  else if(entries.length&&counts.PASS===entries.length)status='PASS';
+ else if(counts.REVIEW)status='REVIEW';
  else if(counts.EXITED||!entries.length||launched.some(e=>!['PASS','CHECKED','RESUMED'].includes(e.job.status)))status='EXITED';
  else if(counts.CHECKED)status='CHECKED';else status='RESUMED';
  const times=[batch.submissionEndedAt,...own.map(j=>j.endedAt)].filter(Boolean).sort();

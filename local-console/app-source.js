@@ -1,4 +1,5 @@
 import {showBrowserTrace} from './trace-browser.mjs';
+import {scriptsInSuite,suiteLabels} from './script-groups.mjs';
 import {showBatch} from './batch-browser.mjs';
 import {installDetailPreview,findScriptCase} from './detail-preview.mjs';
 import {canStopJob,stopAllJobs} from './stop-all.mjs';
@@ -8,9 +9,12 @@ if(traceId){await showBrowserTrace(traceId);}else if(batchId){await showBatch(ba
 const $=s=>document.querySelector(s);
 let token='',state,selectedJob,parentDir,initialized=false,historyPage=1,scriptPage=1,batchBusy=false;
 const pendingScripts=new Set(),selectedScripts=new Set();
+let activeSuite=localStorage.getItem('mw-script-suite')==='permission'?'permission':'functional';
+const visibleScripts=()=>scriptsInSuite(state?.scripts||[],activeSuite);
 const submissions=new Set();let stopAllBusy=false,stopGeneration=0;
 const labels={QUEUED:'排队中',RUNNING:'执行中',PASS:'通过',FAIL:'失败',BLOCKED:'阻塞',EXITED:'已退出（未声明断言结果）',INTERRUPTED:'控制台已中断',CHECKED:'预检通过',RESUMED:'续跑完成'};
 labels.STOPPED='已强制停止';
+labels.REVIEW='已观察·待复核';
 function notice(text,error=false){$('#message').textContent=text;$('#message').className=error?'error':'';}
 async function api(url,data,method){const r=await fetch(url,{method:method||(data?'POST':'GET'),headers:{'Content-Type':'application/json','x-console-token':token},body:data?JSON.stringify(data):undefined});const j=await r.json();if(!r.ok)throw Error(j.error);return j;}
 const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script=>script.id===id),state?.projectRoot),()=>state?.capabilities?.detailPreview===1,{
@@ -70,16 +74,20 @@ async function readExecutionLog(){
 logRefresh.onclick=readExecutionLog;
 function showExecutionLog(job){logJobId=job.id;logHeading.textContent=job.name+' · 执行日志';logMeta.textContent='';logDialog.showModal();readExecutionLog();}
 function renderScripts(){
+ const scripts=visibleScripts();
+ for(const tab of document.querySelectorAll('[data-suite]')){const on=tab.dataset.suite===activeSuite;tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;tab.disabled=batchBusy||submissions.size>0;}
+ $('#scriptPanel').setAttribute('aria-labelledby',activeSuite==='permission'?'permissionTab':'functionalTab');
+ $('#suiteHint').textContent=activeSuite==='permission'?'先准备隔离材料，再观察问询、拦截与后续执行。权限卡固定拒绝并继续观察，不使用上方全局自动授权。待确认或需专用能力的场景不可执行。':'功能用例：验证业务回复、实际产物和 Skill 调用。';
  const holders=state.jobs.filter(j=>j.schedulingHold);
  const running=state.jobs.filter(j=>j.status==='RUNNING');
  lockState.textContent=running.length?'锁定 MW · '+running.map(j=>j.name).join('、')+' 正在执行，请勿手动操作 MobileWork。':holders.length?'调度已暂停 · '+holders.map(j=>j.name+'：'+(j.handoff?.reason||'等待恢复')).join('；'):'调度正常 · 无锁定';
  lockState.className=running.length?'mw-lock-banner':holders.length?'lock-warning':'hint';
  unlockButton.disabled=!holders.length||stopAllBusy||batchBusy||submissions.size>0||state.jobs.some(j=>j.status==='RUNNING'||j.stopRequested);
- const size=Number($('#scriptPageSize').value),total=state.scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
+ const size=Number($('#scriptPageSize').value),total=scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
  const start=(scriptPage-1)*size;$('#scripts').replaceChildren();
- for(const [offset,script] of state.scripts.slice(start,start+size).entries()){
+ for(const [offset,script] of scripts.slice(start,start+size).entries()){
   const tr=el('tr');tr.dataset.scriptId=script.id;tr.dataset.scriptNumber=start+offset+1;
-  const name=el('td'),title=el('button',script.name,'script-title script-source');title.title='查看用例描述';title.onclick=()=>preview.openScript(script);name.append(title);
+  const name=el('td'),title=el('button',script.name,'script-title script-source');title.title='查看用例描述';title.onclick=()=>preview.openScript(script);name.append(title);if(script.unavailable){const why=el('small',script.unavailable,'hint');why.style.display='block';name.append(why);}
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
   if(state.jobs.some(j=>j.scriptId===script.id&&j.status==='RUNNING')){
    tr.classList.add('script-running');const locked=el('span','锁定 MW','mw-lock-badge');locked.title='自动化正在执行，请勿手动操作 MobileWork';name.append(locked);
@@ -92,7 +100,7 @@ function renderScripts(){
   choice.disabled=$('[name=selectionMode]:checked').value!=='selected'||batchBusy||!script.exists||!script.integrated;
   choice.onchange=()=>{if(choice.checked)selectedScripts.add(script.id);else selectedScripts.delete(script.id);renderScripts();};
   number.append(choice,document.createTextNode(String(start+offset+1).padStart(2,'0')));
-  tr.append(number,name,el('td',!script.exists?'文件不存在':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),status);
+  tr.append(number,name,el('td',!script.exists?'文件不存在':script.unavailable?'待条件':script.integrated?'已接入':'待接入',!script.exists?'result-fail':''),status);
   const recent=el('td',undefined,'script-recent'),actions=el('td'),actionGroup=el('div',undefined,'script-row-actions'),run=el('button','执行','primary'),stop=el('button','强制停止','danger'),remove=el('button','移除','script-remove');
   if(job){const failed=(job.result?.checks||[]).filter(c=>!c.pass);status.title=failed.map(c=>c.name).join('；')||job.result?.error||'';if(failed.length&&failed.every(c=>c.category==='skill-invocation'))status.append(el('small','Skill 调用断言未通过'));
    recent.append(el('span',job.startedAt?batchDate(job.startedAt):job.queuedAt?'排队于 '+batchDate(job.queuedAt):'时间未记录','script-time'));
@@ -119,16 +127,17 @@ function renderScripts(){
  $('#scriptPrevPage').disabled=scriptPage===1;$('#scriptNextPage').disabled=scriptPage===pages;
  const unavailable=state.capabilities?.serialOnly!==1||state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||pendingScripts.size>0||state.readingModels||cdpBusy||!total;
  const selecting=$('[name=selectionMode]:checked').value==='selected';
- for(const id of selectedScripts)if(!state.scripts.some(s=>s.id===id&&s.exists&&s.integrated))selectedScripts.delete(id);
+ for(const id of selectedScripts)if(!scripts.some(s=>s.id===id&&s.exists&&s.integrated))selectedScripts.delete(id);
  $('#selectionControls').hidden=!selecting;$('#rangeControls').hidden=selecting;$('#scriptRange').disabled=selecting||batchBusy;
- $('#selectionCount').textContent=`已选 ${selectedScripts.size} 条（跨全部分页）`;
- $('#runAll').disabled=unavailable;$('#runRange').disabled=unavailable||selecting;$('#runSelected').disabled=unavailable||!selecting||!selectedScripts.size;
+ $('#selectionCount').textContent=`已选 ${selectedScripts.size} 条（${suiteLabels[activeSuite]}全部分页）`;
+ $('#runAll').disabled=unavailable||!scripts.some(s=>s.exists&&s.integrated);$('#runRange').disabled=unavailable||selecting;$('#runSelected').disabled=unavailable||!selecting||!selectedScripts.size;
  for(const id of ['selectAllScripts','invertScripts','clearScripts'])$('#'+id).disabled=!selecting||batchBusy;
  document.querySelectorAll('[name=selectionMode]').forEach(e=>e.disabled=batchBusy);
  $('#stopAll').disabled=stopAllBusy||(!submissions.size&&!state.jobs.some(canStopJob));
  $('#stopAll').textContent=stopAllBusy?'正在停止…':'强制停止全部';
 }
 async function startScripts(scripts,label,batch=false){
+ if(activeSuite==='permission'&&state.capabilities?.scriptSuites!==1){batchNotice('用例分类升级尚未加载，请在空闲时重启18888控制台；未提交任务。',true);return;}
  if(config().recording.enabled&&state.capabilities?.recording!==1){batchNotice('录像功能尚未加载，请在空闲时重启控制台后执行。',true);return;}
  if(state.capabilities?.serialOnly!==1){batchNotice('请先在空闲时重启控制台加载串行调度，未提交任务。',true);return;}
  if(state.capabilities?.taskIsolation!==2){batchNotice('请先重启本项目18888控制台加载任务隔离升级，未提交新任务。',true);return;}
@@ -137,7 +146,7 @@ async function startScripts(scripts,label,batch=false){
  const unavailable=scripts.filter(s=>!s.exists||!s.integrated);
  if(unavailable.length){batchNotice('未开始：以下脚本文件不存在或未接入参数：'+unavailable.map(s=>s.name).join('、'),true);return;}
  if(!scripts.length){batchNotice('没有可执行的脚本。',true);return;}
- const snapshot=structuredClone(config());let started=0,executionBatch;
+ const snapshot=structuredClone(config()),suite=activeSuite;let started=0,executionBatch;
  const generation=stopGeneration;let settle;
  const submission=new Promise(resolve=>settle=resolve);submissions.add(submission);
  const checkCancelled=()=>{if(generation!==stopGeneration)throw Error('已点击强制停止全部，取消剩余提交');};
@@ -146,7 +155,7 @@ async function startScripts(scripts,label,batch=false){
  try{
   await api('/api/config',snapshot);
   checkCancelled();
-  executionBatch=await api('/api/batches',{scriptIds:scripts.map(s=>s.id),mode:!batch?'single':label==='全部执行'?'all':label==='执行勾选'?'selected':'range',config:snapshot});
+  executionBatch=await api('/api/batches',{suite,scriptIds:scripts.map(s=>s.id),mode:!batch?'single':label==='全部执行'?'all':label==='执行勾选'?'selected':'range',config:snapshot});
   for(const script of scripts){
    checkCancelled();
    const job=await api('/api/run',{scriptId:script.id,batchId:executionBatch.id,config:snapshot});selectedJob=job.id;started++;pendingScripts.delete(script.id);
@@ -159,13 +168,17 @@ async function startScripts(scripts,label,batch=false){
  }catch(e){if(executionBatch)await api('/api/batches/'+executionBatch.id+'/complete',{error:e.message}).catch(()=>{});if(generation===stopGeneration){const text=`${label}未全部提交：已加入队列 ${started} / ${scripts.length} 条。${e.message}；未自动重试，请核对执行批次。`;batchNotice(text,true);notice(text,true);}}
  finally{for(const script of scripts)pendingScripts.delete(script.id);if(batch)batchBusy=false;submissions.delete(submission);settle();renderScripts();await refresh().catch(e=>notice('刷新失败：'+e.message,true));}
 }
+for(const tab of document.querySelectorAll('[data-suite]')){
+ tab.onclick=()=>{if(batchBusy||submissions.size)return;activeSuite=tab.dataset.suite;localStorage.setItem('mw-script-suite',activeSuite);scriptPage=1;selectedScripts.clear();$('#scriptRange').value='';$('#batchMessage').hidden=true;renderScripts();};
+ tab.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const next=document.querySelector('[data-suite="'+(tab.dataset.suite==='functional'?'permission':'functional')+'"]');next.click();next.focus();}};
+}
 $('#scriptPageSize').onchange=()=>{scriptPage=1;renderScripts();};$('#scriptPrevPage').onclick=()=>{scriptPage--;renderScripts();};$('#scriptNextPage').onclick=()=>{scriptPage++;renderScripts();};
-$('#runAll').onclick=()=>startScripts([...state.scripts],'全部执行',true);
+$('#runAll').onclick=()=>startScripts(visibleScripts().filter(s=>!s.unavailable),'全部执行',true);
  document.querySelectorAll('[name=selectionMode]').forEach(e=>e.onchange=()=>{selectedScripts.clear();$('#scriptRange').value='';renderScripts();});
- $('#selectAllScripts').onclick=()=>{for(const s of state.scripts)if(s.exists&&s.integrated)selectedScripts.add(s.id);renderScripts();};
- $('#invertScripts').onclick=()=>{for(const s of state.scripts)if(s.exists&&s.integrated){if(selectedScripts.has(s.id))selectedScripts.delete(s.id);else selectedScripts.add(s.id);}renderScripts();};
+ $('#selectAllScripts').onclick=()=>{for(const s of visibleScripts())if(s.exists&&s.integrated)selectedScripts.add(s.id);renderScripts();};
+ $('#invertScripts').onclick=()=>{for(const s of visibleScripts())if(s.exists&&s.integrated){if(selectedScripts.has(s.id))selectedScripts.delete(s.id);else selectedScripts.add(s.id);}renderScripts();};
  $('#clearScripts').onclick=()=>{selectedScripts.clear();renderScripts();};
- $('#runSelected').onclick=()=>startScripts(state.scripts.filter(s=>selectedScripts.has(s.id)),'执行勾选',true);
+ $('#runSelected').onclick=()=>startScripts(visibleScripts().filter(s=>selectedScripts.has(s.id)),'执行勾选',true);
 $('#stopAll').onclick=async()=>{
  if(stopAllBusy)return;
  stopAllBusy=true;stopGeneration++;renderScripts();batchNotice('正在取消后续提交并停止全部任务…');
@@ -183,8 +196,8 @@ $('#stopAll').onclick=async()=>{
 $('#runRange').onclick=()=>{
  const text=$('#scriptRange').value.trim(),match=text.match(/^(\d+)\s*[-–—～~]\s*(\d+)$/);
  const first=Number(match?.[1]),last=Number(match?.[2]);
- if(!match||!Number.isSafeInteger(first)||!Number.isSafeInteger(last)||first<1||last<first||last>state.scripts.length){batchNotice(`请输入有效序号 m-n：1 ≤ m ≤ n ≤ ${state.scripts.length}，例如 3-8。`,true);return;}
- startScripts(state.scripts.slice(first-1,last),`执行序号 ${first}-${last}`,true);
+ if(!match||!Number.isSafeInteger(first)||!Number.isSafeInteger(last)||first<1||last<first||last>visibleScripts().length){batchNotice(`请输入有效序号 m-n：1 ≤ m ≤ n ≤ ${visibleScripts().length}，例如 3-8。`,true);return;}
+ startScripts(visibleScripts().slice(first-1,last),`执行序号 ${first}-${last}`,true);
 };
 $('#scriptRange').onkeydown=e=>{if(e.key==='Enter'&&!$('#runRange').disabled){e.preventDefault();$('#runRange').click();}};
 function renderHistory(){
@@ -206,7 +219,7 @@ $('#models').onclick=async()=>{const b=$('#models');b.disabled=true;try{const se
 $('#add').onclick=()=>{$('#dialogError').textContent='';$('#addDialog').showModal();};$('#cancel').onclick=()=>$('#addDialog').close();
 async function browse(dir){try{const data=await api('/api/browse'+(dir?'?path='+encodeURIComponent(dir):''));parentDir=data.parent;$('#browser').hidden=false;$('#browsePath').value=data.path;$('#files').replaceChildren();for(const entry of data.entries){const b=el('button',(entry.directory?'文件夹 · ':'脚本 · ')+entry.name);b.type='button';b.onclick=()=>entry.directory?browse(entry.path):($('#scriptPath').value=entry.path);$('#files').append(b);}}catch(e){$('#dialogError').textContent=e.message;}}
 $('#browse').onclick=()=>browse();$('#go').onclick=()=>browse($('#browsePath').value);$('#up').onclick=()=>browse(parentDir);
-$('#addForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/scripts',{name:$('#scriptName').value,path:$('#scriptPath').value});$('#addDialog').close();$('#addForm').reset();scriptPage=Math.ceil((state.scripts.length+1)/Number($('#scriptPageSize').value));await refresh();notice('脚本已添加。');}catch(err){$('#dialogError').textContent=err.message;}};
+$('#addForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/scripts',{name:$('#scriptName').value,path:$('#scriptPath').value,suite:activeSuite});$('#addDialog').close();$('#addForm').reset();scriptPage=Math.ceil((visibleScripts().length+1)/Number($('#scriptPageSize').value));await refresh();notice('脚本已添加到'+suiteLabels[activeSuite]+'。');}catch(err){$('#dialogError').textContent=err.message;}};
 await refresh().catch(e=>notice(e.message,true));refreshCdp();setInterval(refreshCdp,15000);
 let refreshing=false;setInterval(async()=>{if(refreshing)return;refreshing=true;try{await refresh();}catch(e){$('#connection').textContent='服务连接断开';notice(e.message,true);}finally{refreshing=false;}},2000);
 }

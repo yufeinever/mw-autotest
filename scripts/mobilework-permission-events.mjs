@@ -1,7 +1,8 @@
 // Read-only, per-session fallback for the client's malformed /permission
 // serializer. Never infer requests from text or treat missing events as idle.
 export class PermissionEvents {
- constructor({connection,directory,sessionId,fetchImpl=fetch}){
+ constructor({connection,directory,sessionId,fetchImpl=fetch,onEvent=()=>{}}){
+  this.onEvent=onEvent;
   this.connection=connection;this.directory=directory;this.sessionId=sessionId;this.fetch=fetchImpl;
   this.sequence=0;this.changes=new Map();this.pending=new Map();this.baselined=false;this.connected=false;
  }
@@ -50,6 +51,7 @@ export class PermissionEvents {
   const p=event.properties;
   if(!p||typeof p.sessionID!=='string')throw Error('permission event lacks owner');
   if(p.sessionID!==this.sessionId)return;
+  this.onEvent(event);
   const id=event.type==='permission.asked'?p.id:p.requestID;
   if(typeof id!=='string'||!/^per_[A-Za-z0-9]+$/.test(id))throw Error('permission event lacks request ID');
   const request=event.type==='permission.asked'?{id,sessionID:p.sessionID,permission:p.permission}:null;

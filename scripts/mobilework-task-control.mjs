@@ -130,7 +130,7 @@ export class TaskControl {
   result.permissionApiUnavailable=permissionApiUnavailable;
   return result;
  }
- async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000}){
+ async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000,interactionHandler,onQuestion=()=>{},afterMessageId}={}){
   if(this.connection&&this.directory&&!this.permissionEvents){
    this.permissionEvents=new PermissionEvents({connection:this.connection,directory:this.directory,sessionId:this.sessionId});
    const ready=await this.permissionEvents.start();
@@ -172,8 +172,10 @@ export class TaskControl {
      // Questions may contain several cards under one request ID.
      let handled=false;
      if(!targets.some(q=>observed.get(q.key)?.clicked)){
-      handled=await handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions:expected,canAct,
+      handled=interactionHandler?await interactionHandler({page,targets,kind,canAct,config}):undefined;
+      if(handled===undefined)handled=await handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions:expected,canAct,
        expectedPermission:()=>eventFallback?{id:targets[0].id,sessionID:this.sessionId}:undefined});
+      if(handled&&kind==='question')onQuestion(targets);
       if(handled)for(const q of targets){const state=observed.get(q.key);if(state){state.since=Date.now();state.clicked=kind==='permission';}log('交互已点击，等待引擎确认',q.key);}
      }
      const latest=await this.pendingInteractions(page);reconcile(latest);
@@ -185,9 +187,11 @@ export class TaskControl {
     });
    }else if((states[this.sessionId]?.type||'idle')==='idle'){
     const data=await this.readLog(),last=data.messages.at(-1);
-    if(last?.info?.error){await this.call('completed');throw Error('引擎会话错误：'+JSON.stringify(last.info.error));}
+    const boundary=afterMessageId?data.messages.findIndex(m=>m.info?.id===afterMessageId):-1;
+    const newTurn=!afterMessageId||boundary>=0&&data.messages.slice(boundary+1).some(m=>m.info?.role==='user');
+    if(newTurn&&last?.info?.error){await this.call('completed');throw Error('引擎会话错误：'+JSON.stringify(last.info.error));}
     const text=(last?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
-    if(last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool')&&text.trim()){await this.call('completed');return data;}
+    if(newTurn&&last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool')&&text.trim()){await this.call('completed');return data;}
    }
    if(this.permissionFallbackLogged&&!pending.permissionApiUnavailable){log('审批接口已恢复','已重新核对本会话交互状态');this.permissionFallbackLogged=false;}
    permissionErrorSince=null;

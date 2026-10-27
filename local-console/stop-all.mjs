@@ -2,7 +2,7 @@
 export function canStopJob(job){
  return Boolean(job.schedulingHold)||['QUEUED','RUNNING'].includes(job.status)||
   (job.status==='FAIL'&&job.schedulingHold&&!job.modelCompleted&&Boolean(job.sessionId||job.result?.sessionId))||
-  (['BLOCKED','INTERRUPTED'].includes(job.status)&&!job.modelCompleted&&!job.sessionSettled&&
+  (['BLOCKED','INTERRUPTED','REVIEW'].includes(job.status)&&!job.modelCompleted&&!job.sessionSettled&&
    Boolean(job.sessionId||job.result?.sessionId||job.schedulingHold||job.status==='INTERRUPTED'&&job.pid));
 }
 export async function stopAllJobs(api,progress=()=>{}){

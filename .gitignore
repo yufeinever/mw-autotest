@@ -153,3 +153,10 @@
 !/测试用例与脚本/权限问询4.1用例设计-v0.0.1.md
 !/local-console/engine-client.mjs
 !/local-console/native-compat.test.mjs
+!/local-console/script-groups.mjs
+!/scripts/permission-case-catalog.mjs
+!/scripts/permission-case-runner.mjs
+!/scripts/permission-fixtures.mjs
+!/scripts/permission-observation.mjs
+!/scripts/permission-suite.test.mjs
+!/scripts/run-permission-case[0-9][0-9][0-9].mjs

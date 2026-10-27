@@ -7,6 +7,7 @@ import {spawn} from 'node:child_process';
 import ffmpegPath from 'ffmpeg-static';
 import {unzipSync,strFromU8} from 'fflate';
 import {clientCases,caseWorkbook} from './client-case-catalog.mjs';
+import {permissionCases} from './permission-case-catalog.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -27,6 +28,8 @@ export async function selectedFiles(){
  for(const item of await fs.readdir(path.join(root,'local-console'),{withFileTypes:true}))if(item.isFile()&&/\.(?:mjs|js|html|css|md)$/.test(item.name))selected.push('local-console/'+item.name);
  selected.push('local-console/fixtures/long-running.mjs','scripts/fixtures/case002-synthetic-meeting.mjs');
  selected.push(...clientCases.map(c=>c.entry));
+ selected.push(...permissionCases.map(c=>c.entry));
+ selected.push(...['permission-case-catalog.mjs','permission-case-runner.mjs','permission-fixtures.mjs','permission-observation.mjs','permission-suite.test.mjs'].map(s=>'scripts/'+s));
  selected.push('scripts/mobilework-initialize.mjs','scripts/mobilework-initialize.test.mjs');
  selected.push('scripts/mobilework-permission-events.mjs','scripts/mobilework-permission-recovery.test.mjs');
  selected.push('scripts/mobilework-model-selection.test.mjs');
@@ -51,7 +54,7 @@ async function normalizeCmd(file){const text=await fs.readFile(file,'utf8');awai
 async function stageSources(target,files){
  for(const rel of files){const dst=path.join(target,rel);await fs.mkdir(path.dirname(dst),{recursive:true});await fs.copyFile(path.join(root,rel),dst);if(rel.endsWith('.cmd'))await normalizeCmd(dst);}
  const pkg=JSON.parse(await fs.readFile(path.join(target,'package.json'),'utf8'));
- pkg.description='MobileWork 前16条客户端用例、本地测试控制台及自动化脚本';
+ pkg.description='MobileWork 功能与权限行为用例、本地测试控制台及自动化脚本';
  pkg.scripts={'build:console':'node scripts/build-console-app.mjs','start':'node local-console/launch.mjs','check':'node scripts/check-package.mjs','check:package':'node scripts/check-package.mjs --self-test','package:windows':'node scripts/package-windows.mjs',test:'node --test --test-concurrency=1 scripts/client-cases.test.mjs scripts/mobilework-run-policy.test.mjs scripts/case002-meeting.test.mjs local-console/console.test.mjs local-console/batches.test.mjs local-console/trace.test.mjs local-console/session-log.test.mjs local-console/cdp-config.test.mjs local-console/cdp-restart.test.mjs local-console/stop-job.test.mjs local-console/environment.test.mjs'};
  pkg.scripts.test+=' local-console/task-scheduler.test.mjs scripts/mobilework-task-control.test.mjs';
  pkg.scripts['recording:setup']='node node_modules/ffmpeg-static/install.js';

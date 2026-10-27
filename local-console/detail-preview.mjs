@@ -1,5 +1,6 @@
 // Keep the list DOM alive: returning never reloads configuration or CDP status.
 import {clientCases,caseWorkbook,caseSheet} from '../scripts/client-case-catalog.mjs';
+import {permissionCases} from '../scripts/permission-case-catalog.mjs';
 import {renderRecordingTimeline} from './recording-timeline.mjs';
 
 const normalizedPath=value=>{
@@ -12,7 +13,7 @@ const normalizedPath=value=>{
 };
 export function findScriptCase(script,projectRoot){
  if(!projectRoot||!script?.path)return null;
- return clientCases.find(item=>normalizedPath(projectRoot+'/'+item.entry)===normalizedPath(script.path))||null;
+ return [...clientCases,...permissionCases].find(item=>normalizedPath(projectRoot+'/'+item.entry)===normalizedPath(script.path))||null;
 }
 export function installDetailPreview(readCase,canPreview=()=>true,recordingActions={}){
  if(window.top!==window)return {openScript:()=>{},openRecording:()=>{}};
@@ -87,7 +88,11 @@ export function installDetailPreview(readCase,canPreview=()=>true,recordingActio
    const description=document.createElement('article');description.className='case-description';body.append(description);
    try{
     const data=await readCase(entry.id);if(request!==generation)return;
-    if(!data){description.textContent='此脚本尚未关联用例描述。当前支持项目内置的前16条用例。';return;}
+    if(!data){description.textContent='此脚本尚未关联用例描述。';return;}
+    if(data.suite==='permission'){
+     const heading=document.createElement('h2');heading.textContent=data.id+' · '+data.title;description.append(heading);
+     for(const [label,text]of [['准备',data.unavailable||'独立Session就绪后，在真实工作空间生成普通材料、合成配置、源码副本及预存py/sh脚本；外部夹具单独隔离。'],['执行',data.task||'尚不具备自动触发条件，不提交执行。'],['观察与判断','记录问询、拒绝、目标工具实际执行以及后续是否继续。权限卡固定拒绝；目标没触发或证据不足记待复核，不要求固定回复、固定工具路径或固定Skill。'],['期望',data.expectation==='continue'?'观察是否顺利继续执行':data.expectation==='gate'?'观察是否在目标执行前问询或阻止':'行为观察；需求口径或材料来源存在差异，记录后复核'],['用例来源',data.source],['脚本',data.entry]]){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=label;p.textContent=text;description.append(h,p);}return;
+    }
     const heading=document.createElement('h2');heading.textContent=data.title;description.append(heading);
     const fields=[['用例编号',data.id],['场景入口',data.category+' → '+data.button],['验证目的','验证场景入口自动填充提示词和预期技能，并完成独立会话，检查本会话回复、产物及实际 Skill 调用。'],['操作步骤','1. 新建独立会话，进入上述场景。\n2. 检查自动填充的提示词及技能选择。\n3. 发送脚本内置测试素材，按执行参数处理选项与审批弹框。\n4. 等待任务结束，检查业务结果并保存截图、日志、Trace和报告。'],['入口自动填充提示词',data.prompt],['预期 Skill',data.skills.length?data.skills.join('、'):'本用例未指定固定 Skill'],['用例来源',caseWorkbook+'\n第二张工作表：'+caseSheet+' · 第 '+data.row+' 行'],['脚本入口',data.entry]];
     if(data.note)fields.push(['差异说明',data.note]);

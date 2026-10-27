@@ -7,6 +7,7 @@ import {chromium} from 'playwright-core';
 import {createConsole,projectRoot} from '../local-console/server.mjs';
 import {testEnvironment,previewBrowserOptions} from '../local-console/environment.mjs';
 import {clientCases,caseWorkbook} from './client-case-catalog.mjs';
+import {permissionCases} from './permission-case-catalog.mjs';
 import {readCdpConfig} from '../local-console/cdp-config.mjs';
 import {probeCdp} from '../local-console/cdp-restart.mjs';
 
@@ -22,8 +23,8 @@ export async function selfTestPackage(){
  try{
   app=await createConsole({port:0,dataDir:path.join(dir,'console')});
   const state=await(await fetch(app.url+'/api/state')).json();
-  assert.equal(state.projectRoot,projectRoot);assert.equal(state.scripts.length,16);
-  assert.ok(state.scripts.every(s=>s.exists&&s.integrated));assert.equal(state.jobs.length,0);
+  assert.equal(state.projectRoot,projectRoot);assert.equal(state.scripts.length,clientCases.length+permissionCases.length);
+  assert.ok(state.scripts.every(s=>s.exists&&(s.integrated||s.unavailable)));assert.equal(state.jobs.length,0);
   browser=await chromium.launch(previewBrowserOptions());
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));

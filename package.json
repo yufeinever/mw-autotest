@@ -1,9 +1,9 @@
 {
   "name": "mw-autotest",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "private": true,
   "type": "module",
-  "description": "MobileWork 前16条客户端用例、本地测试控制台及自动化脚本",
+  "description": "MobileWork 功能与权限行为用例、本地测试控制台及自动化脚本",
   "scripts": {
     "package:windows": "node scripts/package-windows.mjs",
     "check:package": "node scripts/check-package.mjs --self-test",
