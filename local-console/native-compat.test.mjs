@@ -39,6 +39,15 @@ test('Node引擎链路不依赖页面fetch，保留鉴权、脱敏和停止归�
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 });
 
+test('停止已被客户端删除的会话时按已停止收尾，避免保留调度锁',async()=>{
+ const server=http.createServer((req,res)=>{res.statusCode=404;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({error:'not found'}));});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  const connection={baseUrl:'http://127.0.0.1:'+server.address().port,opencodeUsername:'test',opencodePassword:'secret'};
+  assert.match(await stopSession({sessionId:'ses_deleted'},{connection}),/已不存在/);
+ }finally{await new Promise(r=>server.close(r));}
+});
+
 test('新图标和上下文用量不干扰模型定位，图标按钮回读aria名称并拒绝歧义',async()=>{
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{

@@ -384,7 +384,12 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const job=jobs.find(j=>j.id===stopMatch[1]);
     if(!job)return send(404,{error:'运行记录不存在'});
     if(job.stopRequested)return send(409,{error:'正在停止，请等待'});
-    const failedWithLiveSession=Boolean(job.schedulingHold);
+    const knownSessionId=job.result?.sessionId||job.sessionId;
+    const hasClientState=Boolean(knownSessionId||job.ownedDraft);
+    // A scheduling hold can also be left after preparation failed before a
+    // Session was registered. Only skip process termination when this job has
+    // an actual Session or an owned draft that still needs client recovery.
+    const failedWithLiveSession=Boolean(job.schedulingHold&&hasClientState);
     if(!canStopJob(job))return send(409,{error:'该脚本和会话已结束且无待解除锁，不重复操作历史任务'});
     if(job.status==='QUEUED'){
      job.status='STOPPED';job.phase='FINISHED';job.endedAt=new Date().toISOString();job.error='用户取消排队，未启动脚本、未向客户端发送任务';active.delete(job.id);scheduler.finish(job.id);await writeJob(job);return send(200,{message:job.error});
@@ -394,7 +399,10 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     try{
      const disk=await fs.readFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'utf8').catch(()=>job.log);job.log=disk;
      let message,confirmed=false;try{message=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await stopSession(job,{connection:taskRuntimes.get(job.id)});confirmed=true;if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;}catch(e){message='脚本已停止，但会话停止未确认：'+e.message+'；请在客户端核对';}
-     if(confirmed&&job.cooperative){confirmed=await reconcileHandoff(job);if(!confirmed)message+='；页面交接：'+job.handoff?.reason;}
+     // There is no client handoff to verify when no Session or owned draft was
+     // ever registered. The verified script termination is the complete stop
+     // result for that preparation failure.
+     if(confirmed&&job.cooperative&&hasClientState){confirmed=await reconcileHandoff(job);if(!confirmed)message+='；页面交接：'+job.handoff?.reason;}
      if(job.status!=='BLOCKED')await releaseOwnedLock(job,projectRoot).catch(e=>{message+='；执行锁处理失败：'+e.message;});
      job.schedulingHold=!confirmed;job.status=confirmed?'STOPPED':'BLOCKED';job.endedAt=new Date().toISOString();job.error='用户强制停止。'+message;
      append(job,'\n'+job.error+'\n');

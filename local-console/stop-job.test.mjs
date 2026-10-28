@@ -42,6 +42,21 @@ test('FAIL会话及页面交接保护可收尾，已结束且无交接保护不�
   assert.equal(current.status,'BLOCKED');assert.equal(current.schedulingHold,true,'未连接隔离客户端，不能伪造停止成功');
  }finally{await new Promise(r=>server.close(r));}
 });
+
+test('准备阶段未登记Session的阻塞任务可停止并释放调度锁',async()=>{
+ const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-no-session-stop-'));
+ const job={id:'no-session-hold',status:'BLOCKED',schedulingHold:true,pid:999999,path:path.join(projectRoot,'scripts','run-client-case001.mjs'),startedAt:new Date().toISOString(),config:{cdpPort:1},cooperative:true,log:'准备阶段未登记Session'};
+ await fs.mkdir(path.join(dataDir,'jobs',job.id),{recursive:true});await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
+ const {server,url}=await createConsole({port:0,dataDir});
+ try{
+  const s=await fetch(url+'/api/state').then(r=>r.json());
+  const r=await fetch(url+'/api/jobs/'+job.id+'/stop',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:'{}'});
+  assert.equal(r.status,200);
+  const current=await fetch(url+'/api/jobs/'+job.id).then(r=>r.json());
+  assert.equal(current.status,'STOPPED');assert.equal(current.schedulingHold,false);assert.match(current.error,/未获取会话 ID/);
+ }finally{await new Promise(r=>server.close(r));}
+});
+
 test('只释放本次执行锁，并保留截图供报告读取',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'mw-stop-lock-')),dir=path.join(root,'runs','本次执行');
  await fs.mkdir(dir,{recursive:true});await fs.writeFile(path.join(dir,'1018-1600-01-现场.png'),'evidence');

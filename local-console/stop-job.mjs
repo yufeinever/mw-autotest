@@ -27,9 +27,15 @@ export async function stopSession(job,{connection}={}){
  if(!id)return '未获取会话 ID，未操作客户端会话；请核对客户端';
  if(connection){
   const base=connection.baseUrl,headers={Authorization:'Basic '+btoa(connection.opencodeUsername+':'+connection.opencodePassword)};
-  const get=await fetch(base+'/session/'+id,{headers,signal:AbortSignal.timeout(5000)});if(!get.ok)throw Error('核对会话失败 HTTP '+get.status);
+  const get=await fetch(base+'/session/'+id,{headers,signal:AbortSignal.timeout(5000)});
+  // A 404 means the session is already gone. Treat it as a confirmed stop so
+  // a failed/blocked job cannot keep the scheduler lock forever after the
+  // client has already removed the session.
+  if(get.status===404)return '客户端会话已不存在，确认停止 '+id;
+  if(!get.ok)throw Error('核对会话失败 HTTP '+get.status);
   const session=await get.json();if(session.id!==id)throw Error('会话 ID 不一致');
   const response=await fetch(base+'/session/'+id+'/abort'+(session.directory?'?directory='+encodeURIComponent(session.directory):''),{method:'POST',headers,signal:AbortSignal.timeout(5000)});
+  if(response.status===404)return '客户端会话已不存在，确认停止 '+id;
   if(!response.ok||await response.json()!==true)throw Error('客户端未确认停止本次会话');return '客户端已确认停止本次会话 '+id;
  }
  const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000});
