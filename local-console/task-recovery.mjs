@@ -13,6 +13,27 @@ export function failedBeforeSession(job){
   r.events?.some(e=>e.step==='BLOCKED'&&e.detail===r.error));
 }
 
+function sessionRoute(value){
+ const text=String(value||'');
+ const match=text.match(/^(.*\/session)(?:\/(ses_[A-Za-z0-9]+))?(?:[/?#]|$)/);
+ return match?{base:match[1],id:match[2]||null}:null;
+}
+
+// The client can navigate to a real Session before the runner observes the
+// URL change. Recover only when the page remains in the same workspace and
+// still contains the exact owned submission text; never infer from a bare
+// Session URL or from a similar task title.
+export async function adoptOwnedSession(page,job){
+ if(job.sessionId||!job.ownedDraft?.url||typeof job.ownedDraft.text!=='string'||!job.ownedDraft.text)return false;
+ const current=sessionRoute(page.url()),draft=sessionRoute(job.ownedDraft.url);
+ if(!current?.id||!draft||current.base!==draft.base)return false;
+ const body=await page.locator('body').innerText();
+ const normalize=value=>String(value).replace(/\s+/g,' ').trim();
+ if(!normalize(body).includes(normalize(job.ownedDraft.text)))return false;
+ job.sessionId=current.id;job.sessionUrl=page.url();job.submissionPending=false;
+ return true;
+}
+
 export async function settleSession(page,job,connection,{allowAbort=false}={}){
  if(!job.sessionId)return !job.submissionPending;
  if(job.modelCompleted||job.sessionSettled)return true;
@@ -76,6 +97,7 @@ export async function recoverJobPage(page,job,{connection,allowAbort=false,other
   job.submissionFailureConfirmed=true;
   job.recoveryAction='原报告确认创建Session前工作区准备失败，撤销本次待提交标记；未停止其他会话';
  }
+ await adoptOwnedSession(page,job);
  if(!await settleSession(page,job,connection,{allowAbort}))return {ready:false,reason:job.submissionPending&&!job.sessionId?'发送已尝试但Session归属未确认，暂停后续任务':'本条会话尚未确认结束'};
  if(job.submissionFailureConfirmed&&page.url()===job.ownedDraft?.url){
   const body=await page.locator('body').innerText();

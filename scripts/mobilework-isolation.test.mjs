@@ -6,12 +6,20 @@ import {chromium} from 'playwright-core';
 import {appendComposerText,readComposerState} from './mobilework-composer.mjs';
 import {snapshotDraft,inspectPageHandoff} from './mobilework-isolation.mjs';
 import {TaskScheduler} from '../local-console/task-scheduler.mjs';
-import {recoverJobPage} from '../local-console/task-recovery.mjs';
+import {recoverJobPage,adoptOwnedSession} from '../local-console/task-recovery.mjs';
 import {dispatchStandalone} from './mobilework-standalone.mjs';
 
 const fixture='<style>.chip:hover [data-skill-chip-icon]{display:none}</style><div contenteditable="true"><span contenteditable="false" class="chip"><span data-skill-chip-icon>S</span><button data-skill-remove="sdd">×</button><span data-skill-chip-label>sdd</span></span> 帮我实现需求。</div>';
 async function setup(t){const browser=await chromium.launch({channel:'chrome',headless:true});t.after(()=>browser.close());const page=await browser.newPage();await page.setContent(fixture);return page;}
 const config={cdpPort:9223,executionStrategy:'serial',maxParallel:3};
+
+test('恢复时按同一工作区和完整草稿内容补登记漏读的Session',async()=>{
+ const page={url:()=> 'mobilework-shell://app/index.html#/workspace/ws_test/session/ses_recovered',locator:()=>({innerText:async()=> '历史提问\n完整的本次自动化输入\n\n已完成'})};
+ const job={ownedDraft:{url:'mobilework-shell://app/index.html#/workspace/ws_test/session',text:'完整的本次自动化输入'},submissionPending:true};
+ assert.equal(await adoptOwnedSession(page,job),true);assert.equal(job.sessionId,'ses_recovered');assert.equal(job.sessionUrl,page.url());assert.equal(job.submissionPending,false);
+ const other={ownedDraft:{url:'mobilework-shell://app/index.html#/workspace/ws_other/session',text:'完整的本次自动化输入'},submissionPending:true};
+ assert.equal(await adoptOwnedSession(page,other),false);assert.equal(other.sessionId,undefined);
+});
 
 test('追加后异常可清理本条草稿，下一条独立运行且图标悬停不影响校验',async t=>{
  const page=await setup(t),editor=page.locator('[contenteditable="true"]');
