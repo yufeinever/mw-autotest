@@ -41,7 +41,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -54,7 +54,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  const persist=()=>fs.writeFile(settingsPath,JSON.stringify(state,null,2));
  await persist();
  const savedJobs=await fs.readdir(path.join(dataDir,'jobs')).catch(()=>[]);
- for(const name of savedJobs){try{const job=JSON.parse(await fs.readFile(path.join(dataDir,'jobs',name,'job.json'),'utf8'));if(['RUNNING','QUEUED'].includes(job.status)){job.status='INTERRUPTED';job.error='控制台重启，未自动重跑；请核对客户端状态';}jobs.push(job);}catch{}}
+ for(const name of savedJobs){try{const job=JSON.parse(await fs.readFile(path.join(dataDir,'jobs',name,'job.json'),'utf8'));if(['RUNNING','QUEUED'].includes(job.status)||job.finalizing){job.status='INTERRUPTED';job.error='控制台重启，未自动重跑；请核对客户端状态';delete job.finalizing;delete job.stopRequested;}jobs.push(job);}catch{}}
  for(const job of jobs)if(['STARTING','RECORDING','FINALIZING'].includes(job.recording?.status))job.recording={...job.recording,status:'INTERRUPTED',available:false,error:'控制台已重启，原录像未确认完整保存'};
  jobs.sort((a,b)=>(a.queuedAt||a.startedAt).localeCompare(b.queuedAt||b.startedAt));
  const batchDir=path.join(dataDir,'batches');await fs.mkdir(batchDir,{recursive:true});
@@ -82,13 +82,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   const write=(jobWrites.get(job.id)||Promise.resolve()).catch(()=>{}).then(async()=>{const temp=file+'.tmp';await fs.writeFile(temp,contents);await fs.rename(temp,file);});
   jobWrites.set(job.id,write);return write;
  };
- const recordings=new Map();
- const finishRecording=async(job,reason)=>{
-  const pending=recordings.get(job.id);
-  if(pending){const recorder=await pending;await recorder?.stop(reason);recordings.delete(job.id);}
+ const recordings=new Map(),recordingFinishes=new Map(),workers=new Map(),finalizations=new Map();
+ const finishRecording=(job,reason)=>{
+  if(recordingFinishes.has(job.id))return recordingFinishes.get(job.id);
+  const pending=recordings.get(job.id);if(!pending)return Promise.resolve();
+  const finishing=(async()=>{
+   try{const recorder=await pending;await recorder?.stop(reason);}
+   catch(error){job.recording={...job.recording,status:'ERROR',available:false,error:error.message};}
+   finally{recordings.delete(job.id);recordingFinishes.delete(job.id);}
+  })();
+  recordingFinishes.set(job.id,finishing);return finishing;
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
- const recovering=new Set();
+ const recovering=new Map();
  const updateQueueHolds=()=>{
   for(const job of jobs.filter(j=>j.status==='QUEUED')){
    const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
@@ -98,9 +104,12 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  };
  const reconcileHandoff=async(job,{allowAbort=false}={})=>{
   if(unlocking)return false;
-  if(recovering.has(job.id))return false;
+  if(recovering.has(job.id)){
+   const ready=await recovering.get(job.id);
+   if(!allowAbort)return ready;
+  }
   if(!scheduler.reserveRecovery(job)){job.handoff={ready:false,reason:'等待其他任务交还页面，尚未检查交接'};job.schedulingHold=true;return false;}
-  recovering.add(job.id);
+  const pending=(async()=>{
   try{
    job.handoff=await recovery(job,{connection:taskRuntimes.get(job.id),allowAbort,jobs});
    if(job.handoff.ready&&job.handoff.url)scheduler.renderer(job.config.cdpPort).expectedUrl=job.handoff.url;
@@ -110,16 +119,105 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    await writeJob(job);return job.handoff.ready;
   }catch(e){job.handoff={ready:false,reason:e.message};job.schedulingHold=true;await writeJob(job);return false;}
   finally{recovering.delete(job.id);scheduler.releaseRecovery(job);}
+  })();
+  recovering.set(job.id,pending);return pending;
  };
  // Rebuild holds after a restart without resuming or rewriting historical runs.
  for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
-  for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested)){
-   if(await reconcileHandoff(job,{allowAbort:false}))scheduler.finish(job.id);
+  for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&!j.cleanupErrors?.length)){
+   if(await reconcileHandoff(job,{allowAbort:false})&&!job.finalizing&&!job.stopRequested){taskRuntimes.delete(job.id);scheduler.finish(job.id);}
   }
   updateQueueHolds();
  },5000);recoveryTimer.unref();
  const append=(job,text)=>{job.log=(job.log+text).slice(-120000);};
+ // One owner performs process, evidence, recording and page cleanup. A stop
+ // arriving during normal finalization joins this same promise and escalates
+ // the session cleanup; it cannot release the scheduler a second time.
+ const finalizeJob=(job,{exitCode,executionError}={})=>{
+  if(finalizations.has(job.id))return finalizations.get(job.id);
+  const previousStatus=job.status;
+  job.finalizing=true;job.status='RUNNING';job.phase=job.stopRequested?'STOPPING':'FINALIZING';
+  job.cleanupStartedAt=new Date().toISOString();job.cleanupErrors=[];
+  active.add(job.id);
+  const finishing=(async()=>{
+   let outcome=exitCode===undefined?previousStatus:exitCode===0?'EXITED':exitCode===2?'BLOCKED':'FAIL';
+   if(executionError){outcome='FAIL';job.error=executionError.message;}
+   let confirmed=false,stopHandled=false,stopMessage='';
+   const step=async(name,action)=>{
+    job.cleanupStage=name;await writeJob(job).catch(()=>{});
+    try{await action();return true;}
+    catch(error){job.cleanupErrors.push(name+'：'+error.message);return false;}
+   };
+   const stopWorker=async()=>{
+    if(job.pid&&!job.processExited){
+     await killScript(job);
+     const worker=workers.get(job.id);
+     if(worker)await worker.closed;
+     job.processExited=true;
+    }
+   };
+   const stopClient=async()=>{
+    stopHandled=true;job.phase='STOPPING';
+    if(!await step('结束脚本进程',stopWorker))return false;
+    try{
+     stopMessage=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await sessionStopper(job,{connection:taskRuntimes.get(job.id)});
+     if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;
+    }catch(error){stopMessage='会话停止未确认：'+error.message;return false;}
+    const hasClientState=Boolean(job.sessionId||job.ownedDraft||job.submissionPending);
+    if(job.cooperative&&hasClientState){
+     let ready;
+     try{ready=await reconcileHandoff(job,{allowAbort:true});}
+     catch(error){stopMessage+='；页面交接：'+error.message;return false;}
+     if(!ready)stopMessage+='；页面交接：'+job.handoff?.reason;
+     return ready;
+    }
+    return true;
+   };
+   try{
+    if(job.stopRequested||executionError)await step('结束脚本进程',stopWorker);
+    await step('归档执行证据',async()=>{
+     const worker=workers.get(job.id);if(job.processExited&&worker)await worker.closed;
+     const reportMatches=[...job.log.matchAll(/^报告：(.+)$/gm)];
+     if(reportMatches.length){
+      job.reportPath=reportMatches.at(-1)[1].trim();
+      try{const result=JSON.parse(await fs.readFile(path.join(path.dirname(job.reportPath),'执行结果.json'),'utf8'));if(['PASS','FAIL','BLOCKED','RESUMED','CHECKED','REVIEW'].includes(result.result))outcome=result.result;job.result=result;}catch{}
+     }
+     job.sessionId??=jobSessionId(job);
+    });
+    await step('保存录像并断开录制连接',()=>finishRecording(job,job.stopRequested?'stopped':'completed'));
+    if(job.stopRequested)confirmed=await stopClient();
+    else{
+     job.cleanupStage='核对会话及页面交接';await writeJob(job).catch(()=>{});
+     const hasClientState=Boolean(job.sessionId||job.ownedDraft||job.submissionPending);
+     confirmed=job.cooperative&&hasClientState?await reconcileHandoff(job,{allowAbort:['FAIL','BLOCKED','REVIEW'].includes(outcome)}):!Boolean(job.sessionId&&!job.modelCompleted&&!job.sessionSettled);
+    }
+   }catch(error){job.cleanupErrors.push('收尾异常：'+error.message);}
+   finally{
+    // Even a report or client error must not leave the encoder, task token or
+    // local script lock behind. Retain only a genuinely unresolved handoff.
+    await finishRecording(job,job.stopRequested?'stopped':'completed');
+    if(!job.pid||job.processExited)await step('释放本次脚本锁',()=>lockReleaser(job));
+    if(job.stopRequested&&!stopHandled)confirmed=await stopClient();
+    confirmed=confirmed&&!job.cleanupErrors.length;
+    const final={schedulingHold:!confirmed,status:job.stopRequested?(confirmed?'STOPPED':'BLOCKED'):outcome,error:job.stopRequested?'用户强制停止。'+stopMessage:job.error,
+     endedAt:new Date().toISOString(),phase:'FINISHED',cleanupStage:confirmed?'收尾完成':'收尾待处理'};
+    if(!['PASS','FAIL','BLOCKED','RESUMED','CHECKED','REVIEW','EXITED','STOPPED'].includes(final.status))final.status='FAIL';
+    if(job.cleanupErrors.length)final.error=(final.error||'')+'；'+job.cleanupErrors.join('；');
+    if(!confirmed)final.error=(final.error||'会话是否结束尚未确认')+'；后续排队暂停：'+(job.cleanupErrors.join('；')||job.handoff?.reason||stopMessage||'待核对本会话');
+    job.cleanupStage='保存收尾记录';
+    const line='\n['+new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date())+'] '+final.cleanupStage+(final.error?'：'+final.error:'')+'\n';
+    append(job,line);
+    try{await fs.appendFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),line);await writeJob({...job,...final,finalizing:false,stopRequested:false});}
+    catch(error){final.schedulingHold=true;final.status='BLOCKED';final.cleanupStage='收尾待处理';job.cleanupErrors.push('保存收尾记录：'+error.message);final.error=job.cleanupErrors.join('；');}
+    Object.assign(job,final);delete job.finalizing;delete job.stopRequested;
+    active.delete(job.id);taskTokens.delete(job.id);workers.delete(job.id);
+    if(!job.schedulingHold)taskRuntimes.delete(job.id);
+    finalizations.delete(job.id);scheduler.finish(job.id,{unresolved:job.schedulingHold});updateQueueHolds();
+   }
+  })();
+  finalizations.set(job.id,finishing);return finishing;
+ };
  const makeCommand=file=>{
   const ext=path.extname(file).toLowerCase();
   if(['.mjs','.js','.cjs'].includes(ext))return [process.execPath,[file]];
@@ -166,7 +264,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    }
    if(req.method==='POST'&&controlMatch){
     const id=controlMatch[1],action=controlMatch[2],job=jobs.find(j=>j.id===id);
-    if(!job||job.stopRequested||job.status!=='RUNNING')return send(409,{error:'任务已结束或正在停止'});
+    if(!job||job.stopRequested||job.finalizing||job.status!=='RUNNING')return send(409,{error:'任务已结束或正在收尾'});
     if(action==='acquire')return send(200,scheduler.acquire(id,body.phase));
     if(action==='release'){scheduler.release(id,body);if(body.runtime)taskRuntimes.set(id,body.runtime);await writeJob(job);return send(200,{ok:true});}
     if(action==='completed'){job.modelCompleted=true;job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});}
@@ -332,6 +430,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      const [command,argv]=makeCommand(item.path);argv.push(...runArgs);job.args=runArgs;job.cooperative=info.cooperative;if(info.cooperative)job.isolationVersion=2;
      jobs.push(job);active.add(job.id);await writeJob(job);
      scheduler.enqueue(job,{cooperative:info.cooperative,start:async()=>{
+     try{
      await writeJob(job);
      if(job.stopRequested||job.status!=='RUNNING')return;
      if(config.recording.enabled&&!runArgs.includes('--check')){
@@ -349,30 +448,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      if(job.stopRequested||job.status!=='RUNNING'){await finishRecording(job,'stopped');return;}
      const taskToken=randomBytes(24).toString('hex');taskTokens.set(job.id,taskToken);
      const child=spawn(command,argv,{cwd:projectRoot,windowsHide:true,shell:false,env:{...process.env,MW_TEST_CONFIG_JSON:JSON.stringify(config),MW_MODEL_CONFIG_JSON:JSON.stringify(config.provider),MW_CDP_PORT:String(config.cdpPort),MW_CONSOLE_JOB_ID:job.id,...(info.cooperative?{MW_TASK_CONTROL_URL:`http://${expectedHost}/api/task-control/${job.id}`,MW_TASK_CONTROL_TOKEN:taskToken}:{}),PYTHONIOENCODING:'utf-8'},stdio:['ignore','pipe','pipe']});
-     job.pid=child.pid;await writeJob(job);
+     job.pid=child.pid;
      const decoders=[new StringDecoder('utf8'),new StringDecoder('utf8')];
      const logPath=path.join(jobDir,'执行日志.txt');let chain=Promise.resolve();
      const consume=text=>{if(config.provider?.key)text=text.split(config.provider.key).join('[已隐藏Key]');append(job,text);chain=chain.then(()=>fs.appendFile(logPath,text)).catch(()=>{});};
      child.stdout.on('data',b=>consume(decoders[0].write(b)));child.stderr.on('data',b=>consume(decoders[1].write(b)));
      child.on('error',e=>{job.error=e.message;consume('\n启动失败：'+e.message+'\n');});
-     child.on('close',async code=>{
-      consume(decoders.map(d=>d.end()).join(''));await chain;
-      if(job.stopRequested||job.endedAt)return;
-      job.exitCode=code;job.endedAt=new Date().toISOString();
-      job.status=code===0?'EXITED':code===2?'BLOCKED':'FAIL';
-      const reportMatches=[...job.log.matchAll(/^报告：(.+)$/gm)];
-      if(reportMatches.length){
-       job.reportPath=reportMatches.at(-1)[1].trim();
-       try{const result=JSON.parse(await fs.readFile(path.join(path.dirname(job.reportPath),'执行结果.json'),'utf8'));if(['PASS','FAIL','BLOCKED','RESUMED','CHECKED','REVIEW'].includes(result.result))job.status=result.result;job.result=result;}catch{}
-      }
-      job.sessionId??=jobSessionId(job);
-      await finishRecording(job,'completed');
-      job.phase='VERIFYING';
-      const unresolved=info.cooperative?!await reconcileHandoff(job,{allowAbort:['FAIL','BLOCKED','REVIEW'].includes(job.status)}):Boolean(job.sessionId&&!job.modelCompleted);
-      job.phase='FINISHED';
-      if(unresolved){job.schedulingHold=true;job.error=(job.result?.error||job.error||'会话是否结束尚未确认')+'；后续排队暂停：'+(job.handoff?.reason||'待核对本会话');}
-      await writeJob(job).catch(()=>{});active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved});updateQueueHolds();
-     });
+     const closed=new Promise(resolve=>child.once('close',code=>{
+      job.exitCode=code;job.processExited=true;
+      consume(decoders.map(d=>d.end()).join(''));
+      void chain.finally(()=>{resolve();if(!job.endedAt)void finalizeJob(job,{exitCode:code});});
+     }));
+     workers.set(job.id,{child,closed});await writeJob(job);
+     }catch(error){await finalizeJob(job,{executionError:error});}
      }});
      if(automaticBatch){batch.submission='SUBMITTED';batch.submissionEndedAt=new Date().toISOString();await writeBatch(batch);}
      return send(202,{id:job.id,batchId:batch.id});
@@ -383,33 +471,16 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='POST'&&stopMatch){
     const job=jobs.find(j=>j.id===stopMatch[1]);
     if(!job)return send(404,{error:'运行记录不存在'});
-    if(job.stopRequested)return send(409,{error:'正在停止，请等待'});
-    const knownSessionId=job.result?.sessionId||job.sessionId;
-    const hasClientState=Boolean(knownSessionId||job.ownedDraft);
-    // A scheduling hold can also be left after preparation failed before a
-    // Session was registered. Only skip process termination when this job has
-    // an actual Session or an owned draft that still needs client recovery.
-    const failedWithLiveSession=Boolean(job.schedulingHold&&hasClientState);
+    if(finalizations.has(job.id)){
+     if(job.cleanupStage!=='保存收尾记录'){job.stopRequested=true;job.phase='STOPPING';}
+     await finalizations.get(job.id);return send(200,{message:job.error||'收尾完成',status:job.status});
+    }
     if(!canStopJob(job))return send(409,{error:'该脚本和会话已结束且无待解除锁，不重复操作历史任务'});
     if(job.status==='QUEUED'){
      job.status='STOPPED';job.phase='FINISHED';job.endedAt=new Date().toISOString();job.error='用户取消排队，未启动脚本、未向客户端发送任务';active.delete(job.id);scheduler.finish(job.id);await writeJob(job);return send(200,{message:job.error});
     }
-    active.add(job.id);job.stopRequested=true;
-    try{if(job.status!=='BLOCKED'&&!failedWithLiveSession&&job.pid)await killScript(job);}catch(e){delete job.stopRequested;active.delete(job.id);throw e;}
-    try{
-     const disk=await fs.readFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'utf8').catch(()=>job.log);job.log=disk;
-     let message,confirmed=false;try{message=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await stopSession(job,{connection:taskRuntimes.get(job.id)});confirmed=true;if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;}catch(e){message='脚本已停止，但会话停止未确认：'+e.message+'；请在客户端核对';}
-     // There is no client handoff to verify when no Session or owned draft was
-     // ever registered. The verified script termination is the complete stop
-     // result for that preparation failure.
-     if(confirmed&&job.cooperative&&hasClientState){confirmed=await reconcileHandoff(job);if(!confirmed)message+='；页面交接：'+job.handoff?.reason;}
-     if(job.status!=='BLOCKED')await releaseOwnedLock(job,projectRoot).catch(e=>{message+='；执行锁处理失败：'+e.message;});
-     job.schedulingHold=!confirmed;job.status=confirmed?'STOPPED':'BLOCKED';job.endedAt=new Date().toISOString();job.error='用户强制停止。'+message;
-     append(job,'\n'+job.error+'\n');
-     await fs.appendFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),'\n'+job.error+'\n');
-     delete job.stopRequested;
-     await writeJob(job);return send(200,{message:job.error});
-    }finally{await finishRecording(job,'stopped').catch(()=>{});active.delete(job.id);taskTokens.delete(job.id);scheduler.finish(job.id,{unresolved:Boolean(job.schedulingHold)});delete job.stopRequested;await writeJob(job);}
+    job.stopRequested=true;
+    await finalizeJob(job);return send(200,{message:job.error,status:job.status});
    }
    const jobMatch=url.pathname.match(/^\/api\/jobs\/([\w-]+)$/);
    const traceMatch=url.pathname.match(/^\/traces\/([\w-]+)(\/download|\/observatory)?$/);

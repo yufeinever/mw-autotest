@@ -31,11 +31,11 @@ export async function stopSession(job,{connection}={}){
   // A 404 means the session is already gone. Treat it as a confirmed stop so
   // a failed/blocked job cannot keep the scheduler lock forever after the
   // client has already removed the session.
-  if(get.status===404)return '客户端会话已不存在，确认停止 '+id;
+  if(get.status===404){job.sessionSettled=true;job.sessionMissing=true;return '客户端会话已不存在，确认停止 '+id;}
   if(!get.ok)throw Error('核对会话失败 HTTP '+get.status);
   const session=await get.json();if(session.id!==id)throw Error('会话 ID 不一致');
   const response=await fetch(base+'/session/'+id+'/abort'+(session.directory?'?directory='+encodeURIComponent(session.directory):''),{method:'POST',headers,signal:AbortSignal.timeout(5000)});
-  if(response.status===404)return '客户端会话已不存在，确认停止 '+id;
+  if(response.status===404){job.sessionSettled=true;job.sessionMissing=true;return '客户端会话已不存在，确认停止 '+id;}
   if(!response.ok||await response.json()!==true)throw Error('客户端未确认停止本次会话');return '客户端已确认停止本次会话 '+id;
  }
  const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000});
@@ -46,6 +46,7 @@ export async function stopSession(job,{connection}={}){
  }finally{await browser.close();}
 }
 export async function releaseOwnedLock(job,root){
+ if(!Number.isInteger(job.pid)||job.pid<=0)return;
  const file=path.join(root,'runs','.client-case001.lock');
  try{const l=JSON.parse(await fs.readFile(file,'utf8'));if(l.pid!==job.pid)return;
   // Preserve existing evidence; expose it in the stopped run's report.

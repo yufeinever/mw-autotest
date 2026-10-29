@@ -94,6 +94,7 @@ function renderScripts(){
   }
   const status=el('td'),statusText=job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
   status.append(el('span',statusText,'script-status '+resultClass(job?.status)));
+  if(job?.finalizing&&job.cleanupStage)status.append(el('small',job.cleanupStage));
   if(job?.recording?.status==='RECORDING')status.append(el('small','● 录制中'));else if(job?.recording?.status==='FINALIZING')status.append(el('small','录像保存中'));else if(job?.recording?.status==='ERROR')status.append(el('small','录像失败：'+job.recording.error));
   if(job?.queueHold)status.append(el('small','等待恢复：'+job.queueHold));
   const number=el('td'),choice=el('input');choice.type='checkbox';choice.className='script-choice';choice.setAttribute('aria-label','选择用例 '+(start+offset+1)+' '+script.name);choice.checked=selectedScripts.has(script.id);
@@ -114,6 +115,7 @@ function renderScripts(){
   run.disabled=state.capabilities?.serialOnly!==1||state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||state.readingModels||cdpBusy||pendingScripts.has(script.id)||!script.exists||!script.integrated;
   run.onclick=()=>startScripts([script],'执行此脚本');
   stop.disabled=stopAllBusy||!job||!!job.stopRequested||!canStopJob(job);
+  if(job?.stopRequested)stop.textContent='停止中…';
   stop.title='停止本次脚本进程及其会话，保留日志和截图';
   stop.onclick=async()=>{stop.disabled=true;try{const r=await api('/api/jobs/'+job.id+'/stop',{});notice(r.message);await refresh();}catch(e){notice(e.message,true);}};
   remove.disabled=!!state.active||batchBusy||pendingScripts.has(script.id);

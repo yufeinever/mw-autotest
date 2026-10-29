@@ -273,7 +273,7 @@ var batchResultClass = (status) => ["FAIL", "BLOCKED", "STOPPED", "INTERRUPTED"]
 var assertionRate = (checks) => checks.total ? `${checks.passed}/${checks.total}\uFF08${Math.round(100 * checks.passed / checks.total)}%\uFF09` : "\u2014";
 var batchDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "\u2014";
 batchLabels.QUEUED = "\u6392\u961F\u4E2D";
-var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINISHED: "\u5DF2\u7ED3\u675F" };
+var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINALIZING: "\u6536\u5C3E\u4E2D", STOPPING: "\u505C\u6B62\u4E2D", FINISHED: "\u5DF2\u7ED3\u675F" };
 function publicJob({ log, ownedDraft, releasedDraft, ...job }) {
   return { ...job, sessionId: job.result?.sessionId || job.sessionId || log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1] };
 }
@@ -329,7 +329,6 @@ async function stopAllJobs(api, progress = () => {
 }) {
   const initial = await api("/api/state"), targets = initial.jobs.filter(canStopJob), errors = /* @__PURE__ */ new Map();
   const stop = async (job) => {
-    if (job.stopRequested) return;
     try {
       await api("/api/jobs/" + encodeURIComponent(job.id) + "/stop", {});
     } catch (e) {
@@ -1073,6 +1072,7 @@ if (traceId) {
       }
       const status = el2("td"), statusText = job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
       status.append(el2("span", statusText, "script-status " + resultClass(job?.status)));
+      if (job?.finalizing && job.cleanupStage) status.append(el2("small", job.cleanupStage));
       if (job?.recording?.status === "RECORDING") status.append(el2("small", "\u25CF \u5F55\u5236\u4E2D"));
       else if (job?.recording?.status === "FINALIZING") status.append(el2("small", "\u5F55\u50CF\u4FDD\u5B58\u4E2D"));
       else if (job?.recording?.status === "ERROR") status.append(el2("small", "\u5F55\u50CF\u5931\u8D25\uFF1A" + job.recording.error));
@@ -1116,6 +1116,7 @@ if (traceId) {
       run.disabled = state.capabilities?.serialOnly !== 1 || state.capabilities?.taskIsolation !== 2 || stopAllBusy || batchBusy || state.readingModels || cdpBusy || pendingScripts.has(script.id) || !script.exists || !script.integrated;
       run.onclick = () => startScripts([script], "\u6267\u884C\u6B64\u811A\u672C");
       stop.disabled = stopAllBusy || !job || !!job.stopRequested || !canStopJob(job);
+      if (job?.stopRequested) stop.textContent = "\u505C\u6B62\u4E2D\u2026";
       stop.title = "\u505C\u6B62\u672C\u6B21\u811A\u672C\u8FDB\u7A0B\u53CA\u5176\u4F1A\u8BDD\uFF0C\u4FDD\u7559\u65E5\u5FD7\u548C\u622A\u56FE";
       stop.onclick = async () => {
         stop.disabled = true;

@@ -101,7 +101,13 @@ export class PageRecorder {
     if(!stat.size)throw Error('录像文件为空');
     this.state.bytes=stat.size;this.state.status='COMPLETED';this.state.available=true;
    }else this.state.status='ERROR';
-  }catch(error){this.state.status='ERROR';this.state.error=error.message;if(this.encoder?.exitCode===null)this.encoder.kill();}
+  }catch(error){
+   this.state.status='ERROR';this.state.error=error.message;
+   if(this.encoder?.exitCode===null){
+    this.encoder.stdin.destroy();this.encoder.kill();
+    await timeout(this.exit,3000,'录像编码器退出未确认').catch(exitError=>{this.state.error+='；'+exitError.message;});
+   }
+  }
   finally{
    if(this.session){await timeout(this.session.send('Page.stopScreencast'),2000,'结束页面采集超时').catch(()=>{});await timeout(this.session.detach(),2000,'释放页面录像连接超时').catch(()=>{});}
    if(this.browser)await timeout(this.browser.close(),2000,'断开录像连接超时').catch(()=>{});

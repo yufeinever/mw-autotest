@@ -50,10 +50,16 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
   const r=await fetch(base+route,{method,headers,signal:AbortSignal.timeout(5000)});
   if(!r.ok){
    let message='';try{message=(await r.json())?.data?.message||'';}catch{}
-   throw Object.assign(Error('核对本会话接口失败 HTTP '+r.status),{patchPermissionError:route.startsWith('/permission?')&&r.status===400&&/Expected JSON value/.test(message)&&/filePath/.test(message)&&/patch/.test(message)});
+   throw Object.assign(Error('核对本会话接口失败 HTTP '+r.status),{status:r.status,patchPermissionError:route.startsWith('/permission?')&&r.status===400&&/Expected JSON value/.test(message)&&/filePath/.test(message)&&/patch/.test(message)});
   }return r.json();
  };
- const session=await request('/session/'+job.sessionId);
+ let session;
+ try{session=await request('/session/'+job.sessionId);}
+ catch(error){
+  if(error.status!==404)throw error;
+  job.sessionSettled=true;job.sessionMissing=true;
+  job.recoveryAction='本任务Session已不存在，继续核对页面交接';return true;
+ }
  if(session.id!==job.sessionId||!session.directory)throw Error('会话归属核对失败');
  const query='?directory='+encodeURIComponent(session.directory);
  const stopped=async()=>{
@@ -113,7 +119,7 @@ export async function recoverJobPage(page,job,{connection,allowAbort=false,other
  // Some clients leave the permission card rendered after an acknowledged
  // abort. Only leave that exact, independently confirmed stopped session.
  // Never click its stale approval or navigate away from a user draft/modal.
- const staleApproval=handoff.reason==='当前页面仍有运行任务或交互'&&job.abortAcknowledged&&job.sessionSettled;
+ const staleApproval=handoff.reason==='当前页面仍有运行任务或交互'&&(job.abortAcknowledged||job.sessionMissing)&&job.sessionSettled;
  const ownSelection=handoff.reason==='输入区仍有专家或团队选择，不能交接'&&job.submittedSelection?.length&&(job.modelCompleted||job.sessionSettled);
  if(!handoff.ready&&(staleApproval||ownSelection)&&page.url().endsWith('/session/'+job.sessionId)){
   await waitStep(page,job.config||{});
@@ -131,6 +137,7 @@ export async function recoverJob(job,{connection,allowAbort=false,jobs=[]}={}){
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('未找到唯一客户端主界面');
   const page=pages[0],otherManagedSession=jobs.some(j=>j.id!==job.id&&j.status==='RUNNING'&&j.sessionUrl===page.url());
+  page.setDefaultTimeout(5000);
   return await recoverJobPage(page,job,{connection,allowAbort,otherManagedSession});
  }finally{await browser.close();}
 }

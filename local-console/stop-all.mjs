@@ -8,7 +8,8 @@ export function canStopJob(job){
 export async function stopAllJobs(api,progress=()=>{}){
  const initial=await api('/api/state'),targets=initial.jobs.filter(canStopJob),errors=new Map();
  const stop=async job=>{
-  if(job.stopRequested)return;
+  // Repeated requests join the server's existing cleanup promise, so "all
+  // stopped" is only reported after recording and scheduler cleanup finish.
   try{await api('/api/jobs/'+encodeURIComponent(job.id)+'/stop',{});}catch(e){errors.set(job.id,e.message);}
  };
  // Cancel the entire queue before stopping workers, so worker completion
