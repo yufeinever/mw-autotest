@@ -1,6 +1,7 @@
 import {showBrowserTrace} from './trace-browser.mjs';
 import {scriptsInSuite,suiteLabels} from './script-groups.mjs';
 import {showBatch} from './batch-browser.mjs';
+import {appendResultDescription,resultGuide,describeResult} from './result-display.mjs';
 import {installDetailPreview,findScriptCase} from './detail-preview.mjs';
 import {canStopJob,stopAllJobs} from './stop-all.mjs';
 import {collectBatches,batchLabels,batchResultClass,assertionRate,batchDate,phaseLabels} from './batches.mjs';
@@ -30,6 +31,7 @@ function modelOption(name){if(![...$('#model').options].some(o=>o.value===name))
 function syncCustom(){$('#customText').disabled=$('[name=question]:checked').value!=='custom';}
 document.querySelectorAll('[name=question]').forEach(e=>e.onchange=syncCustom);
 function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
+const resultHelp=el('details',undefined,'result-guide');resultHelp.append(el('summary','如何理解业务结果和录像状态'),el('p',resultGuide));$('#initializationHint').after(resultHelp);
 let cdpBusy=false,cdpRefreshing=false;
 function connectionText(c){
  if(c.busy)return '任务执行或收尾中，暂不重复检查连接。';
@@ -87,7 +89,7 @@ logClose.onclick=()=>logDialog.close();logDialog.addEventListener('close',()=>{l
 async function readExecutionLog(){
  const id=logJobId,request=++logRequest;logBody.textContent='正在读取日志…';
  try{const job=await api('/api/jobs/'+encodeURIComponent(id));if(request!==logRequest||!logDialog.open)return;
-  logHeading.textContent=job.name+' · 执行日志';logMeta.textContent=`开始：${batchDate(job.startedAt)}　结束：${batchDate(job.endedAt)}（北京时间） · ${labels[job.status]||job.status}`;
+  logHeading.textContent=job.name+' · 执行日志';const description=describeResult(job);logMeta.textContent=`开始：${batchDate(job.startedAt)}　结束：${batchDate(job.endedAt)}（北京时间） · 业务：${description.label} · ${description.videoLabel}`+(description.reason?' · 原因：'+description.reason:'');
   logBody.textContent=job.log||job.error||'本次运行尚未产生执行日志。';
  }catch(e){if(request===logRequest&&logDialog.open)logBody.textContent='读取失败：'+e.message;}
 }
@@ -104,18 +106,19 @@ function renderScripts(){
  lockState.className=running.length?'mw-lock-banner':holders.length?'lock-warning':'hint';
  unlockButton.disabled=!holders.length||stopAllBusy||batchBusy||submissions.size>0||state.jobs.some(j=>j.status==='RUNNING'||j.stopRequested);
  const size=Number($('#scriptPageSize').value),total=scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
+ const expandedRecordings=new Set([...document.querySelectorAll('#scripts details[open]')].map(e=>e.closest('tr')?.dataset.resultJobId));
  const start=(scriptPage-1)*size;$('#scripts').replaceChildren();
  for(const [offset,script] of scripts.slice(start,start+size).entries()){
   const tr=el('tr');tr.dataset.scriptId=script.id;tr.dataset.scriptNumber=start+offset+1;
   const name=el('td'),title=el('button',script.name,'script-title script-source');title.title='查看用例描述';title.onclick=()=>preview.openScript(script);name.append(title);if(script.unavailable){const why=el('small',script.unavailable,'hint');why.style.display='block';name.append(why);}
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
+  tr.dataset.resultJobId=job?.id||'';
   if(state.jobs.some(j=>j.scriptId===script.id&&j.status==='RUNNING')){
    tr.classList.add('script-running');const locked=el('span','锁定 MW','mw-lock-badge');locked.title='自动化正在执行，请勿手动操作 MobileWork';name.append(locked);
   }
-  const status=el('td'),statusText=job?['RUNNING','QUEUED'].includes(job.status)&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
-  status.append(el('span',statusText,'script-status '+resultClass(job?.status)));
+  const status=el('td');appendResultDescription(status,job);
+  if(expandedRecordings.has(job?.id)&&status.querySelector('details'))status.querySelector('details').open=true;
   if(job?.finalizing&&job.cleanupStage)status.append(el('small',job.cleanupStage));
-  if(job?.recording?.status==='RECORDING')status.append(el('small','● 录制中'));else if(job?.recording?.status==='FINALIZING')status.append(el('small','录像保存中'));else if(job?.recording?.status==='ERROR')status.append(el('small','录像失败：'+job.recording.error));
   if(job?.queueHold)status.append(el('small','等待恢复：'+job.queueHold));
   const number=el('td'),choice=el('input');choice.type='checkbox';choice.className='script-choice';choice.setAttribute('aria-label','选择用例 '+(start+offset+1)+' '+script.name);choice.checked=selectedScripts.has(script.id);
   choice.disabled=$('[name=selectionMode]:checked').value!=='selected'||batchBusy||!script.exists||!script.integrated;
@@ -229,7 +232,9 @@ function renderHistory(){
  for(const batch of batches.slice((historyPage-1)*size,historyPage*size)){
   const tr=el('tr');tr.dataset.batchId=batch.id;
   const name=el('td'),a=el('a',batch.name);a.href='/?batch='+encodeURIComponent(batch.id);name.append(a,el('small',batch.scope));
-  tr.append(name,el('td',batchDate(batch.startedAt)),el('td',batchDate(batch.endedAt)),el('td',`${batch.finished}/${batch.total} 已结束`),el('td',batchLabels[batch.status]||batch.status,batchResultClass(batch.status)),el('td',assertionRate(batch.checks),batch.checks.failed?'result-fail':''));
+  const outcome=el('td');outcome.append(el('span','业务汇总：'+(batchLabels[batch.status]||batch.status),batchResultClass(batch.status)),el('small',`通过 ${batch.counts?.PASS||0} · 失败 ${batch.counts?.FAIL||0} · 阻塞 ${batch.counts?.BLOCKED||0}`));
+  if(batch.entries){const count=batch.entries.filter(e=>['ERROR','INTERRUPTED'].includes(e.job?.recording?.status)).length;outcome.append(el('small',`录像异常 ${count} 条 · 独立于业务结果`,count?'result-warning':'hint'));}
+  tr.append(name,el('td',batchDate(batch.startedAt)),el('td',batchDate(batch.endedAt)),el('td',`${batch.finished}/${batch.total} 已结束`),outcome,el('td',assertionRate(batch.checks),batch.checks.failed?'result-fail':''));
   const actions=el('td'),detail=el('a','查看批次');detail.href=a.href;actions.append(detail);tr.append(actions);$('#historyRows').append(tr);
  }
  if(!batches.length){const tr=el('tr'),td=el('td','暂无执行批次，执行脚本后将在此显示。','hint');td.colSpan=7;tr.append(td);$('#historyRows').append(tr);}

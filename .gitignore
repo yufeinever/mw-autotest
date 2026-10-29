@@ -31,6 +31,7 @@
 !/local-console/app-source.js
 !/local-console/app.js
 !/local-console/batch-browser.mjs
+!/local-console/result-display.mjs
 !/local-console/detail-preview.mjs
 !/local-console/usability.test.mjs
 !/local-console/batches.mjs

@@ -12,6 +12,47 @@ import {findScriptCase} from './detail-preview.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import ffmpeg from 'ffmpeg-static';
+import {describeResult} from './result-display.mjs';
+import {collectBatches} from './batches.mjs';
+
+test('结果说明独立区分业务判定和录像故障，不改写历史结果',()=>{
+ const job={status:'PASS',recording:{status:'ERROR',error:'录像首帧超时'}};
+ const original=JSON.stringify(job),d=describeResult(job);
+ assert.equal(d.label,'通过');assert.match(d.videoLabel,/失败.*证据不完整/);assert.match(d.videoHint,/可能影响/);assert.equal(JSON.stringify(job),original);
+ assert.equal(describeResult({status:'BLOCKED',result:{error:'配置要求重新加载引擎'},error:'外层错误'}).reason,'配置要求重新加载引擎');
+ assert.match(describeResult({status:'STOPPED'}).explanation,/不作为功能失败/);
+ assert.match(describeResult({status:'CHECKED'}).explanation,/不代表业务验收/);
+ for(const status of ['DISABLED','SKIPPED','COMPLETED'])assert.equal(describeResult({status:'PASS',recording:{status}}).videoWarning,false);
+ assert.equal(collectBatches([], [{...job,id:'j',startedAt:'2026-10-29T07:00:00Z'}])[0].status,'PASS');
+});
+
+test('结果说明在脚本列表和批次统一展示真实阻塞原因及独立录像状态',async()=>{
+ let fixture;
+ await withUI(async({page,url,requests})=>{
+  const first=page.locator('#scripts tr').first();
+  assert.match(await first.innerText(),/业务：通过/);assert.match(await first.innerText(),/录像：失败 · 证据不完整/);
+  assert.match(await page.locator('#scripts tr').nth(1).innerText(),/原因：配置要求重新加载引擎/);
+  await first.locator('.recording-diagnostic summary').click();assert.match(await first.innerText(),/最小化或收至托盘可能影响/);
+  await page.waitForResponse(r=>r.url().endsWith('/api/state'));await page.waitForTimeout(100);
+  assert.equal(await first.locator('.recording-diagnostic').getAttribute('open'),'');
+  await fs.mkdir('runs/1029-v0.0.24-结果说明验收',{recursive:true});
+  await page.locator('#scriptSection').screenshot({path:'runs/1029-v0.0.24-结果说明验收/脚本列表.png'});
+  const batch=collectBatches([],fixture.jobs)[0];
+  await page.route('**/api/batches/legacy-history',route=>route.fulfill({json:batch}));
+  await page.goto(url+'/?batch=legacy-history');await page.locator('#batchCaseRows tr').last().waitFor();
+  assert.match(await page.locator('.batch-metrics').innerText(),/业务失败/);assert.match(await page.locator('.batch-metrics').innerText(),/业务阻塞/);
+  assert.match(await page.locator('main').innerText(),/录像异常 2 条/);
+  assert.match(await page.locator('#batchCaseRows tr').first().innerText(),/业务：通过/);
+  assert.match(await page.locator('#batchCaseRows tr').nth(1).innerText(),/原因：配置要求重新加载引擎/);
+  assert.match(await page.locator('#batchCaseRows tr').nth(2).innerText(),/执行已停止，不作为功能失败/);
+  await page.screenshot({path:'runs/1029-v0.0.24-结果说明验收/批次详情.png',fullPage:true});
+  assert.deepEqual(requests,[]);
+ },state=>{
+  fixture=state;state.jobs[0].recording={status:'ERROR',error:'录像首帧超时'};
+  Object.assign(state.jobs[1],{status:'BLOCKED',result:{error:'配置要求重新加载引擎'},recording:{status:'ERROR',error:'录像首帧超时'}});
+  state.jobs[2].status='STOPPED';state.jobs[3].status='FAIL';state.jobs[4].status='REVIEW';
+ });
+});
 
 test('用例描述按完整路径映射，覆盖独立入口001/002并排除同名自定义脚本',()=>{
  const root='D:\\workspace\\Mobilework-test';
