@@ -5,6 +5,14 @@ import {waitStep,selectModel,modelTrigger} from './mobilework-run-policy.mjs';
 const blocked=message=>Object.assign(Error('执行前初始化失败：'+message),{blocked:true});
 const button=(page,name)=>page.getByRole('button',{name,exact:true}).filter({visible:true});
 
+async function ensureSidebar(page,config){
+ const collapsed=button(page,'展开侧边栏');
+ if(await collapsed.count()!==1)return;
+ await waitStep(page,config);await collapsed.click();
+ try{await button(page,'收起侧边栏').waitFor({timeout:3000});}
+ catch{throw blocked('客户端侧边栏已隐藏，自动展开失败；请点击“展开侧边栏”后重试');}
+}
+
 // Explicit user policy: starting a NEW test permits clearing the current
 // unsent composer. This is separate from failure recovery's ownership rules.
 export async function initializeTestPage(page,{stepInterval=0.5,model='',managedSession=false,log=()=>{}}={}){
@@ -34,6 +42,7 @@ export async function initializeTestPage(page,{stepInterval=0.5,model='',managed
   }
  };
  await clear();await guard();
+ await ensureSidebar(page,config);
  const fresh=button(page,'新建任务');if(await fresh.count()!==1)throw blocked('未找到唯一新建任务入口');
  await waitStep(page,config);await fresh.click();
  await page.waitForURL(url=>!/\/session\/ses_[A-Za-z0-9]+(?:[/?#]|$)/.test(url.toString()),{timeout:10000});

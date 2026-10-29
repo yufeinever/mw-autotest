@@ -36,6 +36,17 @@ test('运行中任务、审批、准备中或弹窗阻塞初始化，不清空�
   await page.locator('#obstacle').evaluate(e=>e.remove());
  }
 });
+
+test('侧边栏隐藏时先自动展开，再进入新建任务',async t=>{
+ const page=await setup(t);
+ await page.evaluate(()=>{
+  const toggle=document.createElement('button');toggle.setAttribute('aria-label','展开侧边栏');
+  toggle.onclick=()=>{toggle.setAttribute('aria-label','收起侧边栏');};document.body.prepend(toggle);
+ });
+ await initializeTestPage(page,{stepInterval:0.1});
+ assert.equal(await page.getByRole('button',{name:'收起侧边栏',exact:true}).count(),1);
+ assert.equal(await page.evaluate(()=>window.newCount),1);
+});
 test('已确认失败页返回编辑；调度内并行会话可离开但不点击停止',async t=>{
  const page=await setup(t);
  await page.evaluate(()=>{document.querySelector('[contenteditable]').hidden=true;const e=document.createElement('section');e.id='failed';e.innerHTML='工作区准备失败<button onclick="document.querySelector(\'[contenteditable]\').hidden=false;this.parentElement.remove()">返回编辑</button>';document.body.append(e);});
