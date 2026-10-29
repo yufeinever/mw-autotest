@@ -59,7 +59,7 @@ try{
  browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
  const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
  if(pages.length!==1)block('MobileWork主界面数量不是1');
- page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:runConfig.stepInterval});await capture('连接客户端');
+ page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:runConfig.stepInterval,model:runConfig.model});await capture('连接客户端');
  const build=JSON.parse(await fs.readFile(testEnvironment.buildInfoPath,'utf8'));
  await fs.writeFile(path.join(dir,'环境.json'),JSON.stringify({version:build.version,productVersion:build.productVersion,packagedCdpAllowed:build.packagedCdpAllowed,port,timezone:'Asia/Shanghai'},null,2));
  if(resumeId&&!page.url().endsWith('/session/'+resumeId))block('续跑ID与当前会话不一致');

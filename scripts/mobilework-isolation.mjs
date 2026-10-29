@@ -2,6 +2,8 @@ import {waitStep} from './mobilework-run-policy.mjs';
 import {readComposerState,normalizeComposerText,clearComposerText} from './mobilework-composer.mjs';
 
 export const editorOf=page=>page.locator('[contenteditable="true"]').filter({visible:true});
+// Read-only inspection must also see a composer disabled by model availability.
+export const composerFieldOf=page=>page.locator('[data-lexical-editor="true"],[contenteditable="true"]').filter({visible:true});
 export const selectionState=page=>page.locator('[data-composer-toolbar-item]').filter({visible:true}).locator('[role="button"][aria-label^="退出"]').evaluateAll(es=>es.map(e=>({item:e.closest('[data-composer-toolbar-item]').getAttribute('data-composer-toolbar-item'),exit:e.getAttribute('aria-label')})));
 export async function snapshotDraft(page,editor=editorOf(page)){
  return {url:page.url(),...await readComposerState(editor),selection:await selectionState(page),previousSelection:[]};
@@ -52,7 +54,7 @@ export async function clearOwnedDraft(page,owned,{stepInterval=0.5}={}){
 export async function inspectPageHandoff(page,{owned,allowRunning=false,allowedSelection=[],stepInterval=0.5}={}){
  const dialogs=page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true});
  if(await dialogs.count())return {ready:false,reason:'客户端仍有弹窗，未操作未知弹窗'};
- const editor=editorOf(page);
+ const editor=composerFieldOf(page);
  if(await editor.count()>1)return {ready:false,reason:'输入框不唯一'};
  if(await editor.count()){
   let state=await readComposerState(editor);

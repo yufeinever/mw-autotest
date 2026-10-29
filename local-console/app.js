@@ -273,7 +273,7 @@ var batchResultClass = (status) => ["FAIL", "BLOCKED", "STOPPED", "INTERRUPTED"]
 var assertionRate = (checks) => checks.total ? `${checks.passed}/${checks.total}\uFF08${Math.round(100 * checks.passed / checks.total)}%\uFF09` : "\u2014";
 var batchDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "\u2014";
 batchLabels.QUEUED = "\u6392\u961F\u4E2D";
-var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", CHECKING_CONNECTION: "\u68C0\u67E5\u8FDE\u63A5", WAITING_CONNECTION: "\u7B49\u5F85\u8FDE\u63A5", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINALIZING: "\u6536\u5C3E\u4E2D", STOPPING: "\u505C\u6B62\u4E2D", FINISHED: "\u5DF2\u7ED3\u675F" };
+var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", CHECKING_CONNECTION: "\u68C0\u67E5\u8FDE\u63A5", WAITING_CONNECTION: "\u7B49\u5F85\u8FDE\u63A5", WAITING_CLIENT: "\u7B49\u5F85\u5BA2\u6237\u7AEF\u51C6\u5907", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINALIZING: "\u6536\u5C3E\u4E2D", STOPPING: "\u505C\u6B62\u4E2D", FINISHED: "\u5DF2\u7ED3\u675F" };
 function publicJob({ log, ownedDraft, releasedDraft, ...job }) {
   return { ...job, sessionId: job.result?.sessionId || job.sessionId || log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1] };
 }
@@ -1020,6 +1020,7 @@ if (traceId) {
     return e;
   }, connectionText = function(c) {
     if (c.busy) return "\u4EFB\u52A1\u6267\u884C\u6216\u6536\u5C3E\u4E2D\uFF0C\u6682\u4E0D\u91CD\u590D\u68C0\u67E5\u8FDE\u63A5\u3002";
+    if (c.preparationError) return "\u8FDE\u63A5" + (c.connected ? "\u53EF\u7528" : "\u4E0D\u53EF\u7528") + "\uFF0C\u4F46\u5BA2\u6237\u7AEF\u51C6\u5907\u5931\u8D25\uFF1A" + c.preparationError + "\uFF1B\u5904\u7406\u540E\u70B9\u51FB\u201C\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5\u201D\u91CD\u8BD5\u3002";
     if (c.connected) return c.paused ? "\u8FDE\u63A5\u68C0\u67E5\u901A\u8FC7\uFF0C\u961F\u5217\u4ECD\u6682\u505C\uFF1B\u70B9\u51FB\u201C\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5\u201D\u7EE7\u7EED\u3002" : "\u5DF2\u901A\u8FC7\u8FDE\u63A5\u548C\u4E3B\u9875\u9762\u54CD\u5E94\u68C0\u67E5\uFF0C\u53EF\u6267\u884C\u6D4B\u8BD5\u3002";
     return c.connectionError || c.error || "\u8FDE\u63A5\u4E0D\u53EF\u7528\uFF0C\u8BF7\u6253\u5F00 MobileWork \u540E\u70B9\u51FB\u201C\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5\u201D\u3002";
   }, resultClass = function(status) {
@@ -1241,7 +1242,7 @@ if (traceId) {
       $("#enableCdp").disabled = cdpBusy || c.restarting || c.allowed !== false || !!state?.active || state?.readingModels;
       $("#restartCdp").disabled = cdpBusy || c.restarting || !!state?.active || state?.readingModels || c.allowed === null;
       $("#cdpConnection").textContent = `CDP \u7AEF\u53E3 ${c.port}\uFF1A${connectionText(c)}`;
-      $("#cdpConnection").className = c.busy ? "hint" : c.connected ? "result-pass" : "result-fail";
+      $("#cdpConnection").className = c.busy ? "hint" : c.connected && !c.preparationError ? "result-pass" : "result-fail";
     } catch (e) {
       $("#cdpState").textContent = e.message;
       $("#cdpState").className = "result-fail";
@@ -1332,7 +1333,7 @@ if (traceId) {
       syncCustom();
       initialized = true;
     }
-    $("#connection").textContent = state.jobs.some((j) => j.status === "RUNNING") ? "\u811A\u672C\u6267\u884C\u4E2D" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CONNECTION") ? "\u7B49\u5F85 MobileWork \u8FDE\u63A5" : state.active ? "\u811A\u672C\u6392\u961F\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
+    $("#connection").textContent = state.jobs.some((j) => j.status === "RUNNING") ? "\u811A\u672C\u6267\u884C\u4E2D" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CLIENT") ? "\u7B49\u5F85\u5BA2\u6237\u7AEF\u51C6\u5907" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CONNECTION") ? "\u7B49\u5F85 MobileWork \u8FDE\u63A5" : state.active ? "\u811A\u672C\u6392\u961F\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
     $("#models").disabled = !!state.active || state.readingModels;
     if (state.capabilities?.taskIsolation !== 2) batchNotice("\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF1A\u8BF7\u5148\u5173\u95ED\u65E7\u63A7\u5236\u53F0\u670D\u52A1\uFF0C\u518D\u8FD0\u884C\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\uFF1B\u4EC5\u5237\u65B0\u9875\u9762\u4E0D\u80FD\u5347\u7EA7\u670D\u52A1\u3002", true);
     if (state.capabilities?.serialOnly !== 1) batchNotice("\u4E32\u884C\u8C03\u5EA6\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u4EFB\u52A1\u7A7A\u95F2\u540E\u91CD\u542F\u63A7\u5236\u53F0\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\u3002", true);

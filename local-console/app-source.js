@@ -33,12 +33,13 @@ function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefine
 let cdpBusy=false,cdpRefreshing=false;
 function connectionText(c){
  if(c.busy)return '任务执行或收尾中，暂不重复检查连接。';
+ if(c.preparationError)return '连接'+(c.connected?'可用':'不可用')+'，但客户端准备失败：'+c.preparationError+'；处理后点击“检查连接 / 重新连接”重试。';
  if(c.connected)return c.paused?'连接检查通过，队列仍暂停；点击“检查连接 / 重新连接”继续。':'已通过连接和主页面响应检查，可执行测试。';
  return c.connectionError||c.error||'连接不可用，请打开 MobileWork 后点击“检查连接 / 重新连接”。';
 }
 async function refreshCdp(){
  if(cdpRefreshing||cdpBusy)return;cdpRefreshing=true;$('#refreshCdp').disabled=true;
- try{const c=await api('/api/cdp-config');$('#cdpState').textContent=`客户端 ${c.version||'未知'} · packagedCdpAllowed=${c.allowed}（${c.allowed?'配置已开启':'未开启，自动化连接可能阻塞'}）`;$('#cdpState').className=c.allowed===true?'result-pass':'result-fail';$('#enableCdp').disabled=cdpBusy||c.restarting||c.allowed!==false||!!state?.active||state?.readingModels;$('#restartCdp').disabled=cdpBusy||c.restarting||!!state?.active||state?.readingModels||c.allowed===null;$('#cdpConnection').textContent=`CDP 端口 ${c.port}：${connectionText(c)}`;$('#cdpConnection').className=c.busy?'hint':c.connected?'result-pass':'result-fail';}
+ try{const c=await api('/api/cdp-config');$('#cdpState').textContent=`客户端 ${c.version||'未知'} · packagedCdpAllowed=${c.allowed}（${c.allowed?'配置已开启':'未开启，自动化连接可能阻塞'}）`;$('#cdpState').className=c.allowed===true?'result-pass':'result-fail';$('#enableCdp').disabled=cdpBusy||c.restarting||c.allowed!==false||!!state?.active||state?.readingModels;$('#restartCdp').disabled=cdpBusy||c.restarting||!!state?.active||state?.readingModels||c.allowed===null;$('#cdpConnection').textContent=`CDP 端口 ${c.port}：${connectionText(c)}`;$('#cdpConnection').className=c.busy?'hint':c.connected&&!c.preparationError?'result-pass':'result-fail';}
  catch(e){$('#cdpState').textContent=e.message;$('#cdpState').className='result-fail';$('#enableCdp').disabled=true;}
  finally{cdpRefreshing=false;if(!cdpBusy)$('#refreshCdp').disabled=false;}
 }
@@ -60,7 +61,7 @@ $('#enableCdp').onclick=async()=>{cdpBusy=true;$('#enableCdp').disabled=true;try
 async function refresh(){
  state=await api('/api/state');token=state.token;
  if(!initialized){const c=state.config;$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;const v=c.recording||{};$('#recordingEnabled').checked=v.enabled??true;$('#recordingResolution').value=v.resolution||'960x540';$('#recordingFps').value=v.fps||30;$('#recordingBitrate').value=v.bitrateKbps||600;$('#recordingMaxSeconds').value=v.maxSeconds||180;syncRecording();if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
- $('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
+ $('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CLIENT')?'等待客户端准备':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
  if(state.capabilities?.taskIsolation!==2)batchNotice('任务隔离升级尚未加载：请先关闭旧控制台服务，再运行“启动测试平台.cmd”，仍使用18888端口；仅刷新页面不能升级服务。',true);
  if(state.capabilities?.serialOnly!==1)batchNotice('串行调度升级尚未加载，请在任务空闲后重启控制台，仍使用18888端口。',true);
  renderScripts();

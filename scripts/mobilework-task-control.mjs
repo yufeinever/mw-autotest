@@ -3,6 +3,7 @@ import {readSessionLog} from '../local-console/session-log.mjs';
 import {handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
 import {PermissionEvents} from './mobilework-permission-events.mjs';
 import {initializeTestPage} from './mobilework-initialize.mjs';
+import {composerFieldOf} from './mobilework-isolation.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 export function createTaskControl({log=()=>{},url=process.env.MW_TASK_CONTROL_URL,token=process.env.MW_TASK_CONTROL_TOKEN}={}){
@@ -27,16 +28,21 @@ export class TaskControl {
   if(!this.held)return;
   await this.call('release',{url:page.url(),sessionId:this.sessionId,phase,...(this.connection?{runtime:this.connection}:{})});this.held=false;
  }
- async begin(page,{openComposer=true,stepInterval=0.5}={}){
+ async begin(page,{openComposer=true,stepInterval=0.5,model=''}={}){
   await this.acquire(page,'PREPARING');
   await this.call('checkpoint',{protocol:2});
   if(openComposer){
    const owned=/\/session\/ses_[A-Za-z0-9]+$/.test(page.url())?await this.call('is-managed',{url:page.url()}):{managed:false};
-   await initializeTestPage(page,{stepInterval,managedSession:owned.managed,log:this.log});
+   try{await initializeTestPage(page,{stepInterval,model,managedSession:owned.managed,log:this.log});}
+   catch(error){
+    const reason=String(error.message||error).split(/\r?\n/)[0].slice(0,400);
+    await this.call('checkpoint',{preparationError:reason}).catch(()=>{});
+    throw error;
+   }
   }
  }
  async assertNoDraft(page){
-  const drafts=page.locator('[contenteditable="true"]').filter({visible:true});
+  const drafts=composerFieldOf(page);
   for(let i=0;i<await drafts.count();i++)if((await drafts.nth(i).innerText()).trim())throw blocked('当前有未发送草稿，保留草稿，不切换页面');
  }
  async checkpointDraft(owned){

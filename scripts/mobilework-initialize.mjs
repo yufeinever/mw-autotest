@@ -1,13 +1,13 @@
 import {editorOf,snapshotDraft,clearOwnedDraft,selectionState,inspectPageHandoff} from './mobilework-isolation.mjs';
 import {readComposerState} from './mobilework-composer.mjs';
-import {waitStep} from './mobilework-run-policy.mjs';
+import {waitStep,selectModel,modelTrigger} from './mobilework-run-policy.mjs';
 
 const blocked=message=>Object.assign(Error('执行前初始化失败：'+message),{blocked:true});
 const button=(page,name)=>page.getByRole('button',{name,exact:true}).filter({visible:true});
 
 // Explicit user policy: starting a NEW test permits clearing the current
 // unsent composer. This is separate from failure recovery's ownership rules.
-export async function initializeTestPage(page,{stepInterval=0.5,managedSession=false,log=()=>{}}={}){
+export async function initializeTestPage(page,{stepInterval=0.5,model='',managedSession=false,log=()=>{}}={}){
  const config={stepInterval};
  const guard=async()=>{
   if(await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())throw blocked('仍有弹窗，请先处理当前交互');
@@ -19,7 +19,7 @@ export async function initializeTestPage(page,{stepInterval=0.5,managedSession=f
  await guard();log('执行前初始化','进入新建任务，清空未发送输入及技能、专家选择');
  if((await page.locator('body').innerText()).includes('工作区准备失败')){
   const back=button(page,'返回编辑');if(await back.count()!==1)throw blocked('工作区失败页没有唯一返回编辑入口');
-  await waitStep(page,config);await back.click();await editorOf(page).waitFor({timeout:5000});await guard();
+  await waitStep(page,config);await back.click();await page.locator('[data-lexical-editor="true"],[contenteditable="true"]').filter({visible:true}).waitFor({timeout:5000});await guard();
  }
  const clear=async()=>{
   await guard();const editor=editorOf(page);
@@ -38,7 +38,27 @@ export async function initializeTestPage(page,{stepInterval=0.5,managedSession=f
  await waitStep(page,config);await fresh.click();
  await page.waitForURL(url=>!/\/session\/ses_[A-Za-z0-9]+(?:[/?#]|$)/.test(url.toString()),{timeout:10000});
  await button(page,'日常办公').first().waitFor({timeout:10000});
- await editorOf(page).waitFor({timeout:10000});
+ await guard();
+ // MobileWork disables its Lexical editor while no usable model is selected.
+ // Select through the real model menu before waiting for contenteditable=true.
+ // Never force-enable the DOM or silently substitute another model.
+ if(model){
+  try{await selectModel(page,model,{stepInterval});log('初始化模型已核对',model);}
+  catch(error){
+   // Only dismiss the model list opened here; leave approval/dialogs intact.
+   if(await page.getByRole('listbox').filter({visible:true}).count()===1)await page.keyboard.press('Escape');
+   throw blocked('模型准备失败：'+String(error.message).split(/\r?\n/)[0]);
+  }
+ }else if(!await editorOf(page).count()){
+  const trigger=await modelTrigger(page).catch(()=>null);
+  if(trigger&&/请选择模型|未选择模型/.test((await trigger.getAttribute('aria-label')||'')+(await trigger.innerText())))throw blocked('客户端未选择模型；请在测试台选择当前可用模型，或先在客户端选好模型后再执行');
+ }
+ try{await editorOf(page).waitFor({timeout:10000});}
+ catch{
+  await guard();
+  const disabled=page.locator('[data-lexical-editor="true"][contenteditable="false"]').filter({visible:true});
+  throw blocked(await disabled.count()?'客户端输入框仍被禁用，请检查模型可用性和工作空间准备状态；未强制开启输入框':'未找到唯一可编辑的任务输入框，请检查客户端页面是否加载完成');
+ }
  // A client's new-task screen may restore its own saved draft.
  managedSession=false;await clear();
  const ready=await inspectPageHandoff(page);

@@ -107,6 +107,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  };
  const requireConnection=async config=>{
   const port=config.cdpPort;
+  if(scheduler.renderer(port).preparationError)throw Error('客户端准备失败，队列已暂停：'+scheduler.renderer(port).preparationError+'；处理后点击“检查连接 / 重新连接”继续。');
   if(scheduler.renderer(port).connectionError)throw Error('MobileWork连接中断，队列已暂停；请点击“检查连接 / 重新连接”后继续。');
   // While a managed task is running, do not attach an extra inspection client.
   // Every queued entry will still run a fresh check when it takes its turn.
@@ -119,6 +120,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   for(const job of jobs.filter(j=>j.status==='QUEUED')){
    const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
    if(holders.length)job.queueHold=holders.map(j=>`${j.name}：${j.handoff?.reason||'客户端交接待恢复'}`).join('；');
+   else if(scheduler.renderer(job.config.cdpPort).preparationError)job.queueHold='客户端准备失败，等待处理后重试：'+scheduler.renderer(job.config.cdpPort).preparationError;
    else if(scheduler.renderer(job.config.cdpPort).connectionError)job.queueHold='连接不可用，等待重新连接：'+scheduler.renderer(job.config.cdpPort).connectionError;
    else delete job.queueHold;
   }
@@ -291,6 +293,10 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(action==='completed'){job.modelCompleted=true;job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});}
     if(action==='checkpoint'){
      if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
+     if(body.preparationError){
+      if(job.sessionId||job.submissionPending||typeof body.preparationError!=='string'||body.preparationError.length>400)throw Error('初始化失败登记无效');
+      job.preparationError=body.preparationError;scheduler.pausePreparation(job,body.preparationError);updateQueueHolds();
+     }
      if(body.continuing===true){job.modelCompleted=false;job.sessionSettled=false;}
      if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
      if(body.submitting)job.submissionPending=true;
@@ -385,13 +391,14 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='GET'&&url.pathname==='/api/cdp-config'){
     const port=state.config.cdpPort||9223,busy=editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING');
     const connection=busy?{...(connectionStates.get(port)||{connected:false,port}),busy:true}:await checkConnection(port,{cached:true});
-    return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,paused:Boolean(scheduler.renderer(port).connectionError),restarting:editingCdp});
+    const renderer=scheduler.renderer(port);
+    return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,preparationError:renderer.preparationError,paused:Boolean(renderer.connectionError||renderer.preparationError),restarting:editingCdp});
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-check'){
     if(editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING'))return send(409,{error:'正在执行或收尾，请等待完成后检查连接。'});
     const port=Number(body.port||state.config.cdpPort||9223),result=await checkConnection(port);
     if(result.connected&&body.resume===true)scheduler.resumeConnection(port);
-    updateQueueHolds();return send(200,{...result,paused:Boolean(scheduler.renderer(port).connectionError)});
+    updateQueueHolds();return send(200,{...result,preparationError:scheduler.renderer(port).preparationError,paused:Boolean(scheduler.renderer(port).connectionError||scheduler.renderer(port).preparationError)});
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/restart'){
     if(active.size||readingModels||editingCdp)return send(409,{error:'控制台正在执行操作，请结束后重试'});

@@ -4,13 +4,13 @@ import {isClientPageUrl} from './client-page.mjs';
 export class TaskScheduler {
  constructor({changed=()=>{}}={}){this.entries=[];this.renderers=new Map();this.locations=new Map();this.changed=changed;this.pumping=false;}
  renderer(port){if(!this.renderers.has(port))this.renderers.set(port,{owner:null,waiting:[],expectedUrl:null,unresolved:new Set()});return this.renderers.get(port);}
- enqueue(job,{cooperative=false,start}){this.locations.set(job.id,job.config.cdpPort);this.entries.push({job,cooperative,start,running:false,preparing:true});this.pump();}
+ enqueue(job,{cooperative=false,start}){this.locations.set(job.id,job.config.cdpPort);this.entries.push({job,cooperative,start,running:false,preparing:true});if(this.renderer(job.config.cdpPort).preparationError){job.phase='WAITING_CLIENT';this.changed(job);}this.pump();}
  pump(){
   if(this.pumping)return;this.pumping=true;
   try{for(const entry of this.entries){
    if(entry.running||entry.job.status!=='QUEUED')continue;
    const {job}=entry,port=job.config.cdpPort;
-   if(this.renderer(port).unresolved.size||this.renderer(port).connectionError)continue;
+   if(this.renderer(port).unresolved.size||this.renderer(port).connectionError||this.renderer(port).preparationError)continue;
    const earlier=this.entries.find(e=>!e.running&&e.job.status==='QUEUED'&&e.job.config.cdpPort===port);
    if(earlier!==entry)continue;
    if(this.entries.some(e=>e.running))continue;
@@ -28,10 +28,17 @@ export class TaskScheduler {
  }
  resumeConnection(port){
   delete this.renderer(port).connectionError;
+  delete this.renderer(port).preparationError;
   for(const {job} of this.entries.filter(e=>e.job.config.cdpPort===port&&e.job.status==='QUEUED')){
    delete job.connectionWait;delete job.queueHold;job.phase='QUEUED';this.changed(job);
   }
   this.pump();
+ }
+ pausePreparation(job,reason){
+  this.entry(job.id);this.renderer(job.config.cdpPort).preparationError=reason;
+  for(const {job:queued} of this.entries.filter(e=>e.job.config.cdpPort===job.config.cdpPort&&e.job.status==='QUEUED')){
+   queued.phase='WAITING_CLIENT';this.changed(queued);
+  }
  }
  nextStatus(id){
   return {ready:false,reason:'已取消并行执行，请等待当前用例及收尾完成'};
@@ -72,7 +79,7 @@ export class TaskScheduler {
   this.entries=this.entries.filter(e=>e!==entry);
   // Cancelling all queued work also ends its connection pause. A new batch
   // must perform a fresh probe instead of inheriting an abandoned queue.
-  if(!this.entries.some(e=>e.job.config.cdpPort===port))delete r.connectionError;
+  if(!this.entries.some(e=>e.job.config.cdpPort===port)){delete r.connectionError;delete r.preparationError;}
   // A URL is an ownership check only while this renderer still has managed
   // work. After the final confirmed completion/stop, a new run must inspect
   // the current page rather than inherit the previous run's navigation.

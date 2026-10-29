@@ -67,6 +67,7 @@
 !/local-console/finalization.test.mjs
 !/local-console/cdp-readiness.mjs
 !/local-console/cdp-readiness.test.mjs
+!/local-console/preparation.test.mjs
 !/local-console/style.css
 !/local-console/task-scheduler.mjs
 !/local-console/task-scheduler.test.mjs

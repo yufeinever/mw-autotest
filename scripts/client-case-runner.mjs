@@ -184,7 +184,7 @@ export async function runScenarioCase(number,inputConfig){
   browser=await chromium.connectOverCDP(endpoint,{timeout:15000});
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw blocked('MobileWork主界面数量不是1');
-  page=pages[0];page.setDefaultTimeout(10000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:config.stepInterval});await capture('连接客户端');
+  page=pages[0];page.setDefaultTimeout(10000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:config.stepInterval,model:config.model});await capture('连接客户端');
   if(checkOnly){await ensureIdleComposer(page);result='CHECKED';log('只读预检通过','未点击场景，未发送会话');}
   else{
    if(resumeId){

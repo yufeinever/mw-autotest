@@ -33,7 +33,7 @@ export async function runPermissionCase(number){
   if(definition.unavailable)throw blocked(definition.unavailable);
   if(!control)throw blocked('请从控制台调度执行权限用例，不绕过统一调度');
   browser=await chromium.connectOverCDP('http://127.0.0.1:'+config.cdpPort,{timeout:10000});page=uniqueClientPage(browser);page.setDefaultTimeout(8000);
-  await control.begin(page,{openComposer:!args.includes('--check'),stepInterval:config.stepInterval});
+  await control.begin(page,{openComposer:!args.includes('--check'),stepInterval:config.stepInterval,model:config.model});
   workspace=await readPermissionWorkspace(page,{allowedRoot:testEnvironment.taskRoot});
   log('工作空间已核对',workspace.name+'；'+workspace.directory+'；沿用输入区选择，不按名称强制切换');
   await capture('工作空间与准备状态');
