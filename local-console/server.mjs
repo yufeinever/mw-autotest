@@ -41,7 +41,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath,clientProbe=probeCdp}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -94,11 +94,32 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   recordingFinishes.set(job.id,finishing);return finishing;
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
+ const connectionChecks=new Map(),connectionStates=new Map();
+ const checkConnection=(port,{cached=false}={})=>{
+  if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
+  if(connectionChecks.has(port))return connectionChecks.get(port);
+  const previous=connectionStates.get(port);
+  if(cached&&previous&&Date.now()-Date.parse(previous.checkedAt)<10000)return Promise.resolve(previous);
+  const pending=Promise.resolve().then(()=>clientProbe(port)).catch(()=>({connected:false,error:'MobileWork连接检查失败，请重新连接。'})).then(result=>{
+   const current={...result,port,checkedAt:new Date().toISOString()};connectionStates.set(port,current);return current;
+  }).finally(()=>connectionChecks.delete(port));
+  connectionChecks.set(port,pending);return pending;
+ };
+ const requireConnection=async config=>{
+  const port=config.cdpPort;
+  if(scheduler.renderer(port).connectionError)throw Error('MobileWork连接中断，队列已暂停；请点击“检查连接 / 重新连接”后继续。');
+  // While a managed task is running, do not attach an extra inspection client.
+  // Every queued entry will still run a fresh check when it takes its turn.
+  if(jobs.some(j=>j.status==='RUNNING'))return;
+  const result=await checkConnection(port);
+  if(!result.connected)throw Error(result.error||'MobileWork连接不可用，请重新连接。');
+ };
  const recovering=new Map();
  const updateQueueHolds=()=>{
   for(const job of jobs.filter(j=>j.status==='QUEUED')){
    const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
    if(holders.length)job.queueHold=holders.map(j=>`${j.name}：${j.handoff?.reason||'客户端交接待恢复'}`).join('；');
+   else if(scheduler.renderer(job.config.cdpPort).connectionError)job.queueHold='连接不可用，等待重新连接：'+scheduler.renderer(job.config.cdpPort).connectionError;
    else delete job.queueHold;
   }
  };
@@ -278,7 +299,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
    if(recordingFolder&&((req.method==='GET'&&recordingFolder[2]==='locations')||(req.method==='POST'&&recordingFolder[2]==='folder'))){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -345,6 +366,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='POST'&&unlocking)return send(409,{error:'正在解除调度锁，请稍后再试'});
    if(req.method==='POST'&&url.pathname==='/api/batches'){
     if(readingModels||editingCdp)return send(409,{error:'正在读取模型或重启客户端，请等待完成'});
+    await requireConnection(normalizeConfig(body.config));
     const batch=await createBatch(body);return send(201,{id:batch.id});
    }
    const batchMatch=url.pathname.match(/^\/api\/batches\/([\w-]+)(\/complete)?$/);
@@ -360,7 +382,17 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     await writeBatch(batch);return send(200,{id:batch.id});
    }
    if(req.method==='POST'&&url.pathname==='/api/config'){state.config=normalizeConfig(body);await persist();return send(200,state.config);}
-   if(req.method==='GET'&&url.pathname==='/api/cdp-config')return send(200,{...await readCdpConfig(cdpConfigFile),...await probeCdp(state.config.cdpPort||9223),restarting:editingCdp});
+   if(req.method==='GET'&&url.pathname==='/api/cdp-config'){
+    const port=state.config.cdpPort||9223,busy=editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING');
+    const connection=busy?{...(connectionStates.get(port)||{connected:false,port}),busy:true}:await checkConnection(port,{cached:true});
+    return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,paused:Boolean(scheduler.renderer(port).connectionError),restarting:editingCdp});
+   }
+   if(req.method==='POST'&&url.pathname==='/api/cdp-check'){
+    if(editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING'))return send(409,{error:'正在执行或收尾，请等待完成后检查连接。'});
+    const port=Number(body.port||state.config.cdpPort||9223),result=await checkConnection(port);
+    if(result.connected&&body.resume===true)scheduler.resumeConnection(port);
+    updateQueueHolds();return send(200,{...result,paused:Boolean(scheduler.renderer(port).connectionError)});
+   }
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/restart'){
     if(active.size||readingModels||editingCdp)return send(409,{error:'控制台正在执行操作，请结束后重试'});
     editingCdp=true;
@@ -417,6 +449,8 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      if(!Array.isArray(runArgs)||runArgs.length>1||runArgs.some(a=>typeof a!=='string'||!/^--(?:check|fill-check|resume=ses_[A-Za-z0-9]+)$/.test(a))||runArgs.length&&!info.cooperative)throw Error('脚本执行参数无效');
      if(!info.integrated)throw Error('此脚本尚未接入参数协议，请先读取 MW_TEST_CONFIG_JSON 再执行');
      const config=normalizeConfig(body.config);
+     if(!body.batchId)await requireConnection(config);
+     else if(scheduler.renderer(config.cdpPort).connectionError)throw Error('MobileWork连接不可用，批次暂停，请重新连接后继续。');
      const savedConfig=safeConfig(config);
      if(body.batchId){batch=batches.find(b=>b.id===body.batchId);if(!batch)throw Error('执行批次不存在');if(batch.submission!=='SUBMITTING')throw Error('批次提交已结束，不得追加执行');if(!batch.scripts.some(s=>s.scriptId===item.id))throw Error('脚本不属于本执行批次');if(JSON.stringify(batch.config)!==JSON.stringify(savedConfig))throw Error('本次参数与批次参数快照不一致');}
      else{batch=await createBatch({scriptIds:[item.id],mode:'single',config});automaticBatch=true;}
@@ -433,6 +467,15 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      try{
      await writeJob(job);
      if(job.stopRequested||job.status!=='RUNNING')return;
+     job.phase='CHECKING_CONNECTION';await writeJob(job);
+     const connection=await checkConnection(config.cdpPort);
+     if(job.stopRequested||job.status!=='RUNNING')return;
+     if(!connection.connected){
+      scheduler.waitForConnection(job,connection.error||'MobileWork连接不可用，请重新连接');
+      const line='\n['+new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date())+'] 执行前连接检查失败：'+job.connectionWait.reason+'；脚本和录像未启动，等待重新连接。\n';
+      append(job,line);await fs.appendFile(path.join(jobDir,'执行日志.txt'),line);await writeJob(job);updateQueueHolds();return;
+     }
+     job.phase='PREPARING';await writeJob(job);
      if(config.recording.enabled&&!runArgs.includes('--check')){
       const pending=recorderFactory({config:config.recording,directory:path.join(dataDir,'recordings',job.id),cdpPort:config.cdpPort,onChange:async metadata=>{
        const previous=job.recording?.status;job.recording={...metadata,storage:'recordings'};

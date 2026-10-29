@@ -273,7 +273,7 @@ var batchResultClass = (status) => ["FAIL", "BLOCKED", "STOPPED", "INTERRUPTED"]
 var assertionRate = (checks) => checks.total ? `${checks.passed}/${checks.total}\uFF08${Math.round(100 * checks.passed / checks.total)}%\uFF09` : "\u2014";
 var batchDate = (value) => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "\u2014";
 batchLabels.QUEUED = "\u6392\u961F\u4E2D";
-var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINALIZING: "\u6536\u5C3E\u4E2D", STOPPING: "\u505C\u6B62\u4E2D", FINISHED: "\u5DF2\u7ED3\u675F" };
+var phaseLabels = { QUEUED: "\u6392\u961F\u4E2D", CHECKING_CONNECTION: "\u68C0\u67E5\u8FDE\u63A5", WAITING_CONNECTION: "\u7B49\u5F85\u8FDE\u63A5", PREPARING: "\u63D0\u4EA4\u4EFB\u52A1", WAITING_MODEL: "\u7B49\u5F85\u6A21\u578B", INTERACTING: "\u5904\u7406\u4EA4\u4E92", EVIDENCE: "\u8BB0\u5F55\u622A\u56FE", VERIFYING: "\u6838\u9A8C\u7ED3\u679C", FINALIZING: "\u6536\u5C3E\u4E2D", STOPPING: "\u505C\u6B62\u4E2D", FINISHED: "\u5DF2\u7ED3\u675F" };
 function publicJob({ log, ownedDraft, releasedDraft, ...job }) {
   return { ...job, sessionId: job.result?.sessionId || job.sessionId || log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1] };
 }
@@ -922,7 +922,7 @@ async function showBatch(id) {
         tr.dataset.jobId = job?.id || "";
         const name = el("td", entry.name);
         name.title = entry.path || "";
-        tr.append(el("td", String(entry.number).padStart(2, "0")), name, el("td", job ? batchDate(job.startedAt) + "\n" + batchDate(job.endedAt) : "\u2014"), el("td", (batchLabels[status] || status) + (status === "RUNNING" && job.phase ? "\n" + (phaseLabels[job.phase] || job.phase) : ""), batchResultClass(status)));
+        tr.append(el("td", String(entry.number).padStart(2, "0")), name, el("td", job ? batchDate(job.startedAt) + "\n" + batchDate(job.endedAt) : "\u2014"), el("td", (batchLabels[status] || status) + (["RUNNING", "QUEUED"].includes(status) && job.phase ? "\n" + (phaseLabels[job.phase] || job.phase) : ""), batchResultClass(status)));
         const checks = job?.result?.checks || [], rate = el("td", assertionRate({ total: checks.length, passed: checks.filter((c2) => c2.pass === true).length }));
         if (checks.some((c2) => c2.pass !== true)) rate.className = "result-fail";
         tr.append(rate);
@@ -1018,6 +1018,10 @@ if (traceId) {
     if (text !== void 0) e.textContent = text;
     if (cls) e.className = cls;
     return e;
+  }, connectionText = function(c) {
+    if (c.busy) return "\u4EFB\u52A1\u6267\u884C\u6216\u6536\u5C3E\u4E2D\uFF0C\u6682\u4E0D\u91CD\u590D\u68C0\u67E5\u8FDE\u63A5\u3002";
+    if (c.connected) return c.paused ? "\u8FDE\u63A5\u68C0\u67E5\u901A\u8FC7\uFF0C\u961F\u5217\u4ECD\u6682\u505C\uFF1B\u70B9\u51FB\u201C\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5\u201D\u7EE7\u7EED\u3002" : "\u5DF2\u901A\u8FC7\u8FDE\u63A5\u548C\u4E3B\u9875\u9762\u54CD\u5E94\u68C0\u67E5\uFF0C\u53EF\u6267\u884C\u6D4B\u8BD5\u3002";
+    return c.connectionError || c.error || "\u8FDE\u63A5\u4E0D\u53EF\u7528\uFF0C\u8BF7\u6253\u5F00 MobileWork \u540E\u70B9\u51FB\u201C\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5\u201D\u3002";
   }, resultClass = function(status) {
     return ["FAIL", "BLOCKED", "STOPPED", "INTERRUPTED"].includes(status) ? "result-fail" : ["PASS", "CHECKED", "RESUMED"].includes(status) ? "result-pass" : "";
   }, batchNotice = function(text, error = false) {
@@ -1070,7 +1074,7 @@ if (traceId) {
         locked.title = "\u81EA\u52A8\u5316\u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u52FF\u624B\u52A8\u64CD\u4F5C MobileWork";
         name.append(locked);
       }
-      const status = el2("td"), statusText = job ? job.status === "RUNNING" && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
+      const status = el2("td"), statusText = job ? ["RUNNING", "QUEUED"].includes(job.status) && job.phase ? phaseLabels[job.phase] || labels[job.status] : labels[job.status] || job.status : "\u672A\u6267\u884C";
       status.append(el2("span", statusText, "script-status " + resultClass(job?.status)));
       if (job?.finalizing && job.cleanupStage) status.append(el2("small", job.cleanupStage));
       if (job?.recording?.status === "RECORDING") status.append(el2("small", "\u25CF \u5F55\u5236\u4E2D"));
@@ -1225,23 +1229,52 @@ if (traceId) {
   });
   for (const id of ["recordingEnabled", "recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).addEventListener("input", syncRecording);
   document.querySelectorAll("[name=question]").forEach((e) => e.onchange = syncCustom);
-  let cdpBusy = false;
+  let cdpBusy = false, cdpRefreshing = false;
   async function refreshCdp() {
+    if (cdpRefreshing || cdpBusy) return;
+    cdpRefreshing = true;
+    $("#refreshCdp").disabled = true;
     try {
       const c = await api("/api/cdp-config");
-      $("#cdpState").textContent = c.error || `\u5BA2\u6237\u7AEF ${c.version} \xB7 packagedCdpAllowed=${c.allowed}\uFF08${c.allowed ? "\u914D\u7F6E\u5DF2\u5F00\u542F" : "\u672A\u5F00\u542F\uFF0C\u81EA\u52A8\u5316\u8FDE\u63A5\u53EF\u80FD\u963B\u585E"}\uFF09`;
+      $("#cdpState").textContent = `\u5BA2\u6237\u7AEF ${c.version || "\u672A\u77E5"} \xB7 packagedCdpAllowed=${c.allowed}\uFF08${c.allowed ? "\u914D\u7F6E\u5DF2\u5F00\u542F" : "\u672A\u5F00\u542F\uFF0C\u81EA\u52A8\u5316\u8FDE\u63A5\u53EF\u80FD\u963B\u585E"}\uFF09`;
       $("#cdpState").className = c.allowed === true ? "result-pass" : "result-fail";
       $("#enableCdp").disabled = cdpBusy || c.restarting || c.allowed !== false || !!state?.active || state?.readingModels;
       $("#restartCdp").disabled = cdpBusy || c.restarting || !!state?.active || state?.readingModels || c.allowed === null;
-      $("#cdpConnection").textContent = `CDP \u7AEF\u53E3 ${c.port}\uFF1A${c.connected ? "\u5DF2\u8FDE\u63A5 MobileWork \u4E3B\u754C\u9762\uFF0C\u53EF\u6267\u884C\u6D4B\u8BD5" : "\u672A\u8FDE\u63A5\uFF0C\u8BF7\u70B9\u51FB\u4E00\u952E\u542F\u7528\u5E76\u91CD\u542F"}`;
-      $("#cdpConnection").className = c.connected ? "result-pass" : "result-fail";
+      $("#cdpConnection").textContent = `CDP \u7AEF\u53E3 ${c.port}\uFF1A${connectionText(c)}`;
+      $("#cdpConnection").className = c.busy ? "hint" : c.connected ? "result-pass" : "result-fail";
     } catch (e) {
       $("#cdpState").textContent = e.message;
       $("#cdpState").className = "result-fail";
       $("#enableCdp").disabled = true;
+    } finally {
+      cdpRefreshing = false;
+      if (!cdpBusy) $("#refreshCdp").disabled = false;
     }
   }
-  $("#refreshCdp").onclick = refreshCdp;
+  $("#refreshCdp").textContent = "\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5";
+  $("#refreshCdp").title = "\u91CD\u65B0\u5EFA\u7ACB\u68C0\u67E5\u8FDE\u63A5\u5E76\u9A8C\u8BC1\u4E3B\u9875\u9762\uFF1B\u901A\u8FC7\u540E\u7EE7\u7EED\u7B49\u5F85\u8FDE\u63A5\u7684\u961F\u5217\uFF0C\u4E0D\u91CD\u542F\u5BA2\u6237\u7AEF";
+  $("#refreshCdp").onclick = async () => {
+    if (cdpBusy || cdpRefreshing) return;
+    cdpBusy = true;
+    $("#refreshCdp").disabled = true;
+    $("#cdpMessage").textContent = "\u6B63\u5728\u5EFA\u7ACB\u8FDE\u63A5\u5E76\u68C0\u67E5\u4E3B\u9875\u9762\u54CD\u5E94\u2026";
+    try {
+      const result = await api("/api/cdp-check", { port: Number($("#cdpPort").value), resume: true });
+      const message = result.connected ? "\u8FDE\u63A5\u68C0\u67E5\u901A\u8FC7\uFF0C\u7B49\u5F85\u8FDE\u63A5\u7684\u961F\u5217\u5DF2\u5141\u8BB8\u7EE7\u7EED\u3002" : result.error;
+      $("#cdpMessage").textContent = message;
+      $("#cdpConnection").textContent = `CDP \u7AEF\u53E3 ${result.port}\uFF1A${connectionText(result)}`;
+      $("#cdpConnection").className = result.connected ? "result-pass" : "result-fail";
+      notice(message, !result.connected);
+      await refresh();
+    } catch (error) {
+      $("#cdpMessage").textContent = error.message;
+      notice(error.message, true);
+    } finally {
+      cdpBusy = false;
+      $("#refreshCdp").disabled = false;
+      await refreshCdp();
+    }
+  };
   $("#restartCdp").onclick = async () => {
     cdpBusy = true;
     $("#restartCdp").disabled = true;
@@ -1299,7 +1332,7 @@ if (traceId) {
       syncCustom();
       initialized = true;
     }
-    $("#connection").textContent = state.active ? "\u811A\u672C\u6267\u884C\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
+    $("#connection").textContent = state.jobs.some((j) => j.status === "RUNNING") ? "\u811A\u672C\u6267\u884C\u4E2D" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CONNECTION") ? "\u7B49\u5F85 MobileWork \u8FDE\u63A5" : state.active ? "\u811A\u672C\u6392\u961F\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
     $("#models").disabled = !!state.active || state.readingModels;
     if (state.capabilities?.taskIsolation !== 2) batchNotice("\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF1A\u8BF7\u5148\u5173\u95ED\u65E7\u63A7\u5236\u53F0\u670D\u52A1\uFF0C\u518D\u8FD0\u884C\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\uFF1B\u4EC5\u5237\u65B0\u9875\u9762\u4E0D\u80FD\u5347\u7EA7\u670D\u52A1\u3002", true);
     if (state.capabilities?.serialOnly !== 1) batchNotice("\u4E32\u884C\u8C03\u5EA6\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u4EFB\u52A1\u7A7A\u95F2\u540E\u91CD\u542F\u63A7\u5236\u53F0\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\u3002", true);
@@ -1380,6 +1413,10 @@ if (traceId) {
       batchNotice("\u5F53\u524D\u670D\u52A1\u5C1A\u672A\u52A0\u8F7D\u6267\u884C\u7B56\u7565\uFF0C\u8BF7\u4ECE\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\u6253\u5F00\u65B0\u7248\u63A7\u5236\u53F0\u540E\u6267\u884C\u3002", true);
       return;
     }
+    if (state.capabilities?.clientReadiness !== 1) {
+      batchNotice("\u8FDE\u63A5\u68C0\u67E5\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u7A7A\u95F2\u65F6\u91CD\u542F18888\u63A7\u5236\u53F0\uFF1B\u672A\u63D0\u4EA4\u4EFB\u52A1\u3002", true);
+      return;
+    }
     if (stopAllBusy || batchBusy || scripts.some((s) => pendingScripts.has(s.id))) return;
     const unavailable = scripts.filter((s) => !s.exists || !s.integrated);
     if (unavailable.length) {
@@ -1402,7 +1439,7 @@ if (traceId) {
     if (batch) batchBusy = true;
     for (const script of scripts) pendingScripts.add(script.id);
     renderScripts();
-    batchNotice(`${label}\uFF1A\u6B63\u5728\u63D0\u4EA4 0 / ${scripts.length} \u6761\u2026`);
+    batchNotice(`${label}\uFF1A\u6B63\u5728\u68C0\u67E5 MobileWork \u8FDE\u63A5\uFF0C\u68C0\u67E5\u901A\u8FC7\u540E\u52A0\u5165\u961F\u5217\u2026`);
     try {
       await api("/api/config", snapshot);
       checkCancelled();
@@ -1425,7 +1462,7 @@ if (traceId) {
       if (executionBatch) await api("/api/batches/" + executionBatch.id + "/complete", { error: e.message }).catch(() => {
       });
       if (generation === stopGeneration) {
-        const text = `${label}\u672A\u5168\u90E8\u63D0\u4EA4\uFF1A\u5DF2\u52A0\u5165\u961F\u5217 ${started} / ${scripts.length} \u6761\u3002${e.message}\uFF1B\u672A\u81EA\u52A8\u91CD\u8BD5\uFF0C\u8BF7\u6838\u5BF9\u6267\u884C\u6279\u6B21\u3002`;
+        const text = executionBatch ? `${label}\u672A\u5168\u90E8\u63D0\u4EA4\uFF1A\u5DF2\u52A0\u5165\u961F\u5217 ${started} / ${scripts.length} \u6761\u3002${e.message}\uFF1B\u672A\u81EA\u52A8\u91CD\u8BD5\uFF0C\u8BF7\u6838\u5BF9\u6267\u884C\u6279\u6B21\u3002` : `${label}\u672A\u5F00\u59CB\uFF1A${e.message} \u811A\u672C\u548C\u5F55\u50CF\u5C1A\u672A\u542F\u52A8\u3002`;
         batchNotice(text, true);
         notice(text, true);
       }

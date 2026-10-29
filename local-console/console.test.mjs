@@ -13,11 +13,11 @@ test('参数校验',()=>{assert.equal(normalizeConfig().approval,'once');assert.
 
 test('紧凑脚本表分页、跨页范围和全部执行、固定参数及部分提交失败',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-script-pagination-'));
- const {server,url}=await createConsole({port:0,dataDir:dir});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const scripts=Array.from({length:18},(_,i)=>({id:'script-'+(i+1),name:'分页脚本'+(i+1),path:'D:/测试脚本/case'+(i+1)+'.mjs',exists:true,integrated:true}));
-  const mock={token:'isolated-token',capabilities:{taskScheduling:1,taskIsolation:2,serialOnly:1},config:normalizeConfig(),scripts,jobs:[{id:'job-16',scriptId:'script-16',status:'RUNNING',pid:123}],active:1,readingModels:false};
+  const mock={token:'isolated-token',capabilities:{taskScheduling:1,taskIsolation:2,serialOnly:1,clientReadiness:1},config:normalizeConfig(),scripts,jobs:[{id:'job-16',scriptId:'script-16',status:'RUNNING',pid:123}],active:1,readingModels:false};
   const requests=[],stops=[];let failAt=0,holdNext=false,release,held;
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   // All client, configuration and run traffic is intercepted: no MobileWork tasks.
@@ -81,7 +81,7 @@ test('紧凑脚本表分页、跨页范围和全部执行、固定参数及部�
 
 test('页面、接口、脚本执行和报告',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-console-test-'));process.env.MW_FIXTURE_DIR=dir;
- const {server,url}=await createConsole({port:0,dataDir:dir,modelReader:async()=>({models:[{name:'mock-model',selected:true,disabled:false}]})});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir,modelReader:async()=>({models:[{name:'mock-model',selected:true,disabled:false}]})});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const state=await(await fetch(url+'/api/state')).json();

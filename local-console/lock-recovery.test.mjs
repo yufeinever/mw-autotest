@@ -42,7 +42,7 @@ test('强制停止释放已证失败任务锁，强制解锁取消队列并在�
   {id:'unknown',status:'BLOCKED',cooperative:true,isolationVersion:2,schedulingHold:true,submissionPending:true,ownedDraft:{url:'fixture',text:'原草稿',skills:[],selection:[]}},
   {id:'live',status:'BLOCKED',cooperative:true,isolationVersion:2,schedulingHold:true,pid:process.pid}];
  for(const j of records){const d=path.join(dir,'jobs',j.id);await fs.mkdir(d,{recursive:true});await fs.writeFile(path.join(d,'job.json'),JSON.stringify({...j,name:j.id,config,log:'',startedAt:'2026-10-21T08:03:20Z'}));}
- let app=await createConsole({port:0,dataDir:dir,recovery:async j=>({ready:failedBeforeSession(j),reason:'fixture'})});
+ let app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir,recovery:async j=>({ready:failedBeforeSession(j),reason:'fixture'})});
  t.after(async()=>{await new Promise(r=>app.server.close(r));await fs.rm(dir,{recursive:true,force:true});});
  let state=await(await fetch(app.url+'/api/state')).json();
  const post=(route,body)=>fetch(app.url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':state.token},body:JSON.stringify(body)});
@@ -51,11 +51,11 @@ test('强制停止释放已证失败任务锁，强制解锁取消队列并在�
  assert.equal((await post('/api/locks/release',{confirm:true,jobIds:['unknown','live']})).status,409);
  // End the fixture's live process claim without terminating any process.
  await new Promise(r=>app.server.close(r));const livePath=path.join(dir,'jobs/live/job.json');const live=JSON.parse(await fs.readFile(livePath));delete live.pid;await fs.writeFile(livePath,JSON.stringify(live));
- app=await createConsole({port:0,dataDir:dir,recovery:async()=>({ready:false,reason:'fixture'})});state=await(await fetch(app.url+'/api/state')).json();
+ app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir,recovery:async()=>({ready:false,reason:'fixture'})});state=await(await fetch(app.url+'/api/state')).json();
  const queued=await(await post('/api/run',{scriptId:state.scripts[0].id,config})).json();assert.ok(queued.id);
  assert.equal((await post('/api/locks/release',{confirm:true,jobIds:['unknown']})).status,409);
  const response=await post('/api/locks/release',{confirm:true,jobIds:['unknown','live']});assert.equal(response.status,200);const released=await response.json();assert.equal(released.cancelled,1);assert.equal(released.clientReady,false);assert.match(released.message,/客户端尚未就绪/);
  const audit=JSON.parse(await fs.readFile(path.join(dir,'jobs/unknown/job.json')));assert.equal(audit.ownedDraft,undefined);assert.equal(audit.releasedDraft.text,'原草稿');assert.equal(audit.forcedUnlock.previousSubmissionPending,true);assert.equal(audit.forcedUnlock.clientRecovery.ready,false);
  state=await(await fetch(app.url+'/api/state')).json();assert.equal(state.active,0);assert.equal(state.jobs.find(j=>j.id===queued.id).status,'STOPPED');assert.ok(state.jobs.find(j=>j.id==='unknown').forcedUnlock);assert.equal(state.jobs.find(j=>j.id==='unknown').status,'BLOCKED');
- await new Promise(r=>app.server.close(r));app=await createConsole({port:0,dataDir:dir,recovery:async()=>({ready:false})});state=await(await fetch(app.url+'/api/state')).json();assert.ok(state.jobs.every(j=>!j.schedulingHold));assert.equal(state.jobs.find(j=>j.id==='unknown').releasedDraft,undefined);
+ await new Promise(r=>app.server.close(r));app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir,recovery:async()=>({ready:false})});state=await(await fetch(app.url+'/api/state')).json();assert.ok(state.jobs.every(j=>!j.schedulingHold));assert.equal(state.jobs.find(j=>j.id==='unknown').releasedDraft,undefined);
 });

@@ -26,12 +26,12 @@ test('停止全部先清队列；失败会话继续报告失败，其他任务�
 
 test('批量提交期间停止全部，停止已提交任务且不再提交下一条',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-stop-all-submit-'));
- const {server,url}=await createConsole({port:0,dataDir:dir});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  let release;
  try{
   const scripts=Array.from({length:3},(_,i)=>({id:'script-'+i,name:'隔离脚本'+i,path:'D:/mock.mjs',exists:true,integrated:true}));
-  const state={token:'mock',capabilities:{taskScheduling:1,taskIsolation:2},config:normalizeConfig(),scripts,jobs:[],active:0};
+  const state={token:'mock',capabilities:{taskScheduling:1,taskIsolation:2,clientReadiness:1},config:normalizeConfig(),scripts,jobs:[],active:0};
   const page=await browser.newPage(),runs=[],stops=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
   let entered;const inFlight=new Promise(r=>entered=r);
   await page.route('**/api/**',async route=>{
@@ -62,7 +62,7 @@ test('批量提交期间停止全部，停止已提交任务且不再提交下�
 
 test('页面停止全部真实隔离脚本，排队任务不启动并保留停止日志',async()=>{
  const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-stop-all-process-'));
- const {server,url}=await createConsole({port:0,dataDir});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  const state=await(await fetch(url+'/api/state')).json();const ids=[];
  const post=async(route,body)=>{const r=await fetch(url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':state.token},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data;};

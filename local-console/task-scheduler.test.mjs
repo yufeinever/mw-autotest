@@ -69,7 +69,7 @@ console.log('READY '+sessionId);
 setInterval(()=>{},1000);
 `);
  const {settleSession}=await import('./task-recovery.mjs');
- const app=await createConsole({port:0,dataDir:path.join(dir,'console'),cooperativeDetector:p=>p===fixture,recovery:async(job,{connection})=>({ready:await settleSession(null,job,connection),reason:'隔离模拟页面已交接'})});
+ const app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:path.join(dir,'console'),cooperativeDetector:p=>p===fixture,recovery:async(job,{connection})=>({ready:await settleSession(null,job,connection),reason:'隔离模拟页面已交接'})});
  let token;const ids=[];
  const state=async()=>await(await fetch(app.url+'/api/state')).json();
  const post=async(route,body)=>{const r=await fetch(app.url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify(body)});assert.ok(r.ok,await r.clone().text());return r.json();};
@@ -135,7 +135,7 @@ test('策略非法参数拒绝，旧配置默认串行，排队不计为已完�
 
 test('真实服务把脚本排队，排队可取消且没有PID，服务重启不补跑',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-scheduler-http-'));
- let app=await createConsole({port:0,dataDir:dir});
+ let app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
  try{
   const s=await(await fetch(app.url+'/api/state')).json(),token=s.token;
   const post=async(route,body)=>{const r=await fetch(app.url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify(body)});assert.ok(r.ok,await r.clone().text());return r.json();};
@@ -148,7 +148,7 @@ test('真实服务把脚本排队，排队可取消且没有PID，服务重启�
   await post('/api/jobs/'+one.id+'/stop',{});
   const interrupted={...queued,id:'queued-restart',status:'QUEUED'};
   await fs.mkdir(path.join(dir,'jobs',interrupted.id));await fs.writeFile(path.join(dir,'jobs',interrupted.id,'job.json'),JSON.stringify(interrupted));
-  await new Promise(r=>app.server.close(r));app=await createConsole({port:0,dataDir:dir});
+  await new Promise(r=>app.server.close(r));app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
   const after=await(await fetch(app.url+'/api/state')).json();assert.equal(after.active,0);assert.equal(after.jobs.find(j=>j.id===interrupted.id).status,'INTERRUPTED');
  }finally{if(app.server.listening)await new Promise(r=>app.server.close(r));}
 });

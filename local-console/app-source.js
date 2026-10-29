@@ -30,18 +30,37 @@ function modelOption(name){if(![...$('#model').options].some(o=>o.value===name))
 function syncCustom(){$('#customText').disabled=$('[name=question]:checked').value!=='custom';}
 document.querySelectorAll('[name=question]').forEach(e=>e.onchange=syncCustom);
 function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
-let cdpBusy=false;
-async function refreshCdp(){
- try{const c=await api('/api/cdp-config');$('#cdpState').textContent=c.error||`客户端 ${c.version} · packagedCdpAllowed=${c.allowed}（${c.allowed?'配置已开启':'未开启，自动化连接可能阻塞'}）`;$('#cdpState').className=c.allowed===true?'result-pass':'result-fail';$('#enableCdp').disabled=cdpBusy||c.restarting||c.allowed!==false||!!state?.active||state?.readingModels;$('#restartCdp').disabled=cdpBusy||c.restarting||!!state?.active||state?.readingModels||c.allowed===null;$('#cdpConnection').textContent=`CDP 端口 ${c.port}：${c.connected?'已连接 MobileWork 主界面，可执行测试':'未连接，请点击一键启用并重启'}`;$('#cdpConnection').className=c.connected?'result-pass':'result-fail';}
- catch(e){$('#cdpState').textContent=e.message;$('#cdpState').className='result-fail';$('#enableCdp').disabled=true;}
+let cdpBusy=false,cdpRefreshing=false;
+function connectionText(c){
+ if(c.busy)return '任务执行或收尾中，暂不重复检查连接。';
+ if(c.connected)return c.paused?'连接检查通过，队列仍暂停；点击“检查连接 / 重新连接”继续。':'已通过连接和主页面响应检查，可执行测试。';
+ return c.connectionError||c.error||'连接不可用，请打开 MobileWork 后点击“检查连接 / 重新连接”。';
 }
-$('#refreshCdp').onclick=refreshCdp;
+async function refreshCdp(){
+ if(cdpRefreshing||cdpBusy)return;cdpRefreshing=true;$('#refreshCdp').disabled=true;
+ try{const c=await api('/api/cdp-config');$('#cdpState').textContent=`客户端 ${c.version||'未知'} · packagedCdpAllowed=${c.allowed}（${c.allowed?'配置已开启':'未开启，自动化连接可能阻塞'}）`;$('#cdpState').className=c.allowed===true?'result-pass':'result-fail';$('#enableCdp').disabled=cdpBusy||c.restarting||c.allowed!==false||!!state?.active||state?.readingModels;$('#restartCdp').disabled=cdpBusy||c.restarting||!!state?.active||state?.readingModels||c.allowed===null;$('#cdpConnection').textContent=`CDP 端口 ${c.port}：${connectionText(c)}`;$('#cdpConnection').className=c.busy?'hint':c.connected?'result-pass':'result-fail';}
+ catch(e){$('#cdpState').textContent=e.message;$('#cdpState').className='result-fail';$('#enableCdp').disabled=true;}
+ finally{cdpRefreshing=false;if(!cdpBusy)$('#refreshCdp').disabled=false;}
+}
+$('#refreshCdp').textContent='检查连接 / 重新连接';
+$('#refreshCdp').title='重新建立检查连接并验证主页面；通过后继续等待连接的队列，不重启客户端';
+$('#refreshCdp').onclick=async()=>{
+ if(cdpBusy||cdpRefreshing)return;
+ cdpBusy=true;$('#refreshCdp').disabled=true;$('#cdpMessage').textContent='正在建立连接并检查主页面响应…';
+ try{
+  const result=await api('/api/cdp-check',{port:Number($('#cdpPort').value),resume:true});
+  const message=result.connected?'连接检查通过，等待连接的队列已允许继续。':result.error;
+  $('#cdpMessage').textContent=message;$('#cdpConnection').textContent=`CDP 端口 ${result.port}：${connectionText(result)}`;
+  $('#cdpConnection').className=result.connected?'result-pass':'result-fail';notice(message,!result.connected);await refresh();
+ }catch(error){$('#cdpMessage').textContent=error.message;notice(error.message,true);}
+ finally{cdpBusy=false;$('#refreshCdp').disabled=false;await refreshCdp();}
+};
 $('#restartCdp').onclick=async()=>{cdpBusy=true;$('#restartCdp').disabled=true;$('#enableCdp').disabled=true;$('#cdpMessage').textContent='正在检查状态、修改配置并重启，请等待连接验证…';try{const r=await api('/api/cdp-config/restart',{port:Number($('#cdpPort').value)});$('#cdpMessage').textContent=`启动完成，CDP ${r.port} 已连接 MobileWork 主界面。`+(r.backup?' 配置备份：'+r.backup:'');}catch(e){$('#cdpMessage').textContent='未完成：'+e.message;}finally{cdpBusy=false;await refreshCdp();}};
 $('#enableCdp').onclick=async()=>{cdpBusy=true;$('#enableCdp').disabled=true;try{const r=await api('/api/cdp-config/enable',{});$('#cdpMessage').textContent=r.changed?'已设为 true，备份：'+r.backup+'。请在当前任务结束后，以 CDP 启动配置重启客户端。':'已是 true，无需修改。';}catch(e){$('#cdpMessage').textContent=e.message;}finally{cdpBusy=false;await refreshCdp();}};
 async function refresh(){
  state=await api('/api/state');token=state.token;
  if(!initialized){const c=state.config;$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;const v=c.recording||{};$('#recordingEnabled').checked=v.enabled??true;$('#recordingResolution').value=v.resolution||'960x540';$('#recordingFps').value=v.fps||30;$('#recordingBitrate').value=v.bitrateKbps||600;$('#recordingMaxSeconds').value=v.maxSeconds||180;syncRecording();if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
- $('#connection').textContent=state.active?'脚本执行中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
+ $('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
  if(state.capabilities?.taskIsolation!==2)batchNotice('任务隔离升级尚未加载：请先关闭旧控制台服务，再运行“启动测试平台.cmd”，仍使用18888端口；仅刷新页面不能升级服务。',true);
  if(state.capabilities?.serialOnly!==1)batchNotice('串行调度升级尚未加载，请在任务空闲后重启控制台，仍使用18888端口。',true);
  renderScripts();
@@ -92,7 +111,7 @@ function renderScripts(){
   if(state.jobs.some(j=>j.scriptId===script.id&&j.status==='RUNNING')){
    tr.classList.add('script-running');const locked=el('span','锁定 MW','mw-lock-badge');locked.title='自动化正在执行，请勿手动操作 MobileWork';name.append(locked);
   }
-  const status=el('td'),statusText=job?job.status==='RUNNING'&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
+  const status=el('td'),statusText=job?['RUNNING','QUEUED'].includes(job.status)&&job.phase?phaseLabels[job.phase]||labels[job.status]:labels[job.status]||job.status:'未执行';
   status.append(el('span',statusText,'script-status '+resultClass(job?.status)));
   if(job?.finalizing&&job.cleanupStage)status.append(el('small',job.cleanupStage));
   if(job?.recording?.status==='RECORDING')status.append(el('small','● 录制中'));else if(job?.recording?.status==='FINALIZING')status.append(el('small','录像保存中'));else if(job?.recording?.status==='ERROR')status.append(el('small','录像失败：'+job.recording.error));
@@ -144,6 +163,7 @@ async function startScripts(scripts,label,batch=false){
  if(state.capabilities?.serialOnly!==1){batchNotice('请先在空闲时重启控制台加载串行调度，未提交任务。',true);return;}
  if(state.capabilities?.taskIsolation!==2){batchNotice('请先重启本项目18888控制台加载任务隔离升级，未提交新任务。',true);return;}
  if(state.capabilities?.taskScheduling!==1){batchNotice('当前服务尚未加载执行策略，请从“启动测试平台.cmd”打开新版控制台后执行。',true);return;}
+ if(state.capabilities?.clientReadiness!==1){batchNotice('连接检查尚未加载，请在空闲时重启18888控制台；未提交任务。',true);return;}
  if(stopAllBusy||batchBusy||scripts.some(s=>pendingScripts.has(s.id)))return;
  const unavailable=scripts.filter(s=>!s.exists||!s.integrated);
  if(unavailable.length){batchNotice('未开始：以下脚本文件不存在或未接入参数：'+unavailable.map(s=>s.name).join('、'),true);return;}
@@ -153,7 +173,7 @@ async function startScripts(scripts,label,batch=false){
  const submission=new Promise(resolve=>settle=resolve);submissions.add(submission);
  const checkCancelled=()=>{if(generation!==stopGeneration)throw Error('已点击强制停止全部，取消剩余提交');};
  if(batch)batchBusy=true;for(const script of scripts)pendingScripts.add(script.id);renderScripts();
- batchNotice(`${label}：正在提交 0 / ${scripts.length} 条…`);
+ batchNotice(`${label}：正在检查 MobileWork 连接，检查通过后加入队列…`);
  try{
   await api('/api/config',snapshot);
   checkCancelled();
@@ -167,7 +187,7 @@ async function startScripts(scripts,label,batch=false){
   await api('/api/batches/'+executionBatch.id+'/complete',{});
   checkCancelled();
   const text=`${label}：已加入队列 ${started} 条，按序号串行执行。执行结果请查看执行批次。`;batchNotice(text);notice(text);
- }catch(e){if(executionBatch)await api('/api/batches/'+executionBatch.id+'/complete',{error:e.message}).catch(()=>{});if(generation===stopGeneration){const text=`${label}未全部提交：已加入队列 ${started} / ${scripts.length} 条。${e.message}；未自动重试，请核对执行批次。`;batchNotice(text,true);notice(text,true);}}
+ }catch(e){if(executionBatch)await api('/api/batches/'+executionBatch.id+'/complete',{error:e.message}).catch(()=>{});if(generation===stopGeneration){const text=executionBatch?`${label}未全部提交：已加入队列 ${started} / ${scripts.length} 条。${e.message}；未自动重试，请核对执行批次。`:`${label}未开始：${e.message} 脚本和录像尚未启动。`;batchNotice(text,true);notice(text,true);}}
  finally{for(const script of scripts)pendingScripts.delete(script.id);if(batch)batchBusy=false;submissions.delete(submission);settle();renderScripts();await refresh().catch(e=>notice('刷新失败：'+e.message,true));}
 }
 for(const tab of document.querySelectorAll('[data-suite]')){

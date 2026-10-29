@@ -62,7 +62,7 @@ test('真实隔离页面录制达到上限自动保存，输出分辨率帧率�
 test('控制台强制停止保存真实隔离录像，排队不录，配置快照和播放下载范围正确',async()=>{
  const {browser,connect}=await fixture(),dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-video-http-'));
  let starts=0;
- const {server,url}=await createConsole({port:0,dataDir,recorderFactory:async options=>{starts++;const recorder=new PageRecorder({...options,connect});await recorder.start();return recorder;}});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir,recorderFactory:async options=>{starts++;const recorder=new PageRecorder({...options,connect});await recorder.start();return recorder;}});
  let s=await fetch(url+'/api/state').then(r=>r.json());
  const post=(route,body)=>fetch(url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:JSON.stringify(body)});
  try{
@@ -98,7 +98,7 @@ test('录像本地位置按运行ID限定，兼容历史副本及手动删除，
  const single={...old,id:'single',reportPath:path.join(dataDir,'outside','执行报告.md'),recording:{...old.recording,storage:'recordings'}};
  for(const job of [old,single])await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
  for(const dir of [oldDir,singleDir,reportDir])await fs.writeFile(path.join(dir,recordingFile),'fixture-mp4');
- const {server,url}=await createConsole({port:0,dataDir,folderOpener:async directory=>{opened.push(directory);}});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir,folderOpener:async directory=>{opened.push(directory);}});
  try{
   const state=await fetch(url+'/api/state').then(r=>r.json()),headers={'x-console-token':state.token,'content-type':'application/json'};
   const read=id=>fetch(url+'/api/jobs/'+id+'/recording-locations',{headers});
@@ -128,7 +128,7 @@ test('新执行录像仅存独立录像目录，报告和播放器共用，不�
  await fs.writeFile(path.join(reportDir,'执行报告.md'),'# 隔离测试');await fs.writeFile(path.join(reportDir,'执行结果.json'),JSON.stringify({result:'PASS'}));
  await fs.writeFile(scriptPath,'// MW_TEST_CONFIG_JSON\nconsole.log("报告："+'+JSON.stringify(path.join(reportDir,'执行报告.md'))+');');
  let outputDirectory;
- const {server,url}=await createConsole({port:0,dataDir,recorderFactory:async options=>{
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir,recorderFactory:async options=>{
   outputDirectory=options.directory;await fs.mkdir(outputDirectory,{recursive:true});
   await options.onChange({status:'RECORDING',available:false,config:options.config});
   return {stop:async()=>{await fs.writeFile(path.join(outputDirectory,recordingFile),'one-video');await options.onChange({status:'COMPLETED',available:true,config:options.config,bytes:9});}};

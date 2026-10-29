@@ -17,7 +17,7 @@ test('已收尾历史阻塞记录不再进入停止全部，直接停止也不�
  await fs.mkdir(path.join(dataDir,'jobs',job.id),{recursive:true});
  await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
  let recoveries=0;
- const {server,url}=await createConsole({port:0,dataDir,recovery:async()=>{recoveries++;return {ready:false};}});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir,recovery:async()=>{recoveries++;return {ready:false};}});
  try{
   const s=await fetch(url+'/api/state').then(r=>r.json());
   const r=await fetch(url+'/api/jobs/'+job.id+'/stop',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:'{}'});
@@ -33,7 +33,7 @@ test('FAIL会话及页面交接保护可收尾，已结束且无交接保护不�
  const job={id:'failed-live',status:'FAIL',schedulingHold:true,sessionId:'ses_isolated',startedAt:new Date().toISOString(),config:{cdpPort:1},log:''};
  assert.equal(canStopJob(job),true);assert.equal(canStopJob({...job,modelCompleted:true}),true);assert.equal(canStopJob({...job,modelCompleted:true,schedulingHold:false}),false);assert.equal(canStopJob({...job,schedulingHold:false}),false);
  await fs.mkdir(path.join(dataDir,'jobs',job.id),{recursive:true});await fs.writeFile(path.join(dataDir,'jobs',job.id,'job.json'),JSON.stringify(job));
- const {server,url}=await createConsole({port:0,dataDir});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir});
  try{
   const s=await fetch(url+'/api/state').then(r=>r.json());
   const r=await fetch(url+'/api/jobs/'+job.id+'/stop',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:'{}'});

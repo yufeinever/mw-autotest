@@ -53,7 +53,7 @@ test('Trace HTTP 入口支持失败、阻塞、下载及无ID说明，且不修�
  for(const [id,status,sessionId] of [['failed','FAIL','ses_root'],['blocked','BLOCKED','ses_root'],['missing','BLOCKED',null]]){
   await fs.mkdir(path.join(dir,'jobs',id),{recursive:true});await fs.writeFile(path.join(dir,'jobs',id,'job.json'),JSON.stringify({id,name:id,status,startedAt:'2026-10-18T00:00:00Z',result:{caseId:'MW-CLIENT-006',sessionId,checks:[{name:'原断言',pass:false}]}}));
  }
- const {server,url}=await createConsole({port:0,dataDir:dir,traceReader:async()=>snapshot([tool('github','error')])});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir,traceReader:async()=>snapshot([tool('github','error')])});
  try{
   for(const id of ['failed','blocked']){
    const html=await(await fetch(url+'/traces/'+id)).text();assert.match(html,/Trace 记录/);assert.match(html,/result-fail/);

@@ -34,7 +34,7 @@ test('旧并行参数归一为串行，等待模型与未完成交接均不能�
 test('源码接口只读已登记脚本且要求凭证，勾选批次按序号记录并禁用旧并行入口',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-source-ui-')),script=path.join(dir,'fixture.mjs');
  await fs.writeFile(script,'// MW_TEST_CONFIG_JSON\nconst text = "<script>test</script>";');
- const {server,url}=await createConsole({port:0,dataDir:dir});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
  try{
   const state=await (await fetch(url+'/api/state')).json(),headers={'content-type':'application/json','x-console-token':state.token};
   const created=await (await fetch(url+'/api/scripts',{method:'POST',headers,body:JSON.stringify({name:'源码测试',path:script})})).json();
@@ -51,14 +51,14 @@ test('源码接口只读已登记脚本且要求凭证，勾选批次按序号�
 });
 
 async function withUI(run,prepare=()=>{}){
- const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-usability-')),{server,url}=await createConsole({port:0,dataDir:dir});
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-usability-')),{server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),requests=[],errors=[];
   const projectRoot='D:/workspace/Mobilework-test';
   const scripts=Array.from({length:8},(_,i)=>({id:'s'+(i+1),name:'用例 '+(i+1),path:i===6?'D:/custom/run-client-case007.mjs':projectRoot+'/scripts/run-client-case'+String(i+1).padStart(3,'0')+'.mjs',exists:true,integrated:true}));
   const jobs=scripts.map((s,i)=>({id:'j'+(i+1),scriptId:s.id,name:s.name,status:'PASS',sessionId:'ses_test',startedAt:'2026-10-22T01:00:00Z'}));
-  const state={projectRoot,token:'test',config:normalizeConfig(),capabilities:{taskIsolation:2,taskScheduling:1,serialOnly:1,scriptSource:1,detailPreview:1},scripts,jobs,batches:[],active:0};
+  const state={projectRoot,token:'test',config:normalizeConfig(),capabilities:{taskIsolation:2,taskScheduling:1,serialOnly:1,scriptSource:1,detailPreview:1,clientReadiness:1},scripts,jobs,batches:[],active:0};
   prepare(state);
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/**',async route=>{

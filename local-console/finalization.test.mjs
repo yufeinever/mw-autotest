@@ -19,7 +19,7 @@ async function until(check){
 }
 async function fixture(t,options={}){
  const dataDir=options.dataDir||await fs.mkdtemp(path.join(os.tmpdir(),'mw-finalize-'));
- const app=await createConsole({port:0,dataDir,...options});
+ const app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir,...options});
  const state=await fetch(app.url+'/api/state').then(r=>r.json());
  const read=route=>fetch(app.url+route).then(r=>r.json());
  const post=async(route,body={})=>{

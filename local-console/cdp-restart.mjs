@@ -1,18 +1,16 @@
 import {readEngineConnection,engineRequest} from './engine-client.mjs';
-import {isClientPageUrl,uniqueClientPage} from './client-page.mjs';
+import {uniqueClientPage} from './client-page.mjs';
 import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
 import {chromium} from 'playwright-core';
 import {enableCdpConfig} from './cdp-config.mjs';
 import {testEnvironment} from './environment.mjs';
+import {probeCdp} from './cdp-readiness.mjs';
+export {probeCdp} from './cdp-readiness.mjs';
 const exec=promisify(execFile);
 const executable=testEnvironment.clientExecutable;
 const ps=async script=>(await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:15000})).stdout.trim();
-export async function probeCdp(port=9223){
- if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
- try{const r=await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1200)});const rows=await r.json();return {connected:r.ok&&Array.isArray(rows)&&rows.filter(x=>x.type==='page'&&isClientPageUrl(x.url)).length===1,port};}catch{return {connected:false,port};}
-}
 async function processes(){
  const escaped=executable.replaceAll("'","''");
  const raw=await ps(`@(Get-CimInstance Win32_Process -Filter "Name='MobileWork.exe'" | Where-Object { $_.ExecutablePath -eq '${escaped}' -and $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId) | ConvertTo-Json -Compress`);

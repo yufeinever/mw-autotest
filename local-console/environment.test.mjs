@@ -20,7 +20,7 @@ test('新用户、不同磁盘、相对路径和环境变量可迁移',()=>{
 });
 test('启动只复用同一目录的服务',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-launch-test-'));
- const app=await createConsole({port:0,dataDir:dir});
+ const app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir});
  try{const port=app.server.address().port;assert.ok(port<=65515);const reused=await launchConsole({port,openBrowser:false});assert.equal(reused.existing,true);assert.equal((await(await fetch(app.url+'/api/state')).json()).projectRoot,projectRoot);}
  finally{await new Promise(r=>app.server.close(r));}
 });
@@ -31,7 +31,7 @@ test('其他目录占用固定端口时报错，保留原服务且不换端口',
  try{
   const port=foreign.address().port;assert.ok(port<=65515);
   const attempts=[];
-  await assert.rejects(()=>launchConsole({port,openBrowser:false,create:opts=>{attempts.push(opts.port);return createConsole({...opts,dataDir:dir});}}),/固定端口.*已被占用，未自动换端口/);
+  await assert.rejects(()=>launchConsole({port,openBrowser:false,create:opts=>{attempts.push(opts.port);return createConsole({clientProbe:async()=>({connected:true}),...opts,dataDir:dir});}}),/固定端口.*已被占用，未自动换端口/);
   assert.deepEqual(attempts,[port]);
   assert.equal((await(await fetch('http://127.0.0.1:'+port+'/api/state')).json()).projectRoot,'E:\\其他测试包');
  }finally{if(app)await new Promise(r=>app.server.close(r));await new Promise(r=>foreign.close(r));}

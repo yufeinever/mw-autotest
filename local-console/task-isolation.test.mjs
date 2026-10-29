@@ -60,7 +60,7 @@ test('服务端交接失败保留后续排队，复查恢复后自动继续且�
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-isolation-'));
  const old=process.env.MW_FIXTURE_DIR;process.env.MW_FIXTURE_DIR=dir;
  let ready=false,calls=0;
- const app=await createConsole({port:0,dataDir:dir,cooperativeDetector:()=>true,recovery:async()=>{calls++;return {ready,reason:ready?'恢复完成':'模拟残留草稿'};}});
+ const app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:dir,cooperativeDetector:()=>true,recovery:async()=>{calls++;return {ready,reason:ready?'恢复完成':'模拟残留草稿'};}});
  t.after(async()=>{await new Promise(r=>app.server.close(r));if(old===undefined)delete process.env.MW_FIXTURE_DIR;else process.env.MW_FIXTURE_DIR=old;});
  const s=await (await fetch(app.url+'/api/state')).json();
  const api=async(route,body)=>{const r=await fetch(app.url+route,body?{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:JSON.stringify(body)}:{});const data=await r.json();assert.ok(r.ok,JSON.stringify(data));return data;};

@@ -10,7 +10,7 @@ export class TaskScheduler {
   try{for(const entry of this.entries){
    if(entry.running||entry.job.status!=='QUEUED')continue;
    const {job}=entry,port=job.config.cdpPort;
-   if(this.renderer(port).unresolved.size)continue;
+   if(this.renderer(port).unresolved.size||this.renderer(port).connectionError)continue;
    const earlier=this.entries.find(e=>!e.running&&e.job.status==='QUEUED'&&e.job.config.cdpPort===port);
    if(earlier!==entry)continue;
    if(this.entries.some(e=>e.running))continue;
@@ -19,6 +19,20 @@ export class TaskScheduler {
   }}finally{this.pumping=false;}
  }
  entry(id){const entry=this.entries.find(e=>e.job.id===id);if(!entry?.running)throw Error('任务没有在执行，不能操作客户端');return entry;}
+ waitForConnection(job,error){
+  const entry=this.entry(job.id),r=this.renderer(job.config.cdpPort);
+  r.connectionError=error;entry.running=false;
+  job.status='QUEUED';job.phase='WAITING_CONNECTION';job.startedAt=null;
+  job.connectionWait={reason:error,at:new Date().toISOString()};
+  this.changed(job);this.pump();
+ }
+ resumeConnection(port){
+  delete this.renderer(port).connectionError;
+  for(const {job} of this.entries.filter(e=>e.job.config.cdpPort===port&&e.job.status==='QUEUED')){
+   delete job.connectionWait;delete job.queueHold;job.phase='QUEUED';this.changed(job);
+  }
+  this.pump();
+ }
  nextStatus(id){
   return {ready:false,reason:'已取消并行执行，请等待当前用例及收尾完成'};
  }
@@ -56,6 +70,9 @@ export class TaskScheduler {
   const r=this.renderer(port);if(unresolved)r.unresolved.add(id);else r.unresolved.delete(id);
   if(r.owner===id)r.owner=null;r.waiting=r.waiting.filter(x=>x!==id);
   this.entries=this.entries.filter(e=>e!==entry);
+  // Cancelling all queued work also ends its connection pause. A new batch
+  // must perform a fresh probe instead of inheriting an abandoned queue.
+  if(!this.entries.some(e=>e.job.config.cdpPort===port))delete r.connectionError;
   // A URL is an ownership check only while this renderer still has managed
   // work. After the final confirmed completion/stop, a new run must inspect
   // the current page rather than inherit the previous run's navigation.

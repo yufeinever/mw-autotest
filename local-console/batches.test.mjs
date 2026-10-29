@@ -25,7 +25,7 @@ test('批次汇总按批次隔离，只计实际断言，未执行、预检及�
 test('真实批次接口、并行隔离、详情页面、失败断言、落盘恢复与旧记录归档',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-batches-test-')),dataDir=path.join(dir,'console');
  const previous=process.env.MW_FIXTURE_DIR;process.env.MW_FIXTURE_DIR=dir;
- let app=await createConsole({port:0,dataDir}),browser;
+ let app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir}),browser;
  try{
   let token=(await(await fetch(app.url+'/api/state')).json()).token;
   const post=async(route,body)=>{const response=await fetch(app.url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify(body)});return {status:response.status,body:await response.json()};};
@@ -52,7 +52,7 @@ test('真实批次接口、并行隔离、详情页面、失败断言、落盘�
   const file=path.join(dataDir,'jobs',first.body.id,'job.json'),saved=JSON.parse(await fs.readFile(file,'utf8'));saved.status='FAIL';saved.result.checks.push({name:'预期Skill调用缺失',pass:false,actual:'<script>unsafe</script>'});await fs.writeFile(file,JSON.stringify(saved));
   const old={...job('old','FAIL'),id:'legacy-one',name:'旧失败用例',batchId:undefined};await fs.mkdir(path.join(dataDir,'jobs',old.id));await fs.writeFile(path.join(dataDir,'jobs',old.id,'job.json'),JSON.stringify(old));
   const unfinished=(await post('/api/batches',{scriptIds:[ids[1]],mode:'single',config})).body;
-  await new Promise(r=>app.server.close(r));app=await createConsole({port:0,dataDir});token=(await read('/api/state')).token;
+  await new Promise(r=>app.server.close(r));app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir});token=(await read('/api/state')).token;
   detail=await read('/api/batches/'+batch.id);assert.equal(detail.status,'FAIL');assert.equal(detail.checks.failed,1);
   const interrupted=await read('/api/batches/'+unfinished.id);assert.equal(interrupted.status,'INTERRUPTED');assert.equal(interrupted.counts.NOT_RUN,1);
   const state=await read('/api/state');assert.equal(state.jobs.length,3);assert.equal(state.batches.filter(b=>b.legacy).length,1);assert.equal(state.batches.find(b=>b.legacy).total,1);
@@ -69,7 +69,7 @@ test('真实批次接口、并行隔离、详情页面、失败断言、落盘�
   assert.equal(await page.getByRole('link',{name:'Trace 记录',exact:true}).count(),1);assert.equal(await page.getByRole('link',{name:'查看报告',exact:true}).count(),1);
   await page.reload();await page.locator('#batchCaseRows tr').first().waitFor();assert.equal(await page.locator('#batchCaseRows tr').count(),2);
   await page.getByRole('link',{name:'返回执行批次',exact:true}).click();await page.locator('#historyRows').getByText('历史执行记录',{exact:true}).waitFor();assert.deepEqual(errors,[]);
-  const frozen=interrupted.submissionEndedAt;await new Promise(r=>app.server.close(r));app=await createConsole({port:0,dataDir});assert.equal((await read('/api/batches/'+unfinished.id)).submissionEndedAt,frozen,'中断时间只记录一次');
+  const frozen=interrupted.submissionEndedAt;await new Promise(r=>app.server.close(r));app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir});assert.equal((await read('/api/batches/'+unfinished.id)).submissionEndedAt,frozen,'中断时间只记录一次');
  }finally{
   if(browser)await browser.close();if(app.server.listening)await new Promise(r=>app.server.close(r));
   if(previous===undefined)delete process.env.MW_FIXTURE_DIR;else process.env.MW_FIXTURE_DIR=previous;

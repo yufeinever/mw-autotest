@@ -8,7 +8,7 @@ import {createConsole} from './server.mjs';
 test('页面红色状态、按钮保存、备份与幂等（隔离安装配置）',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-cdp-')),file=path.join(dir,'build-info.json');
  const original='{"version":"test","packagedCdpAllowed":false,"disableDevTools":true,"other":42}';await fs.writeFile(file,original);
- const {server,url}=await createConsole({port:0,dataDir:path.join(dir,'state'),cdpConfigFile:file});
+ const {server,url}=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:path.join(dir,'state'),cdpConfigFile:file});
  const browser=await chromium.launch({channel:'chrome',headless:true});
  try{
   const page=await browser.newPage();await page.goto(url);await page.locator('#cdpState.result-fail').waitFor();assert.match(await page.locator('#cdpState').innerText(),/false/);

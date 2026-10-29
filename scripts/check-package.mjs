@@ -21,7 +21,7 @@ export async function selfTestPackage(){
  const previous=process.env.MW_FIXTURE_DIR;process.env.MW_FIXTURE_DIR=dir;
  let app,browser;
  try{
-  app=await createConsole({port:0,dataDir:path.join(dir,'console')});
+  app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:path.join(dir,'console')});
   const state=await(await fetch(app.url+'/api/state')).json();
   assert.equal(state.projectRoot,projectRoot);assert.equal(state.scripts.length,clientCases.length+permissionCases.length);
   assert.ok(state.scripts.every(s=>s.exists&&(s.integrated||s.unavailable)));assert.equal(state.jobs.length,0);

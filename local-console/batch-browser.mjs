@@ -49,7 +49,7 @@ export async function showBatch(id){
    for(const entry of batch.entries){
     const job=entry.job,status=job?.status||'NOT_RUN',tr=el('tr');tr.dataset.jobId=job?.id||'';
     const name=el('td',entry.name);name.title=entry.path||'';
-    tr.append(el('td',String(entry.number).padStart(2,'0')),name,el('td',job?batchDate(job.startedAt)+'\n'+batchDate(job.endedAt):'—'),el('td',(batchLabels[status]||status)+(status==='RUNNING'&&job.phase?'\n'+(phaseLabels[job.phase]||job.phase):''),batchResultClass(status)));
+    tr.append(el('td',String(entry.number).padStart(2,'0')),name,el('td',job?batchDate(job.startedAt)+'\n'+batchDate(job.endedAt):'—'),el('td',(batchLabels[status]||status)+(['RUNNING','QUEUED'].includes(status)&&job.phase?'\n'+(phaseLabels[job.phase]||job.phase):''),batchResultClass(status)));
     const checks=job?.result?.checks||[],rate=el('td',assertionRate({total:checks.length,passed:checks.filter(c=>c.pass===true).length}));
     if(checks.some(c=>c.pass!==true))rate.className='result-fail';tr.append(rate);
     const actions=el('td');if(job){
