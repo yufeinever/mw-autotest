@@ -1,4 +1,4 @@
-export const recordingDefaults={enabled:true,resolution:'960x540',fps:30,bitrateKbps:600,maxSeconds:180};
+export const recordingDefaults={enabled:true,resolution:'960x540',fps:30,bitrateKbps:600,maxSeconds:600};
 export const recordingResolutions=['640x360','960x540','1280x720'];
 export const recordingFrameRates=[10,15,24,30];
 export const recordingBitrates=[300,400,600,800,1000,1500,2000];
@@ -10,6 +10,6 @@ export function normalizeRecording(input={}){
  if(!recordingResolutions.includes(result.resolution))throw Error('录像分辨率无效');
  if(!recordingFrameRates.includes(result.fps))throw Error('录像帧率无效');
  if(!recordingBitrates.includes(result.bitrateKbps))throw Error('录像码率无效');
- if(!Number.isInteger(result.maxSeconds)||result.maxSeconds<10||result.maxSeconds>180)throw Error('录像上限必须为10～180秒');
+ if(!Number.isInteger(result.maxSeconds)||result.maxSeconds<10||result.maxSeconds>1800)throw Error('录像上限必须为10～1800秒');
  return Object.fromEntries(Object.keys(recordingDefaults).map(key=>[key,result[key]]));
 }

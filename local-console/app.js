@@ -1047,7 +1047,7 @@ if (traceId) {
     $("#message").textContent = text;
     $("#message").className = error ? "error" : "";
   }, recordingConfig = function() {
-    return { enabled: $("#recordingEnabled").checked, resolution: $("#recordingResolution").value, fps: Number($("#recordingFps").value), bitrateKbps: Number($("#recordingBitrate").value), maxSeconds: Number($("#recordingMaxSeconds").value || 180) };
+    return { enabled: $("#recordingEnabled").checked, resolution: $("#recordingResolution").value, fps: Number($("#recordingFps").value), bitrateKbps: Number($("#recordingBitrate").value), maxSeconds: Number($("#recordingMaxSeconds").value || 600) };
   }, syncRecording = function() {
     const c = recordingConfig();
     for (const id of ["recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).disabled = !c.enabled;
@@ -1369,7 +1369,7 @@ if (traceId) {
       $("#recordingResolution").value = v.resolution || "960x540";
       $("#recordingFps").value = v.fps || 30;
       $("#recordingBitrate").value = v.bitrateKbps || 600;
-      $("#recordingMaxSeconds").value = v.maxSeconds || 180;
+      $("#recordingMaxSeconds").value = v.maxSeconds || 600;
       syncRecording();
       if (c.model) modelOption(c.model);
       $("#model").value = c.model;

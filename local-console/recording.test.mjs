@@ -38,8 +38,10 @@ test('录像默认值、参数边界及编码选项',()=>{
  assert.deepEqual(normalizeConfig().recording,recordingDefaults);
  const changed=normalizeConfig({recording:{resolution:'1280x720',fps:15,bitrateKbps:800,maxSeconds:60}}).recording;
  assert.equal(changed.fps,15);assert.equal(changed.enabled,true);
- for(const bad of [{fps:31},{bitrateKbps:0},{maxSeconds:181},{maxSeconds:0},{resolution:'999999x999999'},{enabled:'false'}])assert.throws(()=>normalizeConfig({recording:bad}));
- const args=encoderArgs(recordingDefaults,'file.mp4');assert.ok(args.includes('libx264'));assert.ok(args.includes('600k'));assert.ok(args.includes('30'));assert.ok(args.includes('180'));assert.ok(args.includes('-an'));
+ for(const seconds of [10,180,181,1800])assert.equal(normalizeConfig({recording:{maxSeconds:seconds}}).recording.maxSeconds,seconds);
+ for(const bad of [{fps:31},{bitrateKbps:0},{maxSeconds:1801},{maxSeconds:9},{maxSeconds:10.5},{maxSeconds:0},{resolution:'999999x999999'},{enabled:'false'}])assert.throws(()=>normalizeConfig({recording:bad}));
+ const longArgs=encoderArgs(normalizeConfig({recording:{maxSeconds:1800}}).recording,'long.mp4');assert.equal(longArgs[longArgs.indexOf('-t')+1],'1800');
+ const args=encoderArgs(recordingDefaults,'file.mp4');assert.ok(args.includes('libx264'));assert.ok(args.includes('600k'));assert.ok(args.includes('30'));assert.ok(args.includes('600'));assert.ok(args.includes('-an'));
 });
 
 test('真实隔离页面录制达到上限自动保存，输出分辨率帧率和时长可读，失败独立留证',async()=>{
