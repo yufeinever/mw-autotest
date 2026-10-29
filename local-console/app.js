@@ -858,18 +858,16 @@ function appendResultDescription(container, job) {
     return node;
   };
   container.classList.add("execution-result");
+  const tooltip = (node, text) => {
+    node.title = text;
+    node.tabIndex = 0;
+    node.setAttribute("aria-label", node.textContent + "\u3002" + text);
+  };
   const badge = add("span", "\u4E1A\u52A1\uFF1A" + d.label, "script-status " + d.tone);
-  badge.title = d.explanation;
-  if (d.explanation) add("small", d.explanation, "result-explanation");
-  if (d.reason) add("small", "\u539F\u56E0\uFF1A" + d.reason, "result-reason " + d.tone);
-  if (d.videoLabel) add("small", d.videoLabel, "recording-result " + (d.videoWarning ? "result-warning" : "hint"));
-  if (d.videoWarning) {
-    const details = add("details", "", "recording-diagnostic"), summary = document.createElement("summary");
-    summary.textContent = "\u5F55\u50CF\u539F\u56E0\u4E0E\u5904\u7406\u5EFA\u8BAE";
-    details.append(summary);
-    const body = document.createElement("p");
-    body.textContent = (d.videoError ? d.videoError + "\u3002" : "") + d.videoHint;
-    details.append(body);
+  tooltip(badge, [d.explanation, d.reason ? "\u539F\u56E0\uFF1A" + d.reason : "", job?.finalizing && job.cleanupStage ? "\u6536\u5C3E\uFF1A" + job.cleanupStage : "", job?.queueHold ? "\u7B49\u5F85\u6062\u590D\uFF1A" + job.queueHold : ""].filter(Boolean).join("\n"));
+  if (d.videoLabel) {
+    const video = add("small", d.videoLabel.replace(" \xB7 \u8BC1\u636E\u4E0D\u5B8C\u6574", ""), "recording-result " + (d.videoWarning ? "result-warning" : "hint"));
+    tooltip(video, [d.videoWarning ? "\u5F55\u50CF\u8BC1\u636E\u4E0D\u5B8C\u6574\uFF1B\u4E0D\u6539\u53D8\u4E1A\u52A1\u7ED3\u679C\u3002" : "\u5F55\u50CF\u72B6\u6001\u72EC\u7ACB\u4E8E\u4E1A\u52A1\u7ED3\u679C\u3002", d.videoError, d.videoHint].filter(Boolean).join("\n"));
   }
 }
 
@@ -1100,7 +1098,6 @@ if (traceId) {
     unlockButton.disabled = !holders.length || stopAllBusy || batchBusy || submissions.size > 0 || state.jobs.some((j) => j.status === "RUNNING" || j.stopRequested);
     const size = Number($("#scriptPageSize").value), total = scripts.length, pages = Math.max(1, Math.ceil(total / size));
     scriptPage = Math.max(1, Math.min(scriptPage, pages));
-    const expandedRecordings = new Set([...document.querySelectorAll("#scripts details[open]")].map((e) => e.closest("tr")?.dataset.resultJobId));
     const start = (scriptPage - 1) * size;
     $("#scripts").replaceChildren();
     for (const [offset, script] of scripts.slice(start, start + size).entries()) {
@@ -1117,7 +1114,6 @@ if (traceId) {
         name.append(why);
       }
       const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
-      tr.dataset.resultJobId = job?.id || "";
       if (state.jobs.some((j) => j.scriptId === script.id && j.status === "RUNNING")) {
         tr.classList.add("script-running");
         const locked = el2("span", "\u9501\u5B9A MW", "mw-lock-badge");
@@ -1126,9 +1122,6 @@ if (traceId) {
       }
       const status = el2("td");
       appendResultDescription(status, job);
-      if (expandedRecordings.has(job?.id) && status.querySelector("details")) status.querySelector("details").open = true;
-      if (job?.finalizing && job.cleanupStage) status.append(el2("small", job.cleanupStage));
-      if (job?.queueHold) status.append(el2("small", "\u7B49\u5F85\u6062\u590D\uFF1A" + job.queueHold));
       const number = el2("td"), choice = el2("input");
       choice.type = "checkbox";
       choice.className = "script-choice";

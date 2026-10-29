@@ -26,29 +26,32 @@ test('结果说明独立区分业务判定和录像故障，不改写历史结�
  assert.equal(collectBatches([], [{...job,id:'j',startedAt:'2026-10-29T07:00:00Z'}])[0].status,'PASS');
 });
 
-test('结果说明在脚本列表和批次统一展示真实阻塞原因及独立录像状态',async()=>{
+test('结果说明收简为状态标签，悬停保留原因与录像建议',async()=>{
  let fixture;
  await withUI(async({page,url,requests})=>{
   const first=page.locator('#scripts tr').first();
-  assert.match(await first.innerText(),/业务：通过/);assert.match(await first.innerText(),/录像：失败 · 证据不完整/);
-  assert.match(await page.locator('#scripts tr').nth(1).innerText(),/原因：配置要求重新加载引擎/);
-  await first.locator('.recording-diagnostic summary').click();assert.match(await first.innerText(),/最小化或收至托盘可能影响/);
+  assert.match(await first.innerText(),/业务：通过/);assert.equal(await first.locator('.recording-result').innerText(),'录像：失败');
+  assert.match(await page.locator('#scripts tr').nth(1).locator('.script-status').getAttribute('title'),/原因：配置要求重新加载引擎/);
+  assert.doesNotMatch(await page.locator('#scripts tr').nth(1).innerText(),/配置要求重新加载引擎/);
+  assert.match(await first.locator('.script-status').getAttribute('title'),/等待恢复：客户端仍有运行任务/);
+  await first.locator('.recording-result').hover();assert.match(await first.locator('.recording-result').getAttribute('title'),/最小化或收至托盘可能影响/);
+  assert.equal(await page.locator('#scripts .recording-diagnostic,#scripts .result-explanation,#scripts .result-reason').count(),0);
   await page.waitForResponse(r=>r.url().endsWith('/api/state'));await page.waitForTimeout(100);
-  assert.equal(await first.locator('.recording-diagnostic').getAttribute('open'),'');
-  await fs.mkdir('runs/1029-v0.0.24-结果说明验收',{recursive:true});
-  await page.locator('#scriptSection').screenshot({path:'runs/1029-v0.0.24-结果说明验收/脚本列表.png'});
+  assert.match(await first.locator('.recording-result').getAttribute('title'),/证据不完整/);
+  await fs.mkdir('runs/1029-v0.0.25-精简状态验收',{recursive:true});
+  await page.locator('#scriptSection').screenshot({path:'runs/1029-v0.0.25-精简状态验收/脚本列表.png'});
   const batch=collectBatches([],fixture.jobs)[0];
   await page.route('**/api/batches/legacy-history',route=>route.fulfill({json:batch}));
   await page.goto(url+'/?batch=legacy-history');await page.locator('#batchCaseRows tr').last().waitFor();
   assert.match(await page.locator('.batch-metrics').innerText(),/业务失败/);assert.match(await page.locator('.batch-metrics').innerText(),/业务阻塞/);
   assert.match(await page.locator('main').innerText(),/录像异常 2 条/);
   assert.match(await page.locator('#batchCaseRows tr').first().innerText(),/业务：通过/);
-  assert.match(await page.locator('#batchCaseRows tr').nth(1).innerText(),/原因：配置要求重新加载引擎/);
-  assert.match(await page.locator('#batchCaseRows tr').nth(2).innerText(),/执行已停止，不作为功能失败/);
-  await page.screenshot({path:'runs/1029-v0.0.24-结果说明验收/批次详情.png',fullPage:true});
+  assert.match(await page.locator('#batchCaseRows tr').nth(1).locator('.script-status').getAttribute('title'),/原因：配置要求重新加载引擎/);
+  assert.match(await page.locator('#batchCaseRows tr').nth(2).locator('.script-status').getAttribute('title'),/执行已停止，不作为功能失败/);
+  await page.screenshot({path:'runs/1029-v0.0.25-精简状态验收/批次详情.png',fullPage:true});
   assert.deepEqual(requests,[]);
  },state=>{
-  fixture=state;state.jobs[0].recording={status:'ERROR',error:'录像首帧超时'};
+  fixture=state;state.jobs[0].queueHold='客户端仍有运行任务';state.jobs[0].recording={status:'ERROR',error:'录像首帧超时'};
   Object.assign(state.jobs[1],{status:'BLOCKED',result:{error:'配置要求重新加载引擎'},recording:{status:'ERROR',error:'录像首帧超时'}});
   state.jobs[2].status='STOPPED';state.jobs[3].status='FAIL';state.jobs[4].status='REVIEW';
  });

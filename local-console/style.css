@@ -98,4 +98,5 @@ input[type=checkbox]{width:auto!important;accent-color:#267e63}.history-table{ma
 @media(max-width:540px){.detail-preview-bar{gap:8px;padding:8px;flex-wrap:wrap}.detail-preview-bar strong{font-size:13px}.detail-preview{width:100vw;height:100vh;border-radius:0}.script-choice{max-width:14px}}
 
 #scriptSection .script-status.result-warning{color:#946008;background:#fff6df}
-@media(min-width:1001px){#scriptSection .script-table table{min-width:1080px}#scriptSection .script-table th:nth-child(2){width:18%}#scriptSection .script-table th:nth-child(4){width:260px}#scriptSection .script-table th:nth-child(5){width:25%}#scriptSection .script-table td.execution-result{vertical-align:top}}
+.execution-result [title]{cursor:help}.execution-result [tabindex]:focus-visible{outline:2px solid #267e63;outline-offset:3px}
+@media(min-width:1001px){#scriptSection .script-table table{min-width:1080px}#scriptSection .script-table th:nth-child(2){width:22%}#scriptSection .script-table th:nth-child(4){width:170px}#scriptSection .script-table th:nth-child(5){width:25%}}

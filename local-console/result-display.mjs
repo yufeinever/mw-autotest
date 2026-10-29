@@ -19,12 +19,11 @@ export function appendResultDescription(container,job){
  const d=describeResult(job);
  const add=(tag,text,cls)=>{const node=document.createElement(tag);node.textContent=text;node.className=cls;container.append(node);return node;};
  container.classList.add('execution-result');
- const badge=add('span','业务：'+d.label,'script-status '+d.tone);badge.title=d.explanation;
- if(d.explanation)add('small',d.explanation,'result-explanation');
- if(d.reason)add('small','原因：'+d.reason,'result-reason '+d.tone);
- if(d.videoLabel)add('small',d.videoLabel,'recording-result '+(d.videoWarning?'result-warning':'hint'));
- if(d.videoWarning){
-  const details=add('details','','recording-diagnostic'),summary=document.createElement('summary');summary.textContent='录像原因与处理建议';details.append(summary);
-  const body=document.createElement('p');body.textContent=(d.videoError?d.videoError+'。':'')+d.videoHint;details.append(body);
+ const tooltip=(node,text)=>{node.title=text;node.tabIndex=0;node.setAttribute('aria-label',node.textContent+'。'+text);};
+ const badge=add('span','业务：'+d.label,'script-status '+d.tone);
+ tooltip(badge,[d.explanation,d.reason?'原因：'+d.reason:'',job?.finalizing&&job.cleanupStage?'收尾：'+job.cleanupStage:'',job?.queueHold?'等待恢复：'+job.queueHold:''].filter(Boolean).join('\n'));
+ if(d.videoLabel){
+  const video=add('small',d.videoLabel.replace(' · 证据不完整',''),'recording-result '+(d.videoWarning?'result-warning':'hint'));
+  tooltip(video,[d.videoWarning?'录像证据不完整；不改变业务结果。':'录像状态独立于业务结果。',d.videoError,d.videoHint].filter(Boolean).join('\n'));
  }
 }

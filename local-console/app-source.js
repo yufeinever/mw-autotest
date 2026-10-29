@@ -106,20 +106,15 @@ function renderScripts(){
  lockState.className=running.length?'mw-lock-banner':holders.length?'lock-warning':'hint';
  unlockButton.disabled=!holders.length||stopAllBusy||batchBusy||submissions.size>0||state.jobs.some(j=>j.status==='RUNNING'||j.stopRequested);
  const size=Number($('#scriptPageSize').value),total=scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
- const expandedRecordings=new Set([...document.querySelectorAll('#scripts details[open]')].map(e=>e.closest('tr')?.dataset.resultJobId));
  const start=(scriptPage-1)*size;$('#scripts').replaceChildren();
  for(const [offset,script] of scripts.slice(start,start+size).entries()){
   const tr=el('tr');tr.dataset.scriptId=script.id;tr.dataset.scriptNumber=start+offset+1;
   const name=el('td'),title=el('button',script.name,'script-title script-source');title.title='查看用例描述';title.onclick=()=>preview.openScript(script);name.append(title);if(script.unavailable){const why=el('small',script.unavailable,'hint');why.style.display='block';name.append(why);}
   const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
-  tr.dataset.resultJobId=job?.id||'';
   if(state.jobs.some(j=>j.scriptId===script.id&&j.status==='RUNNING')){
    tr.classList.add('script-running');const locked=el('span','锁定 MW','mw-lock-badge');locked.title='自动化正在执行，请勿手动操作 MobileWork';name.append(locked);
   }
   const status=el('td');appendResultDescription(status,job);
-  if(expandedRecordings.has(job?.id)&&status.querySelector('details'))status.querySelector('details').open=true;
-  if(job?.finalizing&&job.cleanupStage)status.append(el('small',job.cleanupStage));
-  if(job?.queueHold)status.append(el('small','等待恢复：'+job.queueHold));
   const number=el('td'),choice=el('input');choice.type='checkbox';choice.className='script-choice';choice.setAttribute('aria-label','选择用例 '+(start+offset+1)+' '+script.name);choice.checked=selectedScripts.has(script.id);
   choice.disabled=$('[name=selectionMode]:checked').value!=='selected'||batchBusy||!script.exists||!script.integrated;
   choice.onchange=()=>{if(choice.checked)selectedScripts.add(script.id);else selectedScripts.delete(script.id);renderScripts();};
