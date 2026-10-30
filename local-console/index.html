@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MobileWork 测试控制台</title><link rel="stylesheet" href="/style.css"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>质量团队自动化工具</title><link rel="stylesheet" href="/style.css"></head>
 <body><main>
-<header><div><small>LOCAL AUTOMATION · CDP + PLAYWRIGHT</small><h1>MobileWork 测试控制台</h1><p>配置交互策略，执行用例，集中查看日志与证据。</p></div><span id="connection" class="badge">连接中</span></header>
+<header><div><small>LOCAL AUTOMATION · CDP + PLAYWRIGHT</small><h1>质量团队自动化工具</h1><p>配置交互策略，执行用例，集中查看日志与证据。</p></div><div class="header-actions"><span id="connection" class="badge">连接中</span><a class="github-link" href="https://github.com/yufeinever/mw-autotest" target="_blank" rel="noopener noreferrer" title="打开 yufeinever/mw-autotest（新标签页）">GitHub 项目 <span aria-hidden="true">↗</span></a></div></header>
 <div id="message" role="status"></div>
 <section><div class="heading"><div><h2>客户端 CDP 配置</h2><p id="cdpState" role="status">正在读取 packagedCdpAllowed…</p><p id="cdpConnection" role="status">正在检查 CDP 连接…</p></div><div><button id="refreshCdp">刷新状态</button> <button id="enableCdp" disabled>修改 CDP 为 true</button> <button id="restartCdp" class="primary" disabled>一键启用并重启</button></div></div><p class="hint">“修改 CDP 为 true”只备份并修改客户端 packagedCdpAllowed 字段，不重启客户端；修改后仍需正常重启客户端才会生效。“一键启用并重启”会再次检查并确保该字段为 true，然后检查客户端空闲、正常退出、以 CDP 端口启动并验证主界面连接。有任务或草稿时停止操作；无法正常退出时不会强制结束进程。</p><p id="cdpMessage" role="status"></p></section>
 <section><div class="heading"><h2>01 / 执行配置</h2><button id="save">保存配置</button></div>
