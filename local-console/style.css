@@ -102,7 +102,7 @@ input[type=checkbox]{width:auto!important;accent-color:#267e63}.history-table{ma
 @media(min-width:1001px){#scriptSection .script-table table{min-width:1080px}#scriptSection .script-table th:nth-child(2){width:22%}#scriptSection .script-table th:nth-child(4){width:170px}#scriptSection .script-table th:nth-child(5){width:25%}}
 /* Console identity and repository entry. */
 .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
-.github-link{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid #d7e0e8;border-radius:8px;background:#fff;color:#34475b;text-decoration:none;white-space:nowrap}
+.github-link{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;padding:8px;border:1px solid #d7e0e8;border-radius:8px;background:#fff;color:#34475b;text-decoration:none;white-space:nowrap}
 .github-link:hover{background:#f0f6f4;border-color:#79a997;color:#206b54}
 .github-link:focus-visible{outline:3px solid #79a997;outline-offset:3px}
 @media(max-width:700px){header{flex-wrap:wrap;align-items:flex-start}.header-actions{justify-content:flex-start}header h1{font-size:26px}}
