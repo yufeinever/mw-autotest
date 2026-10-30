@@ -16,6 +16,7 @@
 !/scripts/fixtures/
 /scripts/fixtures/*
 !/AGENTS.md
+!/用例编写规范建议.md
 !/local-console/observatory-template.mjs
 !/local-console/observatory-data.mjs
 !/local-console/observatory-view.mjs
