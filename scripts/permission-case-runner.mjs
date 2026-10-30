@@ -1,7 +1,7 @@
+import {connectClient} from '../local-console/client-connection.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium} from 'playwright-core';
 import {getPermissionCase} from './permission-case-catalog.mjs';
 import {preparePermissionFixtures,permissionPrompt} from './permission-fixtures.mjs';
 import {createPermissionInteractionHandler,observePermissionResult,PermissionRunAudit} from './permission-observation.mjs';
@@ -32,7 +32,7 @@ export async function runPermissionCase(number){
   if(args.some(a=>!['--check','--fill-check'].includes(a))||args.length>1)throw blocked('权限用例仅支持单个预检参数，不支持续跑');
   if(definition.unavailable)throw blocked(definition.unavailable);
   if(!control)throw blocked('请从控制台调度执行权限用例，不绕过统一调度');
-  browser=await chromium.connectOverCDP('http://127.0.0.1:'+config.cdpPort,{timeout:10000});page=uniqueClientPage(browser);page.setDefaultTimeout(8000);
+  browser=await connectClient('http://127.0.0.1:'+config.cdpPort,{timeout:10000});page=uniqueClientPage(browser);page.setDefaultTimeout(8000);
   await control.begin(page,{openComposer:!args.includes('--check'),stepInterval:config.stepInterval,model:config.model});
   workspace=await readPermissionWorkspace(page,{allowedRoot:testEnvironment.taskRoot});
   log('工作空间已核对',workspace.name+'；'+workspace.directory+'；沿用输入区选择，不按名称强制切换');

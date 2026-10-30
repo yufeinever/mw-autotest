@@ -1,10 +1,10 @@
+import {connectClient} from './client-connection.mjs';
 import {readEngineConnection} from './engine-client.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {chromium} from 'playwright-core';
 const exec=promisify(execFile);
 async function bounded(promise,ms){
  let timer;
@@ -38,7 +38,7 @@ export async function stopSession(job,{connection}={}){
   if(response.status===404){job.sessionSettled=true;job.sessionMissing=true;return '客户端会话已不存在，确认停止 '+id;}
   if(!response.ok||await response.json()!==true)throw Error('客户端未确认停止本次会话');return '客户端已确认停止本次会话 '+id;
  }
- const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000});
  try{
   const page=uniqueClientPage(browser);
   if(!page)throw Error('未找到客户端主界面');

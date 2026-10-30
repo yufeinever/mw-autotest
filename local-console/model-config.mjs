@@ -1,11 +1,11 @@
+import {connectClient} from './client-connection.mjs';
 import {isClientPageUrl} from './client-page.mjs';
-import {chromium} from 'playwright-core';
 import {normalizeConfig} from './policy.mjs';
 export async function saveClientModel(input){
  const c=normalizeConfig(input),p=c.provider;
  if(!p.url.trim()||!p.model.trim()||!p.key.trim())throw Error('请填写 URL、Key 和模型名称');
  const url=new URL(p.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('请输入有效的 HTTP/HTTPS URL');
- const browser=await chromium.connectOverCDP(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
+ const browser=await connectClient(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
  try{
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');

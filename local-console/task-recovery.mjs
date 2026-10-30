@@ -1,5 +1,5 @@
+import {connectClient} from './client-connection.mjs';
 import {isClientPageUrl} from './client-page.mjs';
-import {chromium} from 'playwright-core';
 import {setTimeout as delay} from 'node:timers/promises';
 import {inspectPageHandoff} from '../scripts/mobilework-isolation.mjs';
 import {waitStep} from '../scripts/mobilework-run-policy.mjs';
@@ -132,7 +132,7 @@ export async function recoverJobPage(page,job,{connection,allowAbort=false,other
  return {...handoff,url:page.url()};
 }
 export async function recoverJob(job,{connection,allowAbort=false,jobs=[]}={}){
- const browser=await chromium.connectOverCDP('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000});
+ const browser=await connectClient('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000});
  try{
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('未找到唯一客户端主界面');

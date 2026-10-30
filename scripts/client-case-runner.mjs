@@ -1,9 +1,9 @@
+import {connectClient} from '../local-console/client-connection.mjs';
 import {readEngineConnection,engineRequest} from '../local-console/engine-client.mjs';
 import {isClientPageUrl} from '../local-console/client-page.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium} from 'playwright-core';
 import {normalizeConfig} from '../local-console/policy.mjs';
 import {readSessionLogFromPage} from '../local-console/session-log.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
@@ -181,7 +181,7 @@ export async function runScenarioCase(number,inputConfig){
   const endpoint='http://127.0.0.1:'+config.cdpPort;
   const list=await fetch(endpoint+'/json/list',{signal:AbortSignal.timeout(8000)}).then(r=>{if(!r.ok)throw blocked('CDP列表不可读');return r.json();});
   if(list.filter(p=>p.type==='page'&&isClientPageUrl(p.url)).length!==1)throw blocked('CDP列表未发现唯一的MobileWork主界面');
-  browser=await chromium.connectOverCDP(endpoint,{timeout:15000});
+  browser=await connectClient(endpoint,{timeout:15000});
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw blocked('MobileWork主界面数量不是1');
   page=pages[0];page.setDefaultTimeout(10000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:config.stepInterval,model:config.model});await capture('连接客户端');

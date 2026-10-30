@@ -1,4 +1,4 @@
-import {chromium} from 'playwright-core';
+import {connectClient} from './client-connection.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 
 const bounded=(promise,ms,message)=>{
@@ -8,7 +8,7 @@ const bounded=(promise,ms,message)=>{
 
 // Use the same attachment path as runners and recording. A listening port or
 // a target list alone cannot prove Playwright can initialize the application.
-export async function probeCdp(port=9223,{connect=()=>chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:7000})}={}){
+export async function probeCdp(port=9223,{connect=()=>connectClient(`http://127.0.0.1:${port}`,{timeout:7000})}={}){
  if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
  const started=Date.now();let browser,stage='连接客户端',error='';
  try{

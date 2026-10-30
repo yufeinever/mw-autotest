@@ -1,3 +1,4 @@
+import {connectClient} from './client-connection.mjs';
 import {isClientPageUrl} from './client-page.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
@@ -7,7 +8,6 @@ import {fileURLToPath} from 'node:url';
 import {randomUUID,randomBytes} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {StringDecoder} from 'node:string_decoder';
-import {chromium} from 'playwright-core';
 import {normalizeConfig} from './policy.mjs';
 import {readModelOptions} from '../scripts/mobilework-run-policy.mjs';
 import {renderReport} from './report.mjs';
@@ -138,7 +138,18 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(job.handoff.ready&&job.handoff.url)scheduler.renderer(job.config.cdpPort).expectedUrl=job.handoff.url;
    job.schedulingHold=!job.handoff.ready;
    if(job.schedulingHold)job.error=(job.result?.error||job.error?.split('；页面交接：')[0]||'')+'；页面交接：'+job.handoff.reason;
-   else {delete job.ownedDraft;if(job.error?.includes('；页面交接：'))job.error=job.error.split('；页面交接：')[0];}
+   else {
+    delete job.ownedDraft;
+    if(job.error?.includes('；页面交接：'))job.error=job.error.split('；页面交接：')[0];
+    if(!job.finalizing&&!job.stopRequested&&job.cleanupStage==='收尾待处理'){
+     job.cleanupStage='收尾完成';job.handoffRecoveredAt=new Date().toISOString();
+     // Clear only framework recovery wording, never the persisted business result.
+     job.error=job.result?.error||job.error?.split('；后续排队暂停：')[0]||'';
+     if(/^(会话是否结束尚未确认|业务已结束，页面交接尚未确认)$/.test(job.error))job.error='';
+     const line='\n['+new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date())+'] 页面交接已恢复，收尾完成；保留原业务结果。\n';
+     append(job,line);await fs.appendFile(path.join(dataDir,'jobs',job.id,'执行日志.txt'),line);
+    }
+   }
    await writeJob(job);return job.handoff.ready;
   }catch(e){job.handoff={ready:false,reason:e.message};job.schedulingHold=true;await writeJob(job);return false;}
   finally{recovering.delete(job.id);scheduler.releaseRecovery(job);}
@@ -227,7 +238,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      endedAt:new Date().toISOString(),phase:'FINISHED',cleanupStage:confirmed?'收尾完成':'收尾待处理'};
     if(!['PASS','FAIL','BLOCKED','RESUMED','CHECKED','REVIEW','EXITED','STOPPED'].includes(final.status))final.status='FAIL';
     if(job.cleanupErrors.length)final.error=(final.error||'')+'；'+job.cleanupErrors.join('；');
-    if(!confirmed)final.error=(final.error||'会话是否结束尚未确认')+'；后续排队暂停：'+(job.cleanupErrors.join('；')||job.handoff?.reason||stopMessage||'待核对本会话');
+    if(!confirmed)final.error=(final.error||(job.modelCompleted||job.sessionSettled?'业务已结束，页面交接尚未确认':'会话是否结束尚未确认'))+'；后续排队暂停：'+(job.cleanupErrors.join('；')||job.handoff?.reason||stopMessage||'待核对本会话');
     job.cleanupStage='保存收尾记录';
     const line='\n['+new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date())+'] '+final.cleanupStage+(final.error?'：'+final.error:'')+'\n';
     append(job,line);
@@ -392,13 +403,21 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const port=state.config.cdpPort||9223,busy=editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING');
     const connection=busy?{...(connectionStates.get(port)||{connected:false,port}),busy:true}:await checkConnection(port,{cached:true});
     const renderer=scheduler.renderer(port);
-    return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,preparationError:renderer.preparationError,paused:Boolean(renderer.connectionError||renderer.preparationError),restarting:editingCdp});
+     return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,preparationError:renderer.preparationError,handoffPending:renderer.unresolved.size,paused:Boolean(renderer.connectionError||renderer.preparationError||renderer.unresolved.size),restarting:editingCdp});
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-check'){
     if(editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING'))return send(409,{error:'正在执行或收尾，请等待完成后检查连接。'});
     const port=Number(body.port||state.config.cdpPort||9223),result=await checkConnection(port);
-    if(result.connected&&body.resume===true)scheduler.resumeConnection(port);
-    updateQueueHolds();return send(200,{...result,preparationError:scheduler.renderer(port).preparationError,paused:Boolean(scheduler.renderer(port).connectionError||scheduler.renderer(port).preparationError)});
+     if(result.connected&&body.resume===true){
+      for(const id of [...scheduler.renderer(port).unresolved]){
+       const job=jobs.find(j=>j.id===id);
+       if(!job||job.finalizing||job.stopRequested||job.cleanupErrors?.length)continue;
+       if(await reconcileHandoff(job,{allowAbort:false})){taskRuntimes.delete(job.id);scheduler.finish(job.id);}
+      }
+      scheduler.resumeConnection(port);
+     }
+     const renderer=scheduler.renderer(port);
+     updateQueueHolds();return send(200,{...result,preparationError:renderer.preparationError,handoffPending:renderer.unresolved.size,paused:Boolean(renderer.connectionError||renderer.preparationError||renderer.unresolved.size)});
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/restart'){
     if(active.size||readingModels||editingCdp)return send(409,{error:'控制台正在执行操作，请结束后重试'});
@@ -436,7 +455,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const c=normalizeConfig(body);readingModels=true;
     try{
      if(modelReader)return send(200,await modelReader(c));
-     const browser=await chromium.connectOverCDP(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
+     const browser=await connectClient(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
      try{
       const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的MobileWork主界面');
@@ -539,7 +558,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(!traceMatch[2]){res.writeHead(302,{Location:'/?trace='+encodeURIComponent(job.id)});res.end();return;}
     let trace,error;
     try{trace=await loadJobTrace(job,traceReader||(async sessionId=>{
-     const browser=await chromium.connectOverCDP(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000});
+     const browser=await connectClient(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000});
      try{const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
       return await readSessionLogFromPage(pages[0],{sessionId,includeChildren:true});
@@ -563,7 +582,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='GET'&&sessionMatch){
     const sessionId=decodeURIComponent(sessionMatch[1]);
     if(!/^ses_[A-Za-z0-9]+$/.test(sessionId))throw Error('会话 ID 无效');
-    const browser=await chromium.connectOverCDP(`http://127.0.0.1:${state.config.cdpPort||9223}`,{timeout:8000});
+    const browser=await connectClient(`http://127.0.0.1:${state.config.cdpPort||9223}`,{timeout:8000});
     try{
      const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
      if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');

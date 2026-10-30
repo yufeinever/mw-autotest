@@ -36,7 +36,7 @@ let cdpBusy=false,cdpRefreshing=false;
 function connectionText(c){
  if(c.busy)return '任务执行或收尾中，暂不重复检查连接。';
  if(c.preparationError)return '连接'+(c.connected?'可用':'不可用')+'，但客户端准备失败：'+c.preparationError+'；处理后点击“检查连接 / 重新连接”重试。';
- if(c.connected)return c.paused?'连接检查通过，队列仍暂停；点击“检查连接 / 重新连接”继续。':'已通过连接和主页面响应检查，可执行测试。';
+ if(c.connected)return c.handoffPending?'连接正常，前条页面交接待恢复；点击“检查连接 / 重新连接”核对。':c.paused?'连接检查通过，队列仍暂停；点击“检查连接 / 重新连接”继续。':'已通过连接和主页面响应检查，可执行测试。';
  return c.connectionError||c.error||'连接不可用，请打开 MobileWork 后点击“检查连接 / 重新连接”。';
 }
 async function refreshCdp(){
@@ -46,13 +46,13 @@ async function refreshCdp(){
  finally{cdpRefreshing=false;if(!cdpBusy)$('#refreshCdp').disabled=false;}
 }
 $('#refreshCdp').textContent='检查连接 / 重新连接';
-$('#refreshCdp').title='重新建立检查连接并验证主页面；通过后继续等待连接的队列，不重启客户端';
+$('#refreshCdp').title='检查主页面连接及前条任务交接；全部通过后继续剩余队列，不重启客户端';
 $('#refreshCdp').onclick=async()=>{
  if(cdpBusy||cdpRefreshing)return;
  cdpBusy=true;$('#refreshCdp').disabled=true;$('#cdpMessage').textContent='正在建立连接并检查主页面响应…';
  try{
   const result=await api('/api/cdp-check',{port:Number($('#cdpPort').value),resume:true});
-  const message=result.connected?'连接检查通过，等待连接的队列已允许继续。':result.error;
+   const message=result.connected?(result.paused?'连接检查通过，但前条任务交接或收尾仍未完成，队列继续暂停；请查看调度提示。':'连接及交接检查通过，剩余队列已允许继续。'):result.error;
   $('#cdpMessage').textContent=message;$('#cdpConnection').textContent=`CDP 端口 ${result.port}：${connectionText(result)}`;
   $('#cdpConnection').className=result.connected?'result-pass':'result-fail';notice(message,!result.connected);await refresh();
  }catch(error){$('#cdpMessage').textContent=error.message;notice(error.message,true);}

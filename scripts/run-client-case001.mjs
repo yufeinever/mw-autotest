@@ -1,9 +1,9 @@
+import {connectClient} from '../local-console/client-connection.mjs';
 import {isClientPageUrl} from '../local-console/client-page.mjs';
 import fs from 'node:fs/promises';
 import {beijingLogTime} from './mobilework-evidence.mjs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium} from 'playwright-core';
 import {readRunConfig,selectModel,waitStep} from './mobilework-run-policy.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 import {finalAssistantText,waitScenario,waitSentInput,waitCreatedSession} from './client-case-runner.mjs';
@@ -56,7 +56,7 @@ try{
  /* 并行执行允许每个用例使用独立会话和独立证据目录。 */
  const port=Number(runConfig?.cdpPort||process.env.MW_CDP_PORT||9223),timeout=Number(process.env.MW_CASE_TIMEOUT_MS||600000);
  if(!Number.isInteger(port)||port<1||port>65535||!Number.isFinite(timeout)||timeout<1000)block('端口或超时参数无效');
- browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
+ browser=await connectClient('http://127.0.0.1:'+port,{timeout:15000});
  const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
  if(pages.length!==1)block('MobileWork主界面数量不是1');
  page=pages[0];page.setDefaultTimeout(15000);if(taskControl)await taskControl.begin(page,{openComposer:!resumeId&&!checkOnly,stepInterval:runConfig.stepInterval,model:runConfig.model});await capture('连接客户端');

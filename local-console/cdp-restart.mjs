@@ -1,9 +1,9 @@
+import {connectClient} from './client-connection.mjs';
 import {readEngineConnection,engineRequest} from './engine-client.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
-import {chromium} from 'playwright-core';
 import {enableCdpConfig} from './cdp-config.mjs';
 import {testEnvironment} from './environment.mjs';
 import {probeCdp} from './cdp-readiness.mjs';
@@ -18,7 +18,7 @@ async function processes(){
 }
 async function assertIdle(port){
  if((await probeCdp(port)).connected){
-  const browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:5000});
+  const browser=await connectClient(`http://127.0.0.1:${port}`,{timeout:5000});
   try{const page=uniqueClientPage(browser);
    const busy=await page.evaluate(async()=>{
     const buttons=[...document.querySelectorAll('button')].filter(b=>b.getClientRects().length).map(b=>(b.getAttribute('aria-label')||b.textContent).trim());
@@ -61,7 +61,7 @@ export async function restartClient(backupDir,port=9223){
   checkIdle:async()=>{ids=await processes();if(ids.length>1)throw Error('存在多个客户端主进程，无法安全重启');if(ids.length)await assertIdle(port);},
   enable:()=>enableCdpConfig(backupDir),
   close:async()=>{if(!ids.length)return;await assertIdle(port);
-   const id=ids[0];await requestClientQuit((await probeCdp(port)).connected,()=>chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:5000}));
+   const id=ids[0];await requestClientQuit((await probeCdp(port)).connected,()=>connectClient(`http://127.0.0.1:${port}`,{timeout:5000}));
    for(let i=0;i<40;i++){if(!(await processes()).includes(id))return;await new Promise(r=>setTimeout(r,500));}
    throw Error('已请求正常退出，但客户端仍在后台运行，请从托盘退出后重试；未强制终止进程');
   },
