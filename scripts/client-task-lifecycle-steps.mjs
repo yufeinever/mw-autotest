@@ -3,7 +3,7 @@ import path from 'node:path';
 import {unzipSync,strFromU8} from 'fflate';
 import {finalAssistantText} from './client-case-runner.mjs';
 import {attachmentRow} from './mobilework-composer-resources.mjs';
-import {taskRow,openTaskMenu,selectWorkbench,openArtifactMenu,closeArtifactMenu,previewTaskFile} from './mobilework-task-ui.mjs';
+import {taskRow,openTaskMenu,selectWorkbench,openArtifactMenu,closeArtifactMenu,openTaskFilePreview,taskPreviewTitle,previewTaskFile} from './mobilework-task-ui.mjs';
 import {uploadTaskAttachment} from './mobilework-attachment-ui.mjs';
 import {inspectExplorer} from './mobilework-explorer.mjs';
 import {snapshotDraft,inspectPageHandoff} from './mobilework-isolation.mjs';
@@ -127,7 +127,7 @@ export async function runTaskLifecycleSteps(context){
   await control.release(page,'VERIFYING');finish('删除确认与本轮任务移除');
  }else if(number===35||number===36){
   const sales=number===35,intermediate=sales?'明细.csv':'网页摘录.md',report=sales?'验收销售报告.docx':'网页摘要.docx';
-  const seen={todosDuring:false,intermediateBeforeFinal:false,browser:false,intermediatePanelOpened:false,intermediateEntryMissing:false};
+  const seen={todosDuring:false,intermediateBeforeFinal:false,browser:false,intermediatePanelOpened:false,intermediateEntryMissing:false,intermediatePreviewOpened:false};
   const observe=async({states,pending})=>{
    if(pending.length||states[getSessionId()]?.type!=='busy')return;
    const todos=await control.get('/session/'+getSessionId()+'/todo');
@@ -140,9 +140,20 @@ export async function runTaskLifecycleSteps(context){
     if(files.includes(intermediate)&&!files.includes(report)){
      await ui(async()=>{
       if(!seen.intermediatePanelOpened){await selectWorkbench(page,config,'产物',capture);seen.intermediatePanelOpened=true;}
+      if(seen.intermediatePreviewOpened){
+       // Observe across normal model polls, leaving approvals responsive while
+       // the product parses the CSV; do not await full conversion here.
+       const panel=page.getByTestId('session-workbench-panel'),cells=panel.locator('table td input');
+       if(!await taskPreviewTitle(panel,intermediate).isVisible())return;
+       const values=await cells.evaluateAll(elements=>elements.map(element=>element.value)).then(values=>values.join('\n'));
+       if(!['甲','乙'].every(fact=>values.includes(fact)))return;
+       if((await control.get('/session/status'))[getSessionId()]?.type!=='busy'||(await fs.readdir(control.directory)).includes(report))return;
+       await capture('执行中CSV预览-'+intermediate);
+       seen.intermediateBeforeFinal=(await control.get('/session/status'))[getSessionId()]?.type==='busy'&&!(await fs.readdir(control.directory)).includes(report);return;
+      }
       const trigger=page.getByTestId('session-workbench-panel').getByRole('button',{name:'产物',exact:true}).filter({visible:true});
-      let listed=false;
-      if(await trigger.count()){
+      let listed=await page.getByTestId('session-workbench-panel').getByRole('button',{name:intermediate,exact:true}).count()===1;
+      if(!listed&&await trigger.count()){
        const menu=await openArtifactMenu(page);
        try{listed=await menu.getByRole('menuitem',{name:intermediate,exact:true}).filter({visible:true}).count()===1;}
        finally{await closeArtifactMenu(page);}
@@ -156,8 +167,7 @@ export async function runTaskLifecycleSteps(context){
        return;
       }
       if((await control.get('/session/status'))[getSessionId()]?.type!=='busy'||(await fs.readdir(control.directory)).includes(report))return;
-      await previewTaskFile(page,config,intermediate,capture,['甲','乙']);
-      seen.intermediateBeforeFinal=!(await fs.readdir(control.directory)).includes(report);
+      await openTaskFilePreview(page,intermediate);seen.intermediatePreviewOpened=true;
      });
     }
    }

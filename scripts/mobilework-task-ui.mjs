@@ -21,11 +21,21 @@ export async function openTaskMenu(page,title,scope=page){
  return row;
 }
 
+async function ensureWorkbenchVisible(page){
+ const panel=page.getByTestId('session-workbench-panel');
+ if(await panel.isVisible())return;
+ const toggle=page.locator('main > header').getByRole('button',{name:/^(显示右边栏|关闭右边栏)$/}).filter({visible:true});
+ await toggle.focus();
+ // The browser tool may open the same rail while the model is running.
+ // Re-read the current control before activating its native keyboard action.
+ if(await toggle.getAttribute('aria-label')==='显示右边栏')await toggle.press('Enter');
+ await panel.waitFor();
+}
+
 export async function selectWorkbench(page,config,mode,capture){
- const show=button(page,'显示右边栏');
- if(await show.count())await show.click();
+ await ensureWorkbenchVisible(page);
  const trigger=button(page,'切换面板功能'),url=page.url();let menuBrowser;
- await trigger.click();
+ await trigger.press('Enter');
  try{
   menuBrowser=await connectClientMenu('http://127.0.0.1:'+config.cdpPort,{timeout:10000});
   const expected=new URL('overlay.html',page.url());expected.hash='';expected.search='';
@@ -35,7 +45,7 @@ export async function selectWorkbench(page,config,mode,capture){
   await menu.getByRole('menuitem',{name:mode,exact:true}).click();
  }finally{
   if(menuBrowser)await menuBrowser.close();
-  if(page.url()===url&&await trigger.getAttribute('aria-expanded')==='true')await trigger.click();
+  if(page.url()===url&&await trigger.getAttribute('aria-expanded')==='true')await trigger.press('Enter');
  }
  await capture('工作台-'+mode);
 }
@@ -73,13 +83,29 @@ export async function readTaskPreviewText(panel,name){
  return text;
 }
 
+export const taskPreviewTitle=(panel,name)=>panel.locator('span.min-w-0.flex-1.truncate').and(panel.getByText(name,{exact:true}));
+
+export async function openTaskFilePreview(page,name){
+ const panel=page.getByTestId('session-workbench-panel');
+ // Open tabs retain intermediate files even when the final delivery menu
+ // contains only the latest artifact. Both are real product entry points.
+ const tab=panel.getByRole('button',{name,exact:true});
+ if(await tab.count())await tab.click();
+ else{
+  const menu=await openArtifactMenu(page);
+  try{
+   const item=menu.getByRole('menuitem',{name,exact:true});
+   if(!await item.count())throw Object.assign(Error('当前Session的已开标签及产物菜单均无此文件入口：'+name),{review:true});
+   await item.click();
+  }finally{await closeArtifactMenu(page);}
+ }
+ return panel;
+}
+
 export async function previewTaskFile(page,config,name,capture,facts=[]){
  await selectWorkbench(page,config,'产物',capture);
- const menu=await openArtifactMenu(page);
- try{await menu.getByRole('menuitem',{name,exact:true}).click();}
- finally{await closeArtifactMenu(page);}
- const panel=page.locator('[data-slot="resizable-panel"]').filter({visible:true}).last();
- await panel.getByText(name,{exact:false}).first().waitFor();
+ const panel=await openTaskFilePreview(page,name);
+ await taskPreviewTitle(panel,name).waitFor();
  await waitTaskPreviewReady(panel,name);
  const text=await readTaskPreviewText(panel,name);
  await capture('文件预览-'+name);
@@ -94,8 +120,7 @@ export async function waitTaskPreviewReady(panel,name){
 }
 
 export async function restoreWorkbenchLayout(page,layout,config){
- const show=button(page,'显示右边栏');
- if(await show.count())await show.click();
+ await ensureWorkbenchVisible(page);
  let toggle=button(page,'放大 / 还原侧栏');
  if(!await toggle.count())await previewTaskFile(page,config,layout.file,async()=>{});
  if((await toggle.getAttribute('aria-pressed')==='true')!==layout.expanded)await toggle.click();

@@ -288,7 +288,7 @@ export async function runInteractionCase(number){
     assert('引用后有实际文件内容或已完成读取工具证据',newMessages.some(m=>(m.parts||[]).some(p=>p.type==='tool'&&p.state?.status==='completed'&&JSON.stringify(p.state.input||{}).includes(name)&&['7300','林悦'].every(word=>JSON.stringify(p.state.output||'').includes(word))))||newMessages.some(m=>m.info?.role==='user'&&(m.parts||[]).some(p=>p.type==='file'&&[name,encodeURIComponent(name)].some(value=>String(p.filename||p.url||'').includes(value)))));
     remaining.delete('引用后真实读取与总结');
    }else if(number===31){
-    const skill='chinese-official-writing',editor=editorOf(page);await fill('/');
+    const skill='chinese-official-writing',displayName='文稿写作',editor=editorOf(page);await fill('/');
     const search=page.locator('input[placeholder="输入名称搜索..."]').filter({visible:true});await search.waitFor();await search.fill(skill);
     const menu=search.locator('xpath=../../..').getByRole('presentation'),element=await menu.elementHandle();let ready=false;
     try{
@@ -300,12 +300,14 @@ export async function runInteractionCase(number){
     finally{
      await element.dispose();
      const candidates=await menu.getByRole('button').evaluateAll(nodes=>nodes.map(node=>({text:node.innerText,disabled:node.getAttribute('aria-disabled')==='true'})));
-     await fs.writeFile(path.join(dir,'斜线技能候选.json'),JSON.stringify({expectedSkill:skill,query:await search.inputValue(),ready,loading:await menu.getByText('正在加载命令与技能…',{exact:true}).isVisible(),empty:await menu.getByText('未找到命令或技能。',{exact:true}).isVisible(),candidates},null,2));
+     await fs.writeFile(path.join(dir,'斜线技能候选.json'),JSON.stringify({expectedSkill:skill,expectedDisplayName:displayName,query:await search.inputValue(),ready,loading:await menu.getByText('正在加载命令与技能…',{exact:true}).isVisible(),empty:await menu.getByText('未找到命令或技能。',{exact:true}).isVisible(),candidates},null,2));
      await capture('斜线技能候选');
     }
     if(!ready)throw blocked('当前/菜单45秒仍未完成候选加载，未把加载中判断为技能不存在');
-    const target=menu.getByRole('button').filter({has:page.getByText(skill,{exact:true})}).filter({visible:true});
-    if(await target.count()!==1)throw blocked('当前/菜单未唯一找到原表公文写作技能ID：'+skill+'，未替换为其他技能');
+    // The product searches machine IDs, but renders the preset displayName.
+    // Identity is confirmed by the actual chip after choosing the real entry.
+    const target=menu.getByRole('button').filter({has:page.getByText(displayName,{exact:true})}).filter({visible:true});
+    if(await target.count()!==1)throw blocked('当前/菜单未唯一找到原表公文写作技能：'+displayName+'（'+skill+'），未替换为其他技能');
     await target.click();await editor.locator('[data-skill-remove="'+skill+'"]').waitFor();
     owned=await snapshotDraft(page);await control.checkpointDraft(owned);assert('斜线选择真实生成公文写作技能标签',owned.skills.includes(skill));remaining.delete('斜线菜单与技能标签');
     await send('请直接完成以下虚构任务：起草星桥科技综合管理部关于办公设备盘点的通知，范围为电脑、显示器、打印机。各部门在2026年11月6日17时前向赵宁提交资产编号、使用人和设备状态。只输出通知，不发出、不改文件。');
