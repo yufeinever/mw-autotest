@@ -3,7 +3,7 @@ import path from 'node:path';
 import {workspaces} from './mobilework-workspaces.mjs';
 import {readInstalledSkills,releaseSkillResources,waitForSkillInstall,settleSkillReload} from './mobilework-skill-resources.mjs';
 import {restoreModuleNavigation} from './mobilework-module-navigation.mjs';
-import {openExpertWorkspace,searchMarketCard} from './mobilework-market-ui.mjs';
+import {openExpertWorkspace,searchSkillMarketCard} from './mobilework-market-ui.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 
@@ -14,9 +14,12 @@ export async function runSkillManagementSteps(context){
  let owned,failure;
  const checkpoint=()=>control.call('checkpoint',{skillResources:owned});
  try{
-  await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts'});
+  await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts/skills'});
   await page.getByRole('button',{name:'技能市场',exact:true}).click();
-  const target=await searchMarketCard(page,targetName),before=await readInstalledSkills(page,workspace.path);
+  const {card:target,observations}=await searchSkillMarketCard(page,targetName);
+  await fs.writeFile(path.join(dir,'技能市场完整查询.json'),JSON.stringify(observations,null,2));
+  if(!target)throw blocked('完整技能市场查询未找到原表目标：'+targetName+'，未操作其他技能');
+  const before=await readInstalledSkills(page,workspace.path);
   await fs.writeFile(path.join(dir,'技能安装基线.json'),JSON.stringify({workspaceId,targetName,installedBefore:before},null,2));
   const install=target.getByRole('button',{name:'安装',exact:true});
   if(!await install.count())throw blocked('原表数据分析技能已安装，保留用户安装；本条新增安装/卸载分支需未安装前置');

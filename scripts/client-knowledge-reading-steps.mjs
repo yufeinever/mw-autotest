@@ -37,7 +37,7 @@ async function singleDocument(context,call,created,fixture){
   parsed=await parseOwnedKnowledge({...context,call,created,owned:resources.knowledgeCreation,timeoutMs:540000,startParsing:async()=>{
    const row=sourceRow(page,target.name);await row.hover();const parse=row.locator('button:not([title="删除"])').filter({visible:true});
    if(await parse.count()!==1)throw blocked('未唯一识别本轮目标源文件解析控件');
-   await parse.hover();await page.locator('[data-slot="tooltip-content"]').filter({hasText:'更新'}).filter({visible:true}).waitFor();
+   await parse.hover();await page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({hasText:'更新'}).filter({visible:true}).waitFor();
    await capture('单个目标文件真实解析控件');
    const [response]=await Promise.all([page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/knowledge/parse_source'&&r.request().postDataJSON().id===created.id&&r.request().postDataJSON().source_file===target.path,{timeout:540000}),parse.click()]);
    const body=await response.json();await save(dir,'真实单文档解析请求结果.json',{request:response.request().postDataJSON(),httpStatus:response.status(),response:body});

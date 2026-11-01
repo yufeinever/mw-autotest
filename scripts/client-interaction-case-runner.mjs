@@ -229,7 +229,7 @@ export async function runInteractionCase(number){
     const expected=['.txt','.docx','.pptx','.xlsx','.pdf','.js','.png'];
     assert('测试材料覆盖原表七类真实格式',expected.every(ext=>files.some(name=>path.extname(name)===ext)),files);
     const upload=button(page,'上传文件');await upload.hover();
-    const tip=page.locator('[data-slot="tooltip-content"]').filter({visible:true});await tip.waitFor();assert('上传入口悬停有上传提示',(await tip.innerText()).includes('上传'));await capture('上传文件悬停提示');
+    const tip=page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({visible:true,hasText:"上传"});await tip.waitFor();assert('上传入口悬停有上传提示',(await tip.innerText()).includes('上传'));await capture('上传文件悬停提示');
     remaining.delete('上传入口与选择器');
     for(const name of files){
      const file=path.join(fixtureDir,name),target=path.join(dir,'输入材料',name);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(file,target);

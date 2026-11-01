@@ -42,7 +42,7 @@ export async function runExpertModuleSteps(context){
   // whose detail page and Try action have been observed in this client.
   const skill='playwright-mcp';
   if(!(await readInstalledSkills(page,workspace.path)).includes(skill))throw blocked('本条选用的已安装浏览器技能playwright-mcp不存在');
-  await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts',handoff:{kind:'skill-trial',value:skill,workspaceId}});
+  await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts/skills',handoff:{kind:'skill-trial',value:skill,workspaceId}});
   await page.getByRole('button',{name:/^已安装技能\(/}).click();
   await marketCard(page,skill).click();
   await page.getByRole('heading',{name:skill,exact:true}).waitFor();await capture('已安装浏览器技能详情');finish('已安装技能真实详情');
@@ -71,7 +71,7 @@ export async function runExpertModuleSteps(context){
   resources.managedSkills={projectDir:workspace.path,installedBefore:before,ids:[importId,createdId],marker,pending:false,pendingKind:'import'};await checkpointResources();
   let failure;
   try{
-   await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts',handoff:{kind:'skill-create',value:'mobilework-skill-creator',workspaceId}});
+   await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts/skills',handoff:{kind:'skill-create',value:'mobilework-skill-creator',workspaceId}});
    await button(page,'添加技能').click();await page.getByRole('menuitem',{name:'上传技能',exact:true}).click();
    // The modal uses a native directory dialog, rather than an HTML file input.
    await selectNativeFolder(page,{folder,dir,control,log,open:()=>button(page,'选择文件夹').click()});

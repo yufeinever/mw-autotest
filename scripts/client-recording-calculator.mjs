@@ -15,8 +15,8 @@ const toolParts=data=>[data,...(data.children||[])].flatMap(session=>session.mes
 const displayValue=value=>String(value).replace(/^[^\d+-]*/, '').replace(/[\s,，]/g,'');
 
 async function installedContract(entry){
- // Actual product catalog packagePath, not the downloaded reference ZIP.
- const root=path.join(os.homedir(),'.mobilework','experts',entry.packagePath);
+ // The public catalog exposes kind/slug; packagePath is main-process internal.
+ const root=path.join(os.homedir(),'.mobilework','experts',entry.kind,entry.slug);
  const manifest=JSON.parse(await fs.readFile(path.join(root,'expert.json'),'utf8'));
  if(manifest.slug!=='cmjt-record-replay')throw blocked('实际安装录制专家身份不匹配');
  const needed=['SKILL.md','references/draft-generation.md','references/replay-task.md','references/skill-template.md'];

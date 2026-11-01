@@ -68,7 +68,7 @@ export async function runFilePreviewSteps(context){
    for(let cycle=0;cycle<2;cycle++)for(const mode of ['产物','浏览器','待办']){
     if(mode==='产物')await previewTaskFile(page,config,name,capture,[marker]);else await selectWorkbench(page,config,mode,capture);
     const panel=panelOf(page),before=await panel.boundingBox(),hide=button(page,'关闭右边栏');
-    await hide.hover();const tooltip=page.locator('[data-slot="tooltip-content"]').filter({visible:true});await tooltip.waitFor();
+    await hide.hover();const tooltip=page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({visible:true,hasText:"关闭右边栏"});await tooltip.waitFor();
     assert('收起提示可见-'+cycle+'-'+mode,(await tooltip.innerText()).includes('关闭右边栏'));
     const position=await hide.boundingBox();await hide.click();await button(page,'显示右边栏').waitFor();
     assert('右栏真实关闭-'+cycle+'-'+mode,!await panel.isVisible());await capture(mode+'右栏收起-'+cycle);

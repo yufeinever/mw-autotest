@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "3a715594d52f18cc30272f2d0652089267e37622e4d024d4d3282d3652d1ad54",
+  "workbookSha256": "1c2b1a74c3c5c8c6331f2274e0cef963fd46d7ae6ce5c7c4ec0c7baaccef2a01",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -682,15 +682,25 @@
         "总体预期结果": "主流程通过，切换模式正常"
       },
       "script": "scripts/run-client-case022.mjs",
-      "coverage": "部分覆盖，待验证",
+      "coverage": "已实现，主流程实测通过",
       "execution": "PASS",
       "evidence": [
         "runs/1031-2312-模式-第01次/执行报告.md",
         "runs/1031-2312-模式-第01次/执行结果.json",
         "runs/1031-2249-模式-第01次/执行报告.md",
-        "runs/1031-2249-模式-第01次/执行结果.json"
+        "runs/1031-2249-模式-第01次/执行结果.json",
+        "runs/1102-0430-模式-第01次/执行报告.md",
+        "runs/1102-0430-模式-第01次/执行结果.json",
+        "runs/1102-0430-模式-第01次/执行日志.txt",
+        "tmp/home-round5-final-20261102.json",
+        "tmp/home-round5-original-hashes-20261102.json",
+        "runs/1102-0441-模式-第01次/执行报告.md",
+        "runs/1102-0441-模式-第01次/执行结果.json",
+        "runs/1102-0441-模式-第01次/执行日志.txt",
+        "tmp/home-round6-final-20261102.json",
+        "tmp/home-round6-original-hashes-20261102.json"
       ],
-      "notes": "18888正式执行模式切换恢复4/4 PASS；新增悬停提示断言待验证，不能将旧结果扩展为完整新脚本验收。",
+      "notes": "04:41正式PASS6/6：真实模式面板、说明悬停、执行/计划切换及面板自动关闭、原模式恢复通过。前轮旧/新tooltip叠命中FAIL保留，本轮独立结果不倒改历史。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
       "executionHistory": [
         {
           "batchId": "fea22062-f01b-4f2b-a1e1-b6fc76a21c2f",
@@ -715,6 +725,30 @@
             "total": 4
           },
           "report": "runs/1031-2312-模式-第01次/执行报告.md"
+        },
+        {
+          "batchId": "9c74f51a-d313-4a86-8470-8e48c742e933",
+          "jobId": "4f673e42-5175-4b10-8ca2-872307728d0d",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T20:30:08.230Z",
+          "endedAt": "2026-11-01T20:30:19.079Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1102-0430-模式-第01次/执行报告.md"
+        },
+        {
+          "batchId": "99156278-0b77-41eb-b2a1-573e4e67198e",
+          "jobId": "1b3e2d7e-9957-4af7-9fa1-a29101dee7fa",
+          "result": "PASS",
+          "startedAt": "2026-11-01T20:41:23.266Z",
+          "endedAt": "2026-11-01T20:41:35.428Z",
+          "assertions": {
+            "passed": 6,
+            "total": 6
+          },
+          "report": "runs/1102-0441-模式-第01次/执行报告.md"
         }
       ]
     },
@@ -747,9 +781,19 @@
         "runs/1102-0415-技能-第01次/执行报告.md",
         "runs/1102-0415-技能-第01次/执行结果.json",
         "tmp/home-round4-final-20261102.json",
-        "runs/1102-0415-知识库-第01次/执行结果.json"
+        "runs/1102-0415-知识库-第01次/执行结果.json",
+        "runs/1102-0430-技能-第01次/执行报告.md",
+        "runs/1102-0430-技能-第01次/执行结果.json",
+        "runs/1102-0430-技能-第01次/执行日志.txt",
+        "tmp/home-round5-final-20261102.json",
+        "tmp/home-round5-original-hashes-20261102.json",
+        "runs/1102-0441-技能-第01次/执行报告.md",
+        "runs/1102-0441-技能-第01次/执行结果.json",
+        "runs/1102-0441-技能-第01次/执行日志.txt",
+        "tmp/home-round6-final-20261102.json",
+        "tmp/home-round6-original-hashes-20261102.json"
       ],
-      "notes": "04:15正式FAIL7/7仅为已记录断言：技能选择后等待data-skill-remove按钮可见超时，按钮实际隐藏；点击前缺确切目标草稿登记，后续026初始化清理1个遗留技能，不能据终态字段宣称本条收尾无残留。字面知识库搜索空态保留原样例命中缺口；市场安装未覆盖。已补点击前登记、chip附着/悬停移除和匹配登记收尾设计，尚未复跑。录像COMPLETED，最终FINISHED、hold=false。",
+      "notes": "04:41正式FAIL13/13仅已记录断言：搜索、悬停、滚动、chip选中、真实空白关闭、正常删除和取消恢复通过；进入市场后等待旧专家路由超时，市场安装/本轮新增卸载未验，原表知识库样例命中缺口保留。属于脚本路由契约过时，不以13/13宣称完整业务通过。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
       "executionHistory": [
         {
           "batchId": "fea22062-f01b-4f2b-a1e1-b6fc76a21c2f",
@@ -798,6 +842,30 @@
             "total": 7
           },
           "report": "runs/1102-0415-技能-第01次/执行报告.md"
+        },
+        {
+          "batchId": "9c74f51a-d313-4a86-8470-8e48c742e933",
+          "jobId": "9b39db21-0c00-41e6-b7ae-fd0cf1837aaa",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T20:30:21.006Z",
+          "endedAt": "2026-11-01T20:30:45.161Z",
+          "assertions": {
+            "passed": 10,
+            "total": 10
+          },
+          "report": "runs/1102-0430-技能-第01次/执行报告.md"
+        },
+        {
+          "batchId": "99156278-0b77-41eb-b2a1-573e4e67198e",
+          "jobId": "be79ea4d-d9b2-40fc-8254-29e9cfee6f1d",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T20:41:37.577Z",
+          "endedAt": "2026-11-01T20:42:12.585Z",
+          "assertions": {
+            "passed": 13,
+            "total": 13
+          },
+          "report": "runs/1102-0441-技能-第01次/执行报告.md"
         }
       ],
       "optimized": {
@@ -842,9 +910,14 @@
         "runs/1101-0026-专家-第01次/执行报告.md",
         "runs/1101-0026-专家-第01次/执行结果.json",
         "runs/1101-0053-专家-第01次/执行报告.md",
-        "runs/1101-0053-专家-第01次/执行结果.json"
+        "runs/1101-0053-专家-第01次/执行结果.json",
+        "runs/1102-0430-专家-第01次/执行报告.md",
+        "runs/1102-0430-专家-第01次/执行结果.json",
+        "runs/1102-0430-专家-第01次/执行日志.txt",
+        "tmp/home-round5-final-20261102.json",
+        "tmp/home-round5-original-hashes-20261102.json"
       ],
-      "notes": "00:53通过18888正式执行PASS，17/17：真实最近三位与顺序、说明悬停、AI搜索AIPPT、原表文档生成专家真实新增安装及召唤返回、两类chip删除、仅卸载本轮新增包并恢复历史。召唤前归属登记与等待后台返回修正已通过主流程，收尾完成无占锁；强停恢复未专项验收。保留此前FAIL及REVIEW历史，不改写。",
+      "notes": "04:30正式PASS17/17：真实最近三位及顺序、说明悬停、AI搜索AIPPT、原表文档生成专家真实安装/召唤返回、两类chip删除及仅清理本轮新增包通过；保留已有资源与历史报告。录像COMPLETED，最终FINISHED、hold=false、收尾完成。强停专项未由本轮正常主流程代替。",
       "executionHistory": [
         {
           "batchId": "fea22062-f01b-4f2b-a1e1-b6fc76a21c2f",
@@ -929,6 +1002,18 @@
             "total": 17
           },
           "report": "runs/1101-0053-专家-第01次/执行报告.md"
+        },
+        {
+          "batchId": "9c74f51a-d313-4a86-8470-8e48c742e933",
+          "jobId": "4f86b0b0-0fbb-4468-b38a-c927f42f92cc",
+          "result": "PASS",
+          "startedAt": "2026-11-01T20:30:47.097Z",
+          "endedAt": "2026-11-01T20:31:53.022Z",
+          "assertions": {
+            "passed": 17,
+            "total": 17
+          },
+          "report": "runs/1102-0430-专家-第01次/执行报告.md"
         }
       ]
     },
@@ -1030,8 +1115,8 @@
         "总体预期结果": "知识库创建成功、开关/关闭按钮正常可用、知识库页面展示正常"
       },
       "script": "scripts/run-client-case026.mjs",
-      "coverage": "部分覆盖，待补齐",
-      "execution": "BLOCKED",
+      "coverage": "已实现，主流程实测通过",
+      "execution": "PASS",
       "evidence": [
         "runs/1031-2321-知识库-第01次/执行报告.md",
         "runs/1031-2321-知识库-第01次/执行结果.json",
@@ -1051,9 +1136,14 @@
         "runs/1102-0415-知识库-第01次/执行结果.json",
         "tmp/home-round4-final-20261102.json",
         "runs/1102-0415-知识库-第01次/后续事实核对/实际解析与收尾状态.json",
-        "runs/1102-0415-知识库-第01次/后续事实核对/实际Wiki来源事实.json"
+        "runs/1102-0415-知识库-第01次/后续事实核对/实际Wiki来源事实.json",
+        "runs/1102-0431-知识库-第01次/执行报告.md",
+        "runs/1102-0431-知识库-第01次/执行结果.json",
+        "runs/1102-0431-知识库-第01次/执行日志.txt",
+        "tmp/home-round5-final-20261102.json",
+        "tmp/home-round5-original-hashes-20261102.json"
       ],
-      "notes": "04:15正式BLOCKED8/8仅到解析提交：150秒观察未取得终态，保留注册和材料；约210秒产品真实解析成功，后续独立核对8份wiki内MD及1份raw材料、事实和最终移除注册，补证另存，原BLOCKED不改。设置、五模块和引用后半未执行，不能判主流程通过。设计改为最长300秒观察，活跃/暂停不移除，真实终态及Wiki事实核对后继续；未复跑。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
+      "notes": "04:31正式PASS23/23：本轮真实解析completed约223秒，核对实际Wiki关键事实、更新设置回读、五模块、首页引用开关及注册收尾；真实目录和本轮材料归属有证据。此前150秒观察不足的BLOCKED及后续补证保留，本轮独立完整结果不倒改历史。仅本条材料及流程通过，不代替八格式或六状态专项。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
       "executionHistory": [
         {
           "batchId": "fea22062-f01b-4f2b-a1e1-b6fc76a21c2f",
@@ -1150,6 +1240,18 @@
             "total": 8
           },
           "report": "runs/1102-0415-知识库-第01次/执行报告.md"
+        },
+        {
+          "batchId": "9c74f51a-d313-4a86-8470-8e48c742e933",
+          "jobId": "4cd1ace0-7d2b-43f2-8238-295269e9947f",
+          "result": "PASS",
+          "startedAt": "2026-11-01T20:31:56.397Z",
+          "endedAt": "2026-11-01T20:36:20.566Z",
+          "assertions": {
+            "passed": 23,
+            "total": 23
+          },
+          "report": "runs/1102-0431-知识库-第01次/执行报告.md"
         }
       ],
       "optimized": {
@@ -1448,7 +1550,7 @@
         "总体预期结果": "1、输出会话结果\n2、技能调用正常，会话执行正常"
       },
       "script": "scripts/run-client-case031.mjs",
-      "coverage": "已实机尝试，目标技能候选为空",
+      "coverage": "前置阻塞，待条件",
       "execution": "BLOCKED",
       "evidence": [
         "runs/1101-2358-斜线技能-第01次/执行报告.md",
@@ -1456,9 +1558,14 @@
         "runs/1102-0013-斜线技能-第01次/执行报告.md",
         "runs/1102-0013-斜线技能-第01次/执行结果.json",
         "runs/1102-0036-斜线技能-第01次/执行报告.md",
-        "runs/1102-0036-斜线技能-第01次/执行结果.json"
+        "runs/1102-0036-斜线技能-第01次/执行结果.json",
+        "runs/1102-0436-斜线技能-第01次/执行报告.md",
+        "runs/1102-0436-斜线技能-第01次/执行结果.json",
+        "runs/1102-0436-斜线技能-第01次/执行日志.txt",
+        "tmp/home-round5-final-20261102.json",
+        "tmp/home-round5-original-hashes-20261102.json"
       ],
-      "notes": "正式批次81448f97-6428-4c56-8bd4-e7d15ab0d5d6；录像COMPLETED。1/1仅正常收尾。实际以精确ID chinese-official-writing搜索，候选证据ready=true、loading=false、empty=true、candidates=[]；未创建Session、未生成技能标签或验证正文/实际Skill调用，正式BLOCKED。此次不是旧公文名称搜索或加载未完成；仅证实当前/菜单未提供该搜索候选，不把本机文件存在等同客户端可选，不改成其他技能。 只读诊断：原表目标当前显示名为文稿写作；安装版picker过滤无user_import来源或assetId的预置技能，本地目标符合。该解释来自本机资料及源码，缺执行当时完整API/内存中间态，请求异常转为空仍不能排除。未改registry或替换技能；脚本已按真实显示名定位唯一候选、选择后严格核对ID，静态修正未复验。",
+      "notes": "04:36正式BLOCKED1/1：真实斜线菜单未唯一找到原表文稿写作chinese-official-writing，未替换其他技能、未发模型，斜线选择及调用业务未执行。需原表确切技能可用后再独立验证；不能以目录预检或1/1收尾断言标通过。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
       "optimized": {
         "goal": "验证/技能候选、真实公文技能标签、合成通知正文和实际Skill调用。",
         "precondition": "自动模型；公文写作技能当前可用；不安装其他技能替代。",
@@ -1502,6 +1609,18 @@
             "total": 1
           },
           "report": "runs/1102-0036-斜线技能-第01次/执行报告.md"
+        },
+        {
+          "batchId": "9c74f51a-d313-4a86-8470-8e48c742e933",
+          "jobId": "341bd50b-e747-498f-adc3-ea1852dbfe2f",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T20:36:22.652Z",
+          "endedAt": "2026-11-01T20:36:36.398Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1102-0436-斜线技能-第01次/执行报告.md"
         }
       ]
     },
@@ -3780,10 +3899,16 @@
         "总体预期结果": "支持新的会话调用录制桌面应用操作生成的skill"
       },
       "script": "scripts/run-client-case090.mjs",
-      "coverage": "部分实现，待真实录制及回放接入",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-02独立fixture准备、真实录制/生成、技能菜单选择、新Session回放、Skill Trace及资源收尾已接入共用实现，尚未实机验收；不等于已完成。原表浏览器前置按桌面计算器目标纠正，采用calc.exe+Win32键盘输入及UIA效果取证，原开始菜单/鼠标路径未覆盖。090必须独立录制生成win-calculator-subtract-one，不借087残留；已有同ID技能保留并阻塞。当前五项额度用于106/110/113及087两次尝试，090顺延下一轮，execution仍未执行、无新增正式history。",
+      "coverage": "部分覆盖，待复测",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1102-0442-桌面录制技能复用-第01次/执行报告.md",
+        "runs/1102-0442-桌面录制技能复用-第01次/执行结果.json",
+        "runs/1102-0442-桌面录制技能复用-第01次/执行日志.txt",
+        "tmp/home-round6-final-20261102.json",
+        "tmp/home-round6-original-hashes-20261102.json"
+      ],
+      "notes": "04:42首次正式FAIL2/2仅为录制专家真实安装/召唤及收尾；IPC返回未透出packagePath，框架将undefined传入path导致失败。未创建Session、未启录，独立真实录制fixture、生成、新Session技能选择、桌面回放及计算器业务/Skill Trace均未执行。自动化测试录像不是产品录制功能证据。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
       "optimized": {
         "module": "流程录制专家/桌面技能复用",
         "goal": "在独立新Session复用真实桌面计算器录制Skill并观察真实应用结果。",
@@ -3791,7 +3916,21 @@
         "operations": "1.按087共用真实生命周期独立安装或复用并召唤录制专家，创建本条源Session、recording_start及录制绑定，calc.exe打开本轮计算器并用Win32键盘输入123456789减1，核对实际显示及真实录制事件。此步骤是本条fixture准备，不依赖087结果。\n2.正常结束录制，等真实步骤finished及源Session续轮finish，登记win-calculator-subtract-one生成意图；经实际mobilework-skill-creator生成安装并由本Session真实交付核对源Session、事件、目录、内容和哈希，保存独立fixture副本。\n3.回放前仅将本条归属计算器清零并读取0；创建独立新Session，从真实斜线技能菜单加载终态唯一选择本条生成Skill，核对真实chip和技能ID，明确授权本轮回放并按实际问询处理。\n4.等待本回放Session及其真实子任务终态，记录本条动态Skill与cmjt-desktop-auto成功调用Trace；读取本次归属计算器真实显示123456788，不以旧结果或模型摘要替代。\n5.归档独立fixture源Session、录制steps/哈希、生成Skill文件/哈希、回放Session日志/Trace及UIA效果；先结清录制和源/回放会话，再仅移除本轮技能/窗口并恢复原有集合、专家、空间及输入。",
         "expected": "本条独立真实录制fixture可由新的Session在产品技能入口选择后实际复用，清零后的计算器正确回放至123456788；来源、事件、生成与实际调用均可追溯，既有技能和无关窗口保持。录制事件或生成来源不足时如实REVIEW/BLOCKED，不用087产物、预制Skill或脚本直接计算补位；本优化路径不覆盖开始菜单搜索与鼠标点击。",
         "assertions": "独立源Session和本条录制绑定；真实键盘录制步骤完整；fixture非087残留且真实新生成安装，creator成功调用、交付和文件哈希可核对；新Session与源Session不同、真实菜单chip选中同一ID；本回放Session实际加载该Skill及cmjt-desktop-auto；回放前0和回放后123456788的原生UIA证据；仅本轮资源清理、原集合恢复及无未决录制/会话。专家运行时独立Skill证据缺失与业务效果分开记，不从模型自述推断成功。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "99156278-0b77-41eb-b2a1-573e4e67198e",
+          "jobId": "66563d3a-12a0-4cb7-a53e-2d2754fb552e",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T20:42:15.342Z",
+          "endedAt": "2026-11-01T20:43:19.541Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1102-0442-桌面录制技能复用-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 92,
@@ -4924,10 +5063,16 @@
         "总体预期结果": "做同款支持修改提示词调整专家数量，任务按修改后的要求正常执行并生成报告。"
       },
       "script": "scripts/run-client-case111.mjs",
-      "coverage": "已编写；同资产服务依赖暂缓，未启动",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01未启动：104诊断及105正式执行均在资产请求阶段fetch failed；本条同依赖先跳过，服务恢复后按原目标实机验证。没有正式BLOCKED或业务通过记录。",
+      "coverage": "部分覆盖，待复测",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1102-0443-做同款三专家协作-第01次/执行报告.md",
+        "runs/1102-0443-做同款三专家协作-第01次/执行结果.json",
+        "runs/1102-0443-做同款三专家协作-第01次/执行日志.txt",
+        "tmp/home-round6-final-20261102.json",
+        "tmp/home-round6-original-hashes-20261102.json"
+      ],
+      "notes": "04:43首次正式FAIL3项中2项通过：官方案例完整基线及真实做同款预填通过，编辑成三专家后的尾部比较一边归一一边未归一导致断言失败。未发模型，三实际子Session、协作报告及产物未执行；不能据比较差异判产品丢失素材，也不改写原FAIL。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
       "optimized": {
         "module": "案例库/做同款修改为三专家",
         "goal": "验证修改真实预填后按3位专家协作完成原医疗健康业务，保留原机构、素材及约束。",
@@ -4935,7 +5080,21 @@
         "operations": "1.真实点击做同款，核对原五专家完整预填和同空间新任务路由。\n2.修改前登记原文和预期编辑文，真实输入框保留前三位：医疗健康营销合规师、医疗客服专家、内容创作者；明确只由三位真实子Session协作，删除后两位，机构之后素材原样保留。\n3.回读完整实际文本，确认自动模型，以prefilled方式直接发送一次。\n4.统一等待终态，核对恰好三个实际子Session和task关联，各自包含指定职责及完成结果，保存子日志与Trace。\n5.读取本Session实际合规报告验证三职责的风险审查、客服、广告/短视频内容，以及保留素材和医疗边界。\n6.真实产物入口预览及已保存文件/证据副本核对；修改中、发送前和运行中异常强停均走公共归属收尾。",
         "expected": "原五专家预填可真实修改为三位，三子Session实际协作并生成符合原业务目标的真实报告。",
         "assertions": "原预填相等；删除指定两位、保留三位和原业务素材；真实发送一次；恰好3个关联子Session及完成结果/职责；真实报告业务内容；实际预览和保存证据；公共交接收尾。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "99156278-0b77-41eb-b2a1-573e4e67198e",
+          "jobId": "220b0bec-40d9-4fa0-bcf9-9c04740095e6",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T20:43:21.895Z",
+          "endedAt": "2026-11-01T20:43:40.607Z",
+          "assertions": {
+            "passed": 2,
+            "total": 3
+          },
+          "report": "runs/1102-0443-做同款三专家协作-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 113,
@@ -5614,18 +5773,38 @@
         "总体预期结果": "列表展示字段：展示文件类型icon、文件名、解析状态（未解析/成功/失败/待更新（本地文件更新后显示该状态）/更新中/无法解析）"
       },
       "script": "scripts/run-client-case124.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01依据123本轮真实解析诊断document_parser_runtime_unavailable（0xc0000135）暂缓，未提交正式执行，不补造BLOCKED或通过。六类状态、损坏docx、未知bin及本地更新分支均未验。运行时恢复后独立真实执行，不能用125/126搜索筛选通过代替六状态过程。",
+      "coverage": "部分覆盖，待复核",
+      "execution": "REVIEW",
+      "evidence": [
+        "runs/1102-0443-源文档六类解析状态-第01次/执行报告.md",
+        "runs/1102-0443-源文档六类解析状态-第01次/执行结果.json",
+        "runs/1102-0443-源文档六类解析状态-第01次/执行日志.txt",
+        "tmp/home-round6-final-20261102.json",
+        "tmp/home-round6-original-hashes-20261102.json"
+      ],
+      "notes": "04:43首次正式REVIEW50/50仅已记录断言：本条600秒观察预算下真实解析completed，实际Wiki事实和源文件展示、本地更新待更新等分支有证据；六种原表状态未触发fail。既有图标断言只验证svg/img存在，没有记录完整路径绑定的MD/DOCX/BIN/目录几何身份，类型正确仍未验。不能按50/50或截图计全面验收；本轮源、注册和资源收尾完成，静态图标契约不冒充实机。录像COMPLETED，最终FINISHED、hold=false。",
       "optimized": {
         "module": "知识中心/源文档",
         "goal": "验证源文件列表展示完整",
         "precondition": "已登录MobileWork，18888统一严格串行，默认自动模型；本条独立UI创建知识库、合成源文件和证据，不操作用户原有库。 真实解析运行时可用；若无真实产物保留BLOCKED，不用预制Wiki替代。",
-        "operations": "1.独立默认UI创建本轮知识库，写合成报告、子目录、未知bin和故意损坏docx。\n2.真实刷新，记录源API前后快照与可见文件名、图标、状态。\n3.点击真实全量解析并确认，记录实际请求、进度及解析过程UI/API状态。\n4.取得本轮解析终态与真实Wiki产物，核对独立合成事实。\n5.修改本轮源Markdown并刷新，观察真实后台对账及待更新状态。\n6.保存六种原表状态的实际覆盖清单；未完整触发保留REVIEW，运行时无法启动等前置阻碍为BLOCKED。",
-        "expected": "列表展示字段：展示文件类型icon、文件名、解析状态（未解析/成功/失败/待更新（本地文件更新后显示该状态）/更新中/无法解析）",
+        "operations": "1.独立默认UI创建本轮知识库，写合成报告、子目录、未知bin和故意损坏docx。\n2.真实刷新，记录源API前后快照与可见文件名、图标存在和状态；另按完整路径绑定行及类型SVG几何核MD/DOCX/BIN/目录身份，存在不等于类型正确。\n3.点击真实全量解析并确认，沿本条definition最长600秒观察真实请求、进度和终态；活动或暂停不移除本轮注册/材料，取得真实终态及Wiki事实后才继续。\n4.取得本轮解析终态与真实Wiki产物，核对独立合成事实。\n5.修改本轮源Markdown并刷新，观察真实后台对账及待更新状态。\n6.保存六种原表状态的实际覆盖清单；未完整触发保留REVIEW，运行时无法启动等前置阻碍为BLOCKED。",
+        "expected": "列表展示字段：展示文件类型icon、文件名、解析状态（未解析/成功/失败/待更新（本地文件更新后显示该状态）/更新中/无法解析） 本条解析最长600秒；图标存在与类型正确分别留证，必须按本轮完整路径核对MD/DOCX/BIN/目录类型身份。六状态或类型证据未完整覆盖保留REVIEW，不以已记录断言全通过计整条通过。",
         "assertions": "真实文件类型图标、名称和稳定状态；解析请求/本轮进度/实际Wiki；损坏和未知文件实际状态；本地更新后的待更新；六类状态独立覆盖与缺失清单；不以旧批次或模型自述判断成功。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "99156278-0b77-41eb-b2a1-573e4e67198e",
+          "jobId": "b915087d-d313-452c-9226-552a0ac29ed0",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T20:43:43.216Z",
+          "endedAt": "2026-11-01T20:51:29.208Z",
+          "assertions": {
+            "passed": 50,
+            "total": 50
+          },
+          "report": "runs/1102-0443-源文档六类解析状态-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 126,
@@ -10283,7 +10462,7 @@
       "notes": ""
     }
   ],
-  "updatedAt": "2026-11-02T04:24:20+08:00",
+  "updatedAt": "2026-11-02T04:53:50+08:00",
   "workbookUpdates": [
     {
       "at": "2026-11-01T03:55:37.135Z",

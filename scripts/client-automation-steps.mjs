@@ -69,7 +69,7 @@ async function futureSchedule(page,form,once){
 
 async function rowAction(page,row,index,tooltip){
  await row.hover();const action=row.locator('button').filter({has:page.locator('svg')}).nth(index);
- await action.hover();await page.locator('[data-slot="tooltip-content"]').filter({visible:true,hasText:tooltip}).waitFor();
+ await action.hover();await page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({visible:true,hasText:tooltip}).waitFor();
  await action.click();
 }
 

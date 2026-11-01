@@ -50,7 +50,7 @@ export async function runHomeModelSteps(context){
      if(await row.count()!==1)gaps.push('含简介模型的实际选项未唯一识别');
      else{
       await row.hover();
-      const tip=page.locator('[data-slot="tooltip-content"]').filter({visible:true}).filter({hasText:matchDescription(described).description});
+      const tip=page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({visible:true}).filter({hasText:matchDescription(described).description});
       try{
        await tip.waitFor({timeout:3000});
        const itemBox=await row.boundingBox(),tipBox=await tip.boundingBox();

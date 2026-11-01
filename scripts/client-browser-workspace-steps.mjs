@@ -98,7 +98,7 @@ export async function runBrowserWorkspaceSteps(context){
   const created=await createSpace();finish('独立测试空间前置');
   const row=workspaceRow(page,created.id);await row.locator('[data-workspace-row-header]').hover();
   const create=row.locator('[data-workspace-actions] > button:not([aria-haspopup])');await create.hover();
-  const tip=page.locator('[data-slot="tooltip-content"]').filter({visible:true});await tip.waitFor();assert('空间行新建入口提示为新建任务',(await tip.innerText()).includes('新建任务'));
+  const tip=page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({visible:true,hasText:"新建任务"});await tip.waitFor();assert('空间行新建入口提示为新建任务',(await tip.innerText()).includes('新建任务'));
   await create.click();await page.waitForURL(url=>!url.toString().includes('/session/'));await updatePageOwnership();
   await button(page.locator('main').last(),created.name).waitFor();assert('空间行入口新任务默认选择本空间',await button(page.locator('main').last(),created.name).count()===1);finish('空间行入口创建任务');
   const marker='空间归属-'+path.basename(dir),file='空间任务核验.txt';

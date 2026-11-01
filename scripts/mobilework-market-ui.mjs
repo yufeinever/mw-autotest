@@ -49,3 +49,67 @@ export async function readExpertSummonPrompt(target,name){
   return {...evidence,expectedText:prompts[0]??'帮我用'+preset.name+'处理这个任务',source:prompts.length?(evidence.detailPrompts!==null?'detail.expertDetail':'preset.quickPrompts'):'product.title-fallback'};
  },name);
 }
+
+// Installed app-DqjcqLuT.js:
+// W5r filters loaded pages locally; G5r virtualizes them; R8 owns normal paging.
+// Read committed React props only; never invoke loadMore or mutate component state.
+export async function searchSkillMarketCard(page,name){
+ const search=page.locator('input[placeholder="请输入关键词查询"]').filter({visible:true});
+ await search.fill(name);
+ const input=await search.elementHandle(),observations=[];
+ try{
+  const snapshot=async()=>{
+   const handle=await page.waitForFunction(({input,name})=>{
+    if(!input.isConnected||input.value!==name)return false;
+    let host=input[Object.keys(input).find(key=>key.startsWith('__reactFiber$'))];
+    while(host?.return)host=host.return;
+    const root=host?.stateNode?.current;if(!root)return false;
+    const descendants=fiber=>{
+     const result=[],pending=[fiber];
+     while(pending.length){const item=pending.pop();result.push(item);for(let child=item.child;child;child=child.sibling)pending.push(child);}
+     return result;
+    };
+    const modules=descendants(root).filter(fiber=>fiber.type?.name==='W5r');
+    if(modules.length!==1||modules[0].memoizedProps.query!==name)return false;
+    const module=modules[0],children=descendants(module);
+    // This effect is W5r's actual [market tab, query error, refetch] error notice.
+    for(let hook=module.memoizedState;hook;hook=hook.next){
+     const deps=hook.memoizedState?.deps;
+     if(Array.isArray(deps)&&deps.length===3&&deps[0]==='market'&&deps[1] instanceof Error&&typeof deps[2]==='function')return {error:deps[1].message};
+    }
+    const grid=children.find(fiber=>fiber.type?.name==='G5r'),paging=children.find(fiber=>fiber.type?.name==='R8');
+    if(!grid||!paging||paging.memoizedProps.loadingMore)return false;
+    const sentinel=descendants(paging).find(fiber=>fiber.type==='div'&&fiber.memoizedProps?.['aria-hidden']===true)?.stateNode;
+    if(!sentinel?.isConnected)return false;
+    return {entries:paging.memoizedProps.entryCount,hasMore:paging.memoizedProps.hasMore,names:grid.memoizedProps.skills.map(skill=>skill.name),sentinel};
+   },{input,name},{timeout:45000});
+   const state=await handle.evaluate(({sentinel,...value})=>value);
+   if(state.error){await handle.dispose();throw Error('技能市场加载失败：'+state.error);}
+   return {handle,state};
+  };
+  while(true){
+   const {handle,state}=await snapshot();observations.push(state);
+   try{
+    if(state.names.includes(name)){
+     const scroller=page.locator('[data-mw-module-scroll]').filter({visible:true});
+     await scroller.evaluate(node=>{node.scrollTop=0;});
+     const card=page.locator('div[role="button"]').filter({visible:true}).filter({has:page.getByText(name,{exact:true})});
+     await card.waitFor();return {card,observations};
+    }
+    if(!state.hasMore)return {card:null,observations};
+    const property=await handle.getProperty('sentinel'),sentinel=property.asElement();
+    try{await sentinel.scrollIntoViewIfNeeded();}finally{await property.dispose();}
+    await page.waitForFunction(({input,entries})=>{
+     let host=input[Object.keys(input).find(key=>key.startsWith('__reactFiber$'))];while(host?.return)host=host.return;
+     const pending=[host.stateNode.current];
+     while(pending.length){
+      const fiber=pending.pop();
+      if(fiber.type?.name==='R8'&&fiber.memoizedProps.entryCount!==undefined){const p=fiber.memoizedProps;return p.entryCount>entries||!p.hasMore;}
+      for(let child=fiber.child;child;child=child.sibling)pending.push(child);
+     }
+     return false;
+    },{input,entries:state.entries},{timeout:45000});
+   }finally{await handle.dispose();}
+  }
+ }finally{await input.dispose();}
+}

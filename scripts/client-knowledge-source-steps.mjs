@@ -5,7 +5,7 @@ import {createManagedKnowledge} from './mobilework-knowledge-create.mjs';
 import {parseOwnedKnowledge} from './mobilework-knowledge-parse.mjs';
 import {reloadOwnedModule} from './mobilework-module-navigation.mjs';
 import {finishKnowledgeGuide} from './mobilework-knowledge-guide.mjs';
-import {flattenKnowledgeFiles,knowledgeStatusLabels,sourceToolbarControls,observeKnowledgeSourceRows,openKnowledgeReference,knowledgeReferenceRow,matchingKnowledgeNames,waitSourceFileSet,hasKnowledgeBudget} from './mobilework-knowledge-source-ui.mjs';
+import {flattenKnowledgeFiles,knowledgeStatusLabels,sourceToolbarControls,observeKnowledgeSourceRows,readKnowledgeSourceTypeIcons,openKnowledgeReference,knowledgeReferenceRow,matchingKnowledgeNames,waitSourceFileSet,hasKnowledgeBudget} from './mobilework-knowledge-source-ui.mjs';
 import {finalAssistantText} from './client-case-runner.mjs';
 
 const review=message=>Object.assign(Error(message),{review:true});
@@ -46,14 +46,16 @@ export async function refreshSources(page,call,created){
 }
 
 async function sampleSourceStates(context,call,created,label,{transient=false}={}){
- const {page,dir,assert,capture}=context;
+ const {number,page,dir,assert,capture}=context;
  const before=flattenKnowledgeFiles(await call(sourceRoute(created),{})),rows=await observeKnowledgeSourceRows(page,before),after=flattenKnowledgeFiles(await call(sourceRoute(created),{}));
  const stable=JSON.stringify(before)===JSON.stringify(after),observed=[];
- await save(dir,label+'.json',{before,rows,after,stable});
+ const typeIcons=stable&&number===124?await readKnowledgeSourceTypeIcons(page,before.map(file=>({...file,type:'file'}))):[];
+ await save(dir,label+'.json',{before,rows,after,stable,typeIcons});
  if(stable){
   for(const file of before){
    const actual=rows.filter(row=>row.name===file.name);
-   assert('源文件名称和类型图标真实展示：'+file.name,actual.length===1&&actual[0].icons>0,actual);
+   assert('源文件名称及图标存在：'+file.name,actual.length===1&&actual[0].icons>0,actual);
+   if(number===124){const icon=typeIcons.find(item=>item.path===file.path);assert('源文件类型对应正确图标：'+file.name,icon.pass,icon);}
    const matches=actual.length===1&&knowledgeStatusLabels[file.status]?.some(text=>actual[0].text.includes(text));
    if(!transient)assert('源文件实际解析状态展示：'+file.name,matches,{status:file.status,actual});
    if(matches)observed.push(file.status);
@@ -196,7 +198,7 @@ export async function runKnowledgeSourceSteps(context,{call,created}){
  if(number===125){await checkToolbar(context);return;}
  if(number===126){await checkSearchAndFilters(context,call,created);return;}
  let last='';
- const parsed=await parseOwnedKnowledge({...context,call,created,owned:resources.knowledgeCreation,onProgress:number===124?async progress=>{
+ const parsed=await parseOwnedKnowledge({...context,call,created,timeoutMs:number===124?context.definition.timeoutMs:undefined,owned:resources.knowledgeCreation,onProgress:number===124?async progress=>{
   const files=flattenKnowledgeFiles(await call(sourceRoute(created),{})),signature=JSON.stringify(files.map(file=>[file.name,file.status]));
   if(signature!==last){last=signature;for(const status of await sampleSourceStates(context,call,created,'解析过程状态-'+Date.now(),{transient:true}))states.add(status);}
  }:undefined});

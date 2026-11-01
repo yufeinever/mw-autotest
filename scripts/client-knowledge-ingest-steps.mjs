@@ -60,7 +60,7 @@ async function createAndEdit(context,call,created){
  const root=sourceRow(page,path.basename(created.source_dir[0]));await root.waitFor();await root.hover();
  const actions=root.locator('span.ml-auto').getByRole('button');
  assert('实际源目录行提供新文件新目录和新增文件三个入口',await actions.count()===3);
- await actions.first().hover();const tooltip=page.locator('[data-slot="tooltip-content"]').filter({visible:true});await tooltip.waitFor();
+ await actions.first().hover();const tooltip=page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])').filter({visible:true,hasText:"新建文件"});await tooltip.waitFor();
  assert('本轮实际新建文件入口已识别',/新建文件/.test(await tooltip.innerText()));
  const [response]=await Promise.all([page.waitForResponse(r=>responseFor(r,created,'/source/create-file')&&sameKnowledgePath(r.request().postDataJSON().parent_dir,created.source_dir[0])),actions.first().click()]);
  const body=await response.json(),createdFile=body.data;

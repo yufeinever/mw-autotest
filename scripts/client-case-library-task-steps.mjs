@@ -364,8 +364,9 @@ export async function runCaseLibraryTaskSteps(context,items){
   const chosen=experts.slice(0,3);submitted=[lines[0],...chosen,'本次仅由以上3位专家分别通过真实子会话协作；不召唤其他专家，也不要仅在主回复中模拟角色。'].join('\n\n')+prompt.slice(split);
   resources.caseTask.editedPrompt=submitted;await checkpointResources();
   await editorOf(page).fill(submitted);const edited=await snapshotDraft(page);await checkpointPage(edited);
-  assert('真实编辑只保留三位专家并保留机构素材及业务约束',normalizeComposerText(edited.text)===normalizeComposerText(submitted)&&edited.text.endsWith(prompt.slice(split))&&!edited.text.includes(experts[3])&&!edited.text.includes(experts[4]));
-  await save('三专家修改后的真实预填.json',edited);await capture('做同款减少为三位专家');finish('五专家改三且保留业务素材');
+  await save('三专家修改后的真实预填.json',edited);
+  assert('真实编辑只保留三位专家并保留机构素材及业务约束',normalizeComposerText(edited.text)===normalizeComposerText(submitted)&&normalizeComposerText(edited.text).endsWith(normalizeComposerText(prompt.slice(split)))&&!edited.text.includes(experts[3])&&!edited.text.includes(experts[4]));
+  await capture('做同款减少为三位专家');finish('五专家改三且保留业务素材');
  }
  delete resources.caseTask;await checkpointResources();
  await selectModel(page,config.model||'自动',config);

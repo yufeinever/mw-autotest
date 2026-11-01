@@ -15,7 +15,9 @@ import {initializeTestPage} from './mobilework-initialize.mjs';
 import {readExpertCatalog,releaseExpertResources,waitForExpertInstall} from './mobilework-expert-resources.mjs';
 import {prepareToolResources,readOwnedToolState,releaseToolResources} from './mobilework-tool-resources.mjs';
 import {readEngineConnection,engineRequest} from '../local-console/engine-client.mjs';
-import {readInstalledSkills,releaseSkillResources,waitForSkillPicker} from './mobilework-skill-resources.mjs';
+import {readInstalledSkills,releaseSkillResources,waitForSkillPicker,waitForSkillInstall} from './mobilework-skill-resources.mjs';
+import {searchSkillMarketCard} from './mobilework-market-ui.mjs';
+import {restoreModuleNavigation} from './mobilework-module-navigation.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -29,6 +31,21 @@ async function openPanel(page,name,selectedLabel=''){
  await trigger.click();await page.waitForTimeout(300);
 }
 async function closePanel(page){await page.keyboard.press('Escape');await page.waitForTimeout(200);}
+// Installed wCn mounts RW beside the active composer; another RW can coexist.
+// Click its noninteractive welcome mark outside ZAt's toolbar to use the real
+// window-mousedown dismissal, without changing draft/selection or another RW.
+async function dismissConfigPanelOutside(page,name){
+ const editor=page.locator('[contenteditable="true"]').filter({visible:true});
+ if(await editor.count()!==1)throw blocked('关闭配置面板前没有唯一活动输入框');
+ const expanded=exactToolbar(page,name).and(page.locator('[aria-expanded="true"]'));
+ if(await expanded.count()!==1)throw blocked('未找到本轮已展开配置面板：'+name);
+ const home=editor.locator('xpath=ancestor::div[./div[@data-lingxi-auth-anchor]][1]');
+ const blank=home.locator(':scope > [data-lingxi-auth-anchor] img[src$="welcome-jiutian-mark.svg"]');
+ if(await blank.count()!==1)throw blocked('未找到本轮活动首页的唯一非交互装饰区域');
+ await blank.click();
+ await exactToolbar(page,name).and(page.locator('[aria-expanded="false"]')).waitFor();
+}
+
 function assert(checks,name,pass,actual){checks.push({name,pass:Boolean(pass),...(actual===undefined?{}:{actual})});if(!pass)throw Error('断言失败：'+name);}
 function selectedMode(button){return /bg-\[color:var\(--mw-brand-bg\)\]|text-\[color:var\(--mw-brand\)\]/.test(button.className||'');}
 
@@ -43,7 +60,8 @@ async function runMode(page,config,checks,capture,log){
  try{
   for(const [name,words]of [['执行模式',['执行','敏感','确认']],['计划模式',['计划','确认','执行']]]){
    await visible(page.getByRole('button',{name,exact:true})).hover();
-   const tip=visible(page.locator('[data-slot="tooltip-content"]'));await tip.waitFor();
+   const expectedHint=name==='执行模式'?'直接执行，敏感操作逐条确认':'先出计划，确认后再执行';
+   const tip=visible(page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])')).filter({hasText:expectedHint});await tip.waitFor();
    const text=await tip.innerText();assert(checks,'模式悬停提示说明行为：'+name,words.every(word=>text.includes(word)),text);
   }
   await waitStep(page,config);await page.getByRole('button',{name:target,exact:true}).click();
@@ -80,7 +98,7 @@ async function runSkill(page,config,checks,capture,log,control,dir){
  const target=clearedSearch.skills.find(skill=>skill.id===selectable[0].id),label=target.title,initial=selectable[0].checked==='true';
  const hovered=await waitForSkillPicker(page,{targetId:target.id});
  try{
-  await hovered.element.hover();const tip=visible(page.locator('[data-slot="tooltip-content"]'));await tip.waitFor();
+  await hovered.element.hover();const tip=visible(page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])')).filter({has:page.getByText(label,{exact:true})});await tip.waitFor();
   const tipText=await tip.innerText();assert(checks,'技能悬停显示名称及说明',tipText.includes(label)&&tipText.trim().length>label.length,tipText);
  }finally{await hovered.element.dispose();}
  await search.fill(label);
@@ -103,7 +121,7 @@ async function runSkill(page,config,checks,capture,log,control,dir){
   if(!(await draftOwnership(page,owned)).matches)throw blocked('选中后的实际草稿与预登记技能不符，保留现场');
   const selected=(await waitForSkillPicker(page,{query:label})).items.find(item=>item.id===target.id);assert(checks,'技能卡点击后状态切换',(selected.checked==='true')!==initial,selected.checked);
   assert(checks,'选择技能实际生成输入区chip',await remove.count()===1,owned.skills);
-  await visible(page.getByText('Mobile熠动，Work智简',{exact:true})).first().click();
+  await dismissConfigPanelOutside(page,'技能');
   await search.waitFor({state:'hidden'});assert(checks,'点击空白区域关闭技能面板',await search.count()===0);
   // Installed KAn renderer: button -> icon span -> visible .group chip.
   await remove.locator('xpath=../..').hover();await remove.waitFor({state:'visible'});await remove.click();await remove.waitFor({state:'detached'});
@@ -122,47 +140,62 @@ async function runSkill(page,config,checks,capture,log,control,dir){
   }
  }
  log('技能面板检查完成',label+'；原状态='+initial);
- let resources;
+ const origin=emptyDraft.url,workspaceId=new URL(origin).hash.match(/\/workspace\/([^/]+)/)[1];
+ const workspace=(await workspaces(page)).items.find(item=>item.id===workspaceId);
+ if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('管理技能跳转前已离开本轮空草稿');
+ const moduleResources={url:origin,attachments:[],queueTexts:[],restorePermission:false,moduleNavigation:{originUrl:origin,targetHash:'#/experts/skills'}};
+ const checkpointModule=()=>control.call('checkpoint',{composerResources:moduleResources});
+ await checkpointModule();
+ let resources,failure;
  try{
-  await openPanel(page,'技能');await visible(page.getByRole('button',{name:'管理技能',exact:true})).click();
-  await page.waitForURL(/#\/experts$/);
-  await visible(page.getByRole('button',{name:'技能市场',exact:true})).waitFor();
-  const cards=visible(page.locator('div[role="button"]')).filter({has:page.locator('button[aria-label="安装"],button[aria-label="已安装"]')});
-  await cards.first().waitFor({timeout:20000});
-  const names=(await cards.allTextContents()).map(text=>text.trim().slice(0,150));
-  await fs.writeFile(path.join(dir,'技能市场候选.json'),JSON.stringify(names,null,2));
-  assert(checks,'管理技能进入真实技能市场且展示候选',names.length>0);
-  await capture('技能市场');
-  const target=cards.filter({has:page.getByText('Office办公助手',{exact:true})});
-  if(await target.count()!==1){log('技能市场安装待复核','当前已加载候选未找到原表Office办公助手；未选择无关技能替代');return [...gaps,'原表Office办公助手在当前已加载市场候选中未找到，安装及卸载分支待核对'];}
-  const install=target.getByRole('button',{name:'安装',exact:true});
-  if(!await install.count()){log('技能安装未执行','原表目标已安装，保留已有技能');return [...gaps,'原表目标技能已安装，未卸载用户已有技能；新增安装及清理分支未执行'];}
-  const workspaceId=page.url().match(/\/workspace\/([^/]+)/)?.[1]||owned.url.match(/\/workspace\/([^/]+)/)[1];
-  const {items}=await workspaces(page),projectDir=items.find(item=>item.id===workspaceId).path;
-  resources={projectDir,targetName:'Office办公助手',installedBefore:await readInstalledSkills(page,projectDir),id:null,pending:true};
-  await control.call('checkpoint',{skillResources:resources});
-  let failure;
-  try{
-   await install.click();
-   await target.getByRole('button',{name:'已安装',exact:true}).waitFor({timeout:60000});
-   const added=(await readInstalledSkills(page,projectDir)).filter(id=>!resources.installedBefore.includes(id));
-   if(added.length!==1)throw blocked('本轮市场安装未对应唯一新增技能，保留归属待复核');
-   resources.id=added[0];resources.pending=false;await control.call('checkpoint',{skillResources:resources});
-   assert(checks,'原表目标技能市场安装成功',true);await capture('技能市场安装完成');
-   await initializeTestPage(page,{...config,log});await openPanel(page,'技能');
-   await visible(page.locator('input[placeholder="输入名称搜索..."]')).fill('Office办公助手');
-   const installedPicker=await waitForSkillPicker(page,{query:'Office办公助手'}),installedSkill=installedPicker.skills.find(skill=>skill.name===resources.id);
-   assert(checks,'新安装技能可在输入区面板搜索到',Boolean(installedSkill)&&installedPicker.items.some(item=>item.id===installedSkill.id&&item.role==='checkbox'),{installedId:resources.id,candidates:installedPicker.items});await capture('安装技能回到输入区可见');
-  }catch(error){failure=error;await capture('技能安装异常现场').catch(e=>log('技能异常截图失败',e.message));}
-  finally{
-   try{
-    await releaseSkillResources(page,resources);await control.call('checkpoint',{skillResources:null});resources=null;
-    assert(checks,'仅卸载本轮新安装的目标技能',true);
-   }catch(error){log('技能收尾未完成',error.message);failure??=error;}
+  await openPanel(page,'技能');
+  await visible(page.getByRole('button',{name:'管理技能',exact:true})).click();
+  await page.waitForURL(url=>url.hash.split('?')[0]==='#/experts/skills');
+  await visible(page.getByRole('button',{name:'技能市场',exact:true})).click();
+  const {card:target,observations}=await searchSkillMarketCard(page,'Office办公助手');
+  await fs.writeFile(path.join(dir,'技能市场候选.json'),JSON.stringify(observations,null,2));
+  assert(checks,'管理技能进入真实技能市场并完成正常候选查询',true,observations);
+  await capture('技能市场目标查询');
+  if(!target){
+   log('原表技能缺少前置','正常分页结束后仍无Office办公助手，未替换无关技能');
+   return [...gaps,'原表Office办公助手在完整技能市场查询后未找到，安装及卸载未执行'];
   }
+  const install=target.getByRole('button',{name:'安装',exact:true});
+  if(!await install.count())return [...gaps,'原表目标已安装，保留用户已有技能；新增安装及卸载分支未执行'];
+  resources={projectDir:workspace.path,targetName:'Office办公助手',installedBefore:await readInstalledSkills(page,workspace.path),id:null,pending:true};
+  await control.call('checkpoint',{skillResources:resources});
+  await install.click();await waitForSkillInstall(page,resources.targetName);
+  const added=(await readInstalledSkills(page,workspace.path)).filter(id=>!resources.installedBefore.includes(id));
+  if(added.length!==1)throw blocked('市场安装未对应唯一新增技能，保留归属待复核');
+  resources.id=added[0];resources.pending=false;
+  await control.call('checkpoint',{skillResources:resources});
+  assert(checks,'原表目标技能市场安装成功',true,{name:resources.targetName,id:resources.id});
+  await capture('技能市场安装完成');
+  // Same-document return preserves the source workspace and avoids reauthentication.
+  await restoreModuleNavigation(page,moduleResources);await checkpointModule();
+  if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('管理技能返回后本轮空草稿与原空间不符');
+  await openPanel(page,'技能');
+  await visible(page.locator('input[placeholder="输入名称搜索..."]')).fill(resources.targetName);
+  const picker=await waitForSkillPicker(page,{query:resources.targetName}),skill=picker.skills.find(item=>item.name===resources.id);
+  assert(checks,'新安装技能可在原空间输入区搜索到',Boolean(skill)&&picker.items.some(item=>item.id===skill.id&&item.role==='checkbox'),{installedId:resources.id,candidates:picker.items});
+  await capture('安装技能回到输入区可见');await closePanel(page);
+ }catch(error){failure=error;await capture('技能市场异常现场').catch(e=>log('技能异常截图失败',e.message));}
+ finally{
+  try{
+   if(resources){
+    await releaseSkillResources(page,resources);
+    const restored=await readInstalledSkills(page,resources.projectDir);
+    assert(checks,'仅卸载本轮新增技能并恢复原有集合',JSON.stringify([...restored].sort())===JSON.stringify([...resources.installedBefore].sort()),restored);
+    await control.call('checkpoint',{skillResources:null});resources=null;
+   }
+   await restoreModuleNavigation(page,moduleResources);
+   await control.call('checkpoint',{composerResources:null});
+  }catch(error){log('技能市场收尾未完成',error.message);if(failure)failure.message+='；收尾：'+error.message;else failure=error;}
   if(failure)throw failure;
-  return gaps;
- }finally{if(!resources)await initializeTestPage(page,{...config,log});}
+ }
+ if(failure)throw failure;
+ return gaps;
+
 }
 
 async function runExpert(page,config,checks,capture,log,control){
@@ -196,7 +229,7 @@ async function runExpert(page,config,checks,capture,log,control){
   const described=history.find(e=>actual.includes(e.name)&&e.description?.trim());
   if(!described)throw blocked('当前最近专家没有说明样例，无法验证悬停说明');
   await rows.filter({has:page.getByText(described.name,{exact:true})}).hover();
-  const tip=visible(page.locator('[data-slot="tooltip-content"]'));await tip.waitFor();
+  const tip=visible(page.locator('[data-slot="tooltip-content"][data-open]:not([data-closed])')).filter({hasText:described.description.trim()});await tip.waitFor();
   const description=await tip.innerText();assert(checks,'专家悬停显示真实说明',description.replace(/\s+/g,' ').includes(described.description.replace(/\s+/g,' ')),description);
   await capture('最近专家及悬停说明');
   pending.delete('最近专家顺序及悬停');
@@ -208,7 +241,7 @@ async function runExpert(page,config,checks,capture,log,control){
   const received=await snapshotDraft(page);await control.call('checkpoint',{draft:received,expertResources:{...resources,summonTarget:''}});owned=received;resources.summonTarget='';
   await removeChip(ppt.name);
   pending.delete('AIPPT搜索召唤及chip删除');
-  await openPanel(page,'专家');await visible(page.getByText('Mobile熠动，Work智简',{exact:true})).first().click();
+  await openPanel(page,'专家');await dismissConfigPanelOutside(page,'专家');
   await search.waitFor({state:'hidden'});assert(checks,'点击空白关闭专家面板',await search.count()===0);
   pending.delete('点击空白关闭');
   await openPanel(page,'专家');await panel.getByRole('button',{name:'召唤其他专家',exact:true}).click();
@@ -331,7 +364,7 @@ async function runTool(page,config,checks,capture,log,control,dir){
   if(failure){failure.remainingSteps=[...pending,...gaps];throw failure;}
  }
  pending.delete('本轮工具配置恢复');
- await openPanel(page,'工具');await visible(page.getByText('Mobile熠动，Work智简',{exact:true})).first().click();
+ await openPanel(page,'工具');await dismissConfigPanelOutside(page,'工具');
  assert(checks,'点击空白关闭工具面板',await more.count()===0);
  pending.delete('点击空白关闭工具面板');
  log('工具面板检查完成','列表、合成密钥保存、真实连接终态、任务选择及资源恢复');
