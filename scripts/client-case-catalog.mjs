@@ -44,7 +44,7 @@ const interfaceDefinitions=[
  {title:'工作空间02-选择新建工作空间',category:'工作空间',button:'新建工作空间',kind:'interaction-home-workspace',steps:['默认存储空间真实创建','输入区与侧栏展示新空间'],note:'通过产品默认存储入口创建本轮唯一空间，核对真实注册、目录、输入区及侧栏名称；不发模型消息，结束后仅清理本轮注册。'},
  {title:'工作空间03-选择当前工作空间',category:'工作空间',button:'选择本地工作空间',kind:'interaction-home-workspace',steps:['原生文件夹选择及空间注册','输入区与侧栏展示本地空间'],note:'通过产品入口和同客户端PID的Win32控件选择本轮目录，核对注册路径、输入区及侧栏名称；不发模型消息。'},
  {title:'工作空间-引用工作空间',category:'工作空间',button:'引用工作空间',kind:'interaction-home-workspace',steps:['已有工作空间列表与选择','输入区与侧栏展示引用空间'],note:'通过工作空间选择器发现并选择已有空间，核对输入区及侧栏真实名称，收尾恢复原空间；不发送模型消息或删除已有空间。'},
- {title:'模型选择功能-验证模型选择主流程',category:'首页',button:'模型选择',kind:'interaction-home-model',steps:['模型面板、自动项与分类','模型悬停简介','切换选中与面板自动关闭','恢复原模型','名称字段限制及自定义模型跳转'],note:'观察模型面板分类、简介和选中状态，切换可用模型并恢复执行前的模型；原表描述中的名称限制和自定义跳转缺少可操作预期，保留待复核。'}
+ {title:'模型选择功能-验证模型选择主流程',category:'首页',button:'模型选择',kind:'interaction-home-model',steps:['模型面板、自动项与分类','模型悬停简介','切换选中与面板自动关闭','恢复原模型'],note:'按原表J22/K22验证模型面板分类、右侧简介、选中状态、切换及面板自动关闭，结束恢复原模型；缺少实际系列/自定义分组或官方简介前置保留REVIEW。原表H22仅描述提及的名称限制和自定义模型跳转单独待澄清，不计本条已执行覆盖，也不作为主流程的恒定判定缺口。'}
 ];
 const configDefinitions=[
  {title:'会话方式-验证会话模式主流程（切换会话模式）',category:'首页配置',button:'模式',kind:'config-mode'},

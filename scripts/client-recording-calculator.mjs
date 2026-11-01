@@ -4,7 +4,8 @@ import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {withRecordingExpert} from './mobilework-recording-expert.mjs';
 import {workspaces,workspaceSessions,prepareWorkspaceResources} from './mobilework-workspaces.mjs';
-import {snapshotDraft,editorOf} from './mobilework-isolation.mjs';
+import {snapshotDraft} from './mobilework-isolation.mjs';
+import {selectSlashSkill} from './mobilework-skill-resources.mjs';
 import {buildTrace,redactTrace} from '../local-console/trace.mjs';
 import {resolveRecordingRuntimeDbPath,prepareRecordingResources,refreshRecordingBinding,observeRecordingSettlement,prepareSkillGeneration,recordGeneratedSkill,inspectCalculator} from './mobilework-recording-workflow.mjs';
 
@@ -41,7 +42,7 @@ function recordedCalculatorSequence(artifact,calculation){
 }
 
 async function selectGeneratedSkill(context,id){
- const {page,fill,checkpointPage,assert,capture}=context;
+ const {page,fill,assert,capture}=context;
  await fill('/');
  const search=page.locator('input[placeholder="输入名称搜索..."]').filter({visible:true});await search.waitFor();await search.fill(id);
  const menu=search.locator('xpath=../../..').getByRole('presentation'),element=await menu.elementHandle();
@@ -50,7 +51,7 @@ async function selectGeneratedSkill(context,id){
  const options=menu.getByRole('button').filter({visible:true}),empty=menu.getByText('未找到命令或技能。',{exact:true});
  if(await empty.isVisible())throw blocked('本轮录制技能已安装，但产品斜线菜单没有该技能');
  if(await options.count()!==1)throw review('本轮录制技能菜单候选不能唯一对应');
- await options.click();await editorOf(page).locator('[data-skill-remove="'+id+'"]').waitFor();await checkpointPage();
+ await selectSlashSkill(context,options,id);
  assert('新Session真实选中本轮录制生成Skill',(await snapshotDraft(page)).skills.includes(id));
  await capture('本轮生成技能已选择');
 }

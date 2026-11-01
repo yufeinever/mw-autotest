@@ -1,4 +1,17 @@
+import {draftOwnership,editorOf} from './mobilework-isolation.mjs';
+
 const blocked=message=>Object.assign(Error(message),{blocked:true});
+
+export async function selectSlashSkill({page,checkpointPage,getOwnedDraft},choice,id){
+ const before=getOwnedDraft();
+ if(!before||before.text!=='/'||before.skills.length||!(await draftOwnership(page,before)).matches)throw blocked('斜线技能选择前不是本轮已登记的单独斜线草稿，保留现场');
+ const expected={...before,text:'',skills:[id]};
+ await checkpointPage(expected);
+ await choice.click();
+ await editorOf(page).locator('[data-skill-remove='+JSON.stringify(id)+']').waitFor({state:'attached'});
+ if(!(await draftOwnership(page,expected)).matches)throw blocked('斜线技能选择后的实际草稿与预登记身份不符，保留现场');
+ return expected;
+}
 
 // Installed HAt picker: inspect committed props and actual keyed rows. This
 // never calls product handlers or changes React state. Caller disposes element.

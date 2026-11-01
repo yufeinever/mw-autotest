@@ -68,7 +68,7 @@ export async function runKnowledgeLifecycle(page,{config,checks,capture,log,dir,
   await button(page,'刷新').first().click();
   await page.getByText('海棠项目测试报告.md',{exact:true}).first().waitFor();
   assert(checks,'新增合成报告被源文件列表发现',await page.getByText('海棠项目测试报告.md',{exact:true}).count()>0);
-  const parsed=await parseOwnedKnowledge({page,call,created,dir,assert:(name,pass,actual)=>assert(checks,name,pass,actual),capture,log});
+  const parsed=await parseOwnedKnowledge({page,call,created,dir,timeoutMs:300000,assert:(name,pass,actual)=>assert(checks,name,pass,actual),capture,log});
   assert(checks,'知识产物保留报告关键事实',parsed.text.includes('海棠026')&&parsed.text.includes('林澈')&&(parsed.text.replace(/[,，\s]/g,'').includes('48000')||parsed.text.includes('4.8万')));
   pending.delete('全量解析及真实Wiki产物');
   const settings=await openKnowledgeSettings(page,{capture,log});

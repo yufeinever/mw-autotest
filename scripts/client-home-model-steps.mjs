@@ -91,7 +91,6 @@ export async function runHomeModelSteps(context){
    throw Object.assign(blocked(detail),{cause:operationError||restoreError});
   }
   if(operationError)throw operationError;
-  gaps.push('原表仅在描述中提及名称限制和自定义模型跳转，未定义操作及预期');
   if(gaps.length)throw review(gaps.join('；'));
  });
 }

@@ -11,6 +11,7 @@ import {RootSessionGroup} from './mobilework-root-session-group.mjs';
 import {archiveRootEvidence} from './client-case-multi-root-steps.mjs';
 import {appendComposerText,readComposerState,normalizeComposerText} from './mobilework-composer.mjs';
 import {snapshotDraft,clearOwnedDraft,editorOf,resetComposerPermission,readComposerPermission} from './mobilework-isolation.mjs';
+import {selectSlashSkill} from './mobilework-skill-resources.mjs';
 import {waitCreatedSession,finalAssistantText} from './client-case-runner.mjs';
 import {handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
@@ -342,8 +343,8 @@ export async function runInteractionCase(number){
     // Identity is confirmed by the actual chip after choosing the real entry.
     const target=menu.getByRole('button').filter({has:page.getByText(displayName,{exact:true})}).filter({visible:true});
     if(await target.count()!==1)throw blocked('当前/菜单未唯一找到原表公文写作技能：'+displayName+'（'+skill+'），未替换为其他技能');
-    await target.click();await editor.locator('[data-skill-remove="'+skill+'"]').waitFor();
-    owned=await snapshotDraft(page);await control.checkpointDraft(owned);assert('斜线选择真实生成公文写作技能标签',owned.skills.includes(skill));remaining.delete('斜线菜单与技能标签');
+    owned=await selectSlashSkill({page,checkpointPage,getOwnedDraft:()=>owned},target,skill);
+    assert('斜线选择真实生成公文写作技能标签',owned.skills.includes(skill));remaining.delete('斜线菜单与技能标签');
     await send('请直接完成以下虚构任务：起草星桥科技综合管理部关于办公设备盘点的通知，范围为电脑、显示器、打印机。各部门在2026年11月6日17时前向赵宁提交资产编号、使用人和设备状态。只输出通知，不发出、不改文件。');
     const output=finalAssistantText(data);assert('公文正文符合素材及通知用途',['通知','电脑','显示器','打印机','赵宁'].every(word=>output.includes(word))&&/11.{0,3}6/.test(output));remaining.delete('公文任务与实际Skill调用');
    }else if(number>=32){

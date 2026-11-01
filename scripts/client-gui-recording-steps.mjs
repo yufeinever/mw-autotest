@@ -1,16 +1,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {readInstalledSkills} from './mobilework-skill-resources.mjs';
+import {readInstalledSkills,selectSlashSkill} from './mobilework-skill-resources.mjs';
 import {withRecordingExpert} from './mobilework-recording-expert.mjs';
 import {workspaces} from './mobilework-workspaces.mjs';
-import {snapshotDraft,editorOf} from './mobilework-isolation.mjs';
+import {snapshotDraft} from './mobilework-isolation.mjs';
 import {connectClientBrowser} from '../local-console/client-connection.mjs';
 import {selectWorkbench} from './mobilework-task-ui.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 
 export async function runGuiRecordingSteps(context){
- const {number,page,config,control,dir,remaining,assert,capture,captureBrowser,fill,send,checkpointPage,getSessionId,saveTrace}=context;
+ const {number,page,config,control,dir,remaining,assert,capture,captureBrowser,fill,send,getSessionId,saveTrace}=context;
  const save=(name,value)=>fs.writeFile(path.join(dir,name),JSON.stringify(value,null,2));
  if(number===86){
   return withRecordingExpert(context,async({catalog,installedByRun})=>{
@@ -32,7 +32,7 @@ export async function runGuiRecordingSteps(context){
  await choice.first().or(empty).waitFor();
  if(await empty.isVisible())throw blocked('安装目录包含lx-flow-search，但本空间斜线菜单搜索明确无结果；需核对技能启用及菜单加载状态，未创建会话');
  if(await choice.count()!==1)throw blocked('斜线技能搜索存在多个候选，无法唯一确认lx-flow-search，保留现场');
- await choice.click();await editorOf(page).locator('[data-skill-remove="lx-flow-search"]').waitFor();await checkpointPage();
+ await selectSlashSkill(context,choice,target);
  assert('真实选择原表GUI查询技能',(await snapshotDraft(page)).skills.includes(target));remaining.delete('原表技能真实选择');await capture('查询技能已选中');
  await send('请使用已选lx-flow-search技能及MobileWork内置浏览器，在中国铁路12306官方车票查询页面完成单程查询：出发地深圳，到达地上海，出发日期'+date+'。实际选择城市候选和日期并点击查询，等结果加载。只查询，不登录、不下单、不购票；不使用搜索摘要代替。若验证码、网络或视觉模型能力导致无法完成，请如实说明。最后保留真实查询结果页供核对。');
  await control.acquire(page,'EVIDENCE');await selectWorkbench(page,config,'浏览器',capture);

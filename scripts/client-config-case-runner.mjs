@@ -86,24 +86,40 @@ async function runSkill(page,config,checks,capture,log,control,dir){
  await search.fill(label);
  const result=await waitForSkillPicker(page,{query:label,targetId:target.id});
  assert(checks,'技能搜索能返回真实身份的目标技能',Boolean(result.element),{id:target.id,name:target.name,title:label,candidates:result.items});
- let owned;
+ let owned,emptyDraft;
+ const remove=page.locator('[contenteditable="true"]').filter({visible:true}).locator('[data-skill-remove='+JSON.stringify(target.name)+']');
  try{
-  try{await capture('技能面板搜索');await result.element.click();}finally{await result.element.dispose();}
-  await page.locator('[data-skill-remove='+JSON.stringify(target.name)+']').waitFor();
-  owned=await snapshotDraft(page);await control.checkpointDraft(owned);
-  // Selecting a skill keeps this panel open. Clicking its toolbar again closes it.
+  try{
+   await capture('技能面板搜索');
+   emptyDraft=await snapshotDraft(page);
+   if(initial||emptyDraft.text||emptyDraft.skills.length||emptyDraft.selection.length)throw blocked('技能选择前不是本轮空草稿，未接管未知内容');
+   // Register the exact intended mutation before the click, including stop/failure.
+   owned={...emptyDraft,skills:[target.name]};await control.checkpointDraft(owned);
+   if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('技能选择前草稿已变化，未点击');
+   await result.element.click();
+  }finally{await result.element.dispose();}
+  // The chip's remove button is hidden until its actual chip is hovered.
+  await remove.waitFor({state:'attached'});
+  if(!(await draftOwnership(page,owned)).matches)throw blocked('选中后的实际草稿与预登记技能不符，保留现场');
   const selected=(await waitForSkillPicker(page,{query:label})).items.find(item=>item.id===target.id);assert(checks,'技能卡点击后状态切换',(selected.checked==='true')!==initial,selected.checked);
-  assert(checks,'选择技能实际生成输入区chip',owned.skills.length===1,owned.skills);
+  assert(checks,'选择技能实际生成输入区chip',await remove.count()===1,owned.skills);
   await visible(page.getByText('Mobile熠动，Work智简',{exact:true})).first().click();
   await search.waitFor({state:'hidden'});assert(checks,'点击空白区域关闭技能面板',await search.count()===0);
-  const remove=page.locator('[data-skill-remove='+JSON.stringify(owned.skills[0])+']');
-  await remove.locator('xpath=..').hover();await remove.click();await remove.waitFor({state:'hidden'});
-  const cleared=await snapshotDraft(page);assert(checks,'输入区技能chip可删除',cleared.skills.length===0);
-  owned=cleared;await control.checkpointDraft(owned);
+  // Installed KAn renderer: button -> icon span -> visible .group chip.
+  await remove.locator('xpath=../..').hover();await remove.waitFor({state:'visible'});await remove.click();await remove.waitFor({state:'detached'});
+  assert(checks,'输入区技能chip可删除',await remove.count()===0);
+  if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('技能删除后未恢复本轮空草稿，保留现场');
+  owned=emptyDraft;await control.checkpointDraft(owned);
   await openPanel(page,'技能');const restored=(await waitForSkillPicker(page)).items.find(item=>item.id===target.id);assert(checks,'技能取消后恢复原状态',(restored.checked==='true')===initial,restored.checked);await closePanel(page);
  }finally{
   if(await search.count())await closePanel(page);
-  if(owned)assert(checks,'技能用例清理本条草稿及选择',await clearOwnedDraft(page,owned,config));
+  if(owned){
+   // A failed/interrupted click may leave the pre-registered empty state intact.
+   // Only these two known states belong to this operation; never adopt a snapshot.
+   if((await draftOwnership(page,owned)).matches)assert(checks,'技能用例清理本条草稿及选择',await clearOwnedDraft(page,owned,config));
+   else if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('技能收尾草稿不属于预登记状态，保留现场');
+   await control.call('checkpoint',{draft:null});
+  }
  }
  log('技能面板检查完成',label+'；原状态='+initial);
  let resources;
