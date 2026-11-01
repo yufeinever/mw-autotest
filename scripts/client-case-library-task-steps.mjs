@@ -420,21 +420,41 @@ async function runReportFollowups(context,initial){
  remaining.delete('增量章节与既有内容保留');remaining.delete('三阶段文件日志及真实预览');
 }
 
+// Installed L6t uses raw Base UI primitives without role/idref wiring.
+// Identify the visible popup by its actual L6t owner, then read displayed text.
+async function readReplayTabTooltip(tab){
+ await tab.hover();
+ const trigger=await tab.elementHandle();
+ try{
+ const shown=await tab.page().waitForFunction(trigger=>{
+  const owner=node=>{
+   let fiber=node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))];
+   while(fiber){if(fiber.type?.name==='L6t')return fiber;fiber=fiber.return;}
+   return null;
+  };
+  const target=owner(trigger);
+  const matches=[...document.querySelectorAll('div[data-open].rounded-xl.border-dls-border')].filter(node=>{
+   if(!node.getClientRects().length||getComputedStyle(node).visibility==='hidden')return false;
+   const actual=owner(node);
+   return target&&actual&&(target===actual||target.alternate===actual||actual.alternate===target);
+  });
+  return matches.length===1?{text:matches[0].innerText}:false;
+ },trigger);
+ try{return (await shown.jsonValue()).text;}
+ finally{await shown.dispose();}
+ }finally{await trigger.dispose();}
+}
+
 async function inspectAllReplayChildren(context,dialog,pack){
  const {page,dir,assert,capture,remaining}=context,children=pack.caseJson.turns.flatMap(turn=>turn.subagents||[]),details=[],captured=new Set();
  const main=dialog.locator('.scrollbar-pills button').filter({hasText:'主会话'}),tabs=dialog.locator('.scrollbar-pills button');
  assert('主任务及原包全部子任务入口存在',children.length>1&&await main.count()===1&&await tabs.count()===children.length+1,{expectedChildren:children.length,actualTabs:await tabs.count()});
- await main.hover();await page.waitForFunction(id=>document.getElementById(id)?.getAttribute('aria-describedby'),await main.getAttribute('id'));
- const mainTip=await main.getAttribute('aria-describedby');
- if(!mainTip)throw review('主任务悬停未取得真实tooltip关联');
- await page.locator('[id="'+mainTip+'"]').waitFor();assert('主任务悬停展示说明',(await page.locator('[id="'+mainTip+'"]').innerText()).includes('主会话'));
+ const mainTooltip=await readReplayTabTooltip(main);
+ assert('主任务悬停展示说明',mainTooltip.includes('主会话'));
  for(const [index,child] of children.entries()){
   const tab=tabs.nth(index+1);await tab.scrollIntoViewIfNeeded();
   assert('子任务顺序与原包真实角色及任务对应：'+(index+1),(await tab.innerText()).includes(child.subagentType)&&(await tab.innerText()).includes(child.description));
-  await tab.hover();await page.waitForFunction(id=>document.getElementById(id)?.getAttribute('aria-describedby'),await tab.getAttribute('id'));
-  const tipId=await tab.getAttribute('aria-describedby');
-  if(!tipId)throw review('子任务悬停未取得真实tooltip关联：'+child.description);
-  const tip=page.locator('[id="'+tipId+'"]');await tip.waitFor();const tooltip=await tip.innerText();
+  const tooltip=await readReplayTabTooltip(tab);
   assert('专家说明含真实角色和原委派内容：'+(index+1),[child.subagentType,child.description,child.prompt||child.description].every(text=>plainCaseText(tooltip).includes(plainCaseText(text))));
   if(!child.result)throw review('原包子任务缺少结果正文，不能证明切换内容完整：'+child.sessionId);
   await tab.click();const message=dialog.locator('[data-message-id="'+child.sessionId+'_m1"]');

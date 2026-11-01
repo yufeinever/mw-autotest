@@ -65,6 +65,7 @@ export async function selectedFiles(){
  selected.push('scripts/client-automation-steps.mjs','scripts/mobilework-automation-resources.mjs');
  selected.push('scripts/client-expert-module-steps.mjs','scripts/mobilework-module-resources.mjs');
  selected.push('scripts/client-recording-workflow-steps.mjs','scripts/mobilework-recording-expert.mjs','scripts/client-skill-management-steps.mjs','scripts/mobilework-market-ui.mjs');
+ selected.push('scripts/mobilework-recording-workflow.mjs','scripts/mobilework-recording-process.ps1','scripts/mobilework-recording-binding.py','scripts/mobilework-calculator.ps1','scripts/client-recording-calculator.mjs');
  selected.push('scripts/client-mindmap-todo-steps.mjs','scripts/mobilework-todo-ui.mjs','scripts/mobilework-explorer.mjs','scripts/mobilework-xmind-installation.ps1');
  for(const file of await filesUnder(path.join(root,'scripts/fixtures/mindmap')))selected.push(path.relative(root,file).replaceAll('\\','/'));
  for(const file of await filesUnder(path.join(root,'scripts/fixtures/office-preview')))selected.push(path.relative(root,file).replaceAll('\\','/'));

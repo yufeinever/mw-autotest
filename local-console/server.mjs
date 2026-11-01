@@ -9,6 +9,7 @@ import {validateAccountMemory} from '../scripts/mobilework-account-memory.mjs';
 import {validateConversationSettings} from '../scripts/mobilework-conversation-settings.mjs';
 import {validateClientRestart,verifyClientRestartPort} from '../scripts/mobilework-client-restart.mjs';
 import {validateModuleHandoff} from '../scripts/mobilework-module-handoff.mjs';
+import {validateRecordingResources,canAdvanceRecordingSession} from '../scripts/mobilework-recording-workflow.mjs';
 import {connectClient} from './client-connection.mjs';
 import {validateKanbanOwnership} from '../scripts/mobilework-kanban.mjs';
 import {validateAccountNetwork} from '../scripts/mobilework-account-network.mjs';
@@ -32,7 +33,7 @@ import {readSessionLogFromPage} from './session-log.mjs';
 import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {discoverClientCdpPort} from './cdp-port.mjs';
-import {killScript,stopSession,releaseOwnedLock,releaseNativeFolder,releaseKnowledge,releaseExpert,releaseTool,releaseSkill,releaseComposer} from './stop-job.mjs';
+import {killScript,stopSession,releaseOwnedLock,releaseNativeFolder,releaseKnowledge,releaseExpert,releaseTool,releaseSkill,releaseComposer,releaseSopRecording} from './stop-job.mjs';
 import {canStopJob} from './stop-all.mjs';
 import {startRecording} from './recording.mjs';
 import {recordingLocation,recordingLocations,openWindowsFolder} from './recording-storage.mjs';
@@ -164,7 +165,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   if(!result.ready)throw Error(result.reason);
   return result;
  };
- const resourceCleanupNames=['确认全部根任务及各自资源结束','关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
+ const resourceCleanupNames=['确认SOP录制及所属会话收尾','确认全部根任务及各自资源结束','关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
  const canRecoverCleanup=job=>!(job.cleanupErrors||[]).some(error=>!resourceCleanupNames.some(name=>error.startsWith(name+'：')));
  const reconcileHandoff=async(job,{allowAbort=false}={})=>{
   if(unlocking)return false;
@@ -177,6 +178,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   try{
    if(job.recoveryConnection)await verifyRestartPort(job,job.recoveryConnection.port);
    const target=job.recoveryConnection?new Proxy(job,{get:(object,key)=>key==='config'?{...object.config,cdpPort:object.recoveryConnection.port}:object[key]}):job;
+   await releaseSopRecording(target,{allowAbort,checkpoint:()=>writeJob(job)});
    if(isRootSessionJob(job))await settleRoots(target,allowAbort);
    await releaseNativeFolder(target);
    await releaseKnowledge(target);
@@ -208,7 +210,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   recovering.set(job.id,pending);return pending;
  };
  // Rebuild holds after a restart without resuming or rewriting historical runs.
- for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(hasUnresolvedRoots(j)||j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
+ for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.recordingResources||j.status==='INTERRUPTED'&&(hasUnresolvedRoots(j)||j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
   if(editingCdp)return;
   for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&canRecoverCleanup(j))){
@@ -248,11 +250,12 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     stopHandled=true;job.phase='STOPPING';
     if(!await step('结束脚本进程',stopWorker))return false;
     try{
+     await releaseSopRecording(job,{allowAbort:true,checkpoint:()=>writeJob(job)});
      if(isRootSessionJob(job)){await settleRoots(job,true);stopMessage='本用例全部根任务已确认结束';}
      else stopMessage=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await sessionStopper(job,{connection:taskRuntimes.get(job.id)});
      if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;
     }catch(error){stopMessage='会话停止未确认：'+error.message;return false;}
-    const hasClientState=Boolean(hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
+    const hasClientState=Boolean(job.recordingResources||hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
     if(job.cooperative&&hasClientState){
      let ready;
      try{ready=await reconcileHandoff(job,{allowAbort:true});}
@@ -273,7 +276,8 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }
      job.sessionId??=jobSessionId(job);
     });
-    const rootsReady=!isRootSessionJob(job)||await step('确认全部根任务及各自资源结束',()=>settleRoots(job,job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome)));
+    const sopReady=await step('确认SOP录制及所属会话收尾',()=>releaseSopRecording(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+    const rootsReady=sopReady&&(!isRootSessionJob(job)||await step('确认全部根任务及各自资源结束',()=>settleRoots(job,job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome))));
     if(rootsReady){
     await step('关闭本轮原生文件夹窗口',()=>releaseNativeFolder(job));
     await step('核对并移除本轮知识库注册',()=>releaseKnowledge(job));
@@ -286,7 +290,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(job.stopRequested)confirmed=await stopClient();
     else{
      job.cleanupStage='核对会话及页面交接';await writeJob(job).catch(()=>{});
-     const hasClientState=Boolean(hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
+     const hasClientState=Boolean(job.recordingResources||hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
      confirmed=job.cooperative&&hasClientState?await reconcileHandoff(job,{allowAbort:['FAIL','BLOCKED','REVIEW'].includes(outcome)}):!Boolean(job.sessionId&&!job.modelCompleted&&!job.sessionSettled);
     }
    }catch(error){job.cleanupErrors.push('收尾异常：'+error.message);}
@@ -380,6 +384,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(action==='checkpoint'){
      if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
      if(body.rootSessionVersion===1){
+      if(job.recordingResources)throw Error('SOP录制生命周期不使用多根任务集合');
       if(job.sessionId||job.submissionPending||job.rootSessionVersion)throw Error('只能在首个根任务提交前开启集合模式');
       job.rootSessionVersion=1;job.expectedRootKeys=['A','B'];job.rootSessions=[];
      }
@@ -394,6 +399,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       rootRuntimes(job).set(root.key,body.runtime);
      }
      if(isRootSessionJob(job)&&body.sessionId)throw Error('集合模式须显式登记根任务，不接受单Session覆盖');
+     if(Object.hasOwn(body,'recordingResources')){
+      const owned=body.recordingResources;
+      if(owned===null){
+       if(job.recordingResources&&!job.recordingResources.cleanupComplete)throw Error('SOP录制及所属资源尚未确认收尾，不能移除归属');
+       delete job.recordingResources;
+      }else{
+       if(isRootSessionJob(job)||owned.jobId!==job.id)throw Error('SOP录制必须属于本条串行用例');
+       validateRecordingResources(owned,job.recordingResources);
+       const sessionIds=new Set([job.sessionId,body.sessionId,...(job.completedSessions||[]).map(item=>item.id)]);
+       for(const session of [owned.sourceSession,owned.replaySession])if(session&&!sessionIds.has(session.id))throw Error('SOP录制来源及回放必须是本用例已登记的阶段会话');
+       job.recordingResources=structuredClone(owned);
+      }
+     }
      if(body.preparationError){
       if(job.sessionId||job.submissionPending||typeof body.preparationError!=='string'||body.preparationError.length>400)throw Error('初始化失败登记无效');
       job.preparationError=body.preparationError;scheduler.pausePreparation(job,body.preparationError);updateQueueHolds();
@@ -438,7 +456,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
        if(owned.previewFullscreen&&typeof owned.previewFullscreen.file!=='string')throw Error('全屏预览文件归属无效');
        if(owned.workbenchLayout&&(typeof owned.workbenchLayout.file!=='string'||typeof owned.workbenchLayout.expanded!=='boolean'))throw Error('侧栏布局恢复基线无效');
        if(owned.previewZoom&&(typeof owned.previewZoom.file!=='string'||!Number.isFinite(owned.previewZoom.value)||typeof owned.previewZoom.iframe!=='boolean'))throw Error('预览缩放恢复基线无效');
-       if(owned.moduleNavigation){const value=owned.moduleNavigation;if(value.originUrl!==owned.url||!isClientPageUrl(value.originUrl)||!['#/experts/staff','#/experts','#/experts/experts','#/experts/connectors','#/automation','#/explore','#/knowledge','#/kanban'].includes(value.targetHash))throw Error('模块页面恢复归属无效');validateModuleHandoff(value);if(job.composerResources?.moduleNavigation&&JSON.stringify(job.composerResources.moduleNavigation)!==JSON.stringify(value))throw Error('不能替换本轮模块入口归属');}
+       if(owned.moduleNavigation){const value=owned.moduleNavigation;if(value.originUrl!==owned.url||!isClientPageUrl(value.originUrl)||!['#/experts/staff','#/experts','#/experts/experts','#/experts/connectors','#/automation','#/explore','#/knowledge','#/kanban'].includes(value.targetHash))throw Error('模块页面恢复归属无效');validateModuleHandoff(value,job.composerResources?.moduleNavigation);}
        if(owned.kanban){if(owned.moduleNavigation?.targetHash!=='#/kanban'&&!(owned.kanban.task?.sessionId&&owned.url.endsWith('/session/'+owned.kanban.task.sessionId)))throw Error('看板资源缺模块或真实Session归属');validateKanbanOwnership(owned.kanban,job.composerResources?.kanban);}
        if(owned.caseReplay){const value=owned.caseReplay,previous=job.composerResources?.caseReplay;if(owned.moduleNavigation?.targetHash!=='#/explore'||typeof value.title!=='string'||!value.title||typeof value.assetId!=='string'||!value.assetId||typeof value.opening!=='boolean'||value.observation!==undefined&&!/^__mwAutotestReplay_[\da-f-]{36}$/.test(value.observation)||Object.keys(value).some(key=>!['title','assetId','opening','observation'].includes(key)))throw Error('案例只读回放归属无效');if(previous&&(previous.title!==value.title||previous.assetId!==value.assetId||previous.observation&&previous.observation!==value.observation))throw Error('不能替换本轮案例回放归属');}
        if(owned.caseTask){
@@ -538,6 +556,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      if(body.submitting){if(isRootSessionJob(job))throw Error('根任务提交须先登记唯一pending来源');job.submissionPending=true;}
      if(body.nextSession===true){
       if(isRootSessionJob(job))throw Error('活跃根任务不走串行阶段newSession');
+      if(job.recordingResources&&!canAdvanceRecordingSession(job.recordingResources))throw Error('本轮SOP录制、续轮或技能生成尚未确认完成，不能新建回放会话');
       // The immutable workspace baseline belongs to the whole case; completed
       // stage Sessions can share its isolated workspace until final cleanup.
       if(!job.sessionId||!job.modelCompleted||job.submissionPending||job.ownedDraft||job.composerResources?.attachments.length||job.composerResources?.queueTexts.length||job.composerResources?.restorePermission||['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','clientRestart','homeModel','taskPin','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].some(key=>job.composerResources?.[key]))throw Error('上一阶段会话或输入区资源未完成，不能新建阶段会话');
@@ -585,6 +604,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(unlocking||recovering.size||batchStarting.size||readingModels||editingCdp||jobs.some(j=>j.status==='RUNNING'||(j.stopRequested&&!['STOPPED','BLOCKED','FAIL','PASS','REVIEW','CHECKED','EXITED'].includes(j.status)))||[...active].some(id=>jobs.find(j=>j.id===id)?.status!=='QUEUED'))return send(409,{error:'仍有执行、停止或恢复操作，请先强制停止全部并等待结束，再解除锁定'});
     const holders=jobs.filter(j=>j.schedulingHold);
     if(holders.length!==body.jobIds.length||holders.some(j=>!body.jobIds.includes(j.id)))return send(409,{error:'占锁任务已变化，请刷新后重新确认'});
+    if(holders.some(j=>j.recordingResources))return send(409,{error:'SOP录制仍有未确认的生命周期，请先完成该任务的强制停止及恢复，不能仅解除调度锁'});
     for(const j of holders)if(Number.isInteger(j.pid)&&j.pid>0){
      try{process.kill(j.pid,0);return send(409,{error:'占锁记录的脚本PID仍存在，请先核实并停止脚本，未解除锁定'});}catch(e){if(e.code!=='ESRCH')return send(409,{error:'无法确认占锁脚本已经退出，未解除锁定'});}
     }

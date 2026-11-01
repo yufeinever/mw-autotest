@@ -12,7 +12,7 @@ import {workspaces} from './client-ui-case-runner.mjs';
 import {snapshotDraft,clearOwnedDraft} from './mobilework-isolation.mjs';
 import {runKnowledgeLifecycle} from './mobilework-knowledge-case.mjs';
 import {initializeTestPage} from './mobilework-initialize.mjs';
-import {readExpertCatalog,releaseExpertResources} from './mobilework-expert-resources.mjs';
+import {readExpertCatalog,releaseExpertResources,waitForExpertInstall} from './mobilework-expert-resources.mjs';
 import {prepareToolResources,readOwnedToolState,releaseToolResources} from './mobilework-tool-resources.mjs';
 import {readEngineConnection,engineRequest} from '../local-console/engine-client.mjs';
 import {readInstalledSkills,releaseSkillResources} from './mobilework-skill-resources.mjs';
@@ -201,14 +201,7 @@ async function runExpert(page,config,checks,capture,log,control){
   if(!catalog.some(e=>e.name==='文档生成专家')){
    resources.installTarget='文档生成专家';resources.installPending=true;await checkpoint();
    await target.getByRole('button',{name:'召唤',exact:true}).click();
-   const deadline=Date.now()+90000;let installed;
-   while(Date.now()<deadline){
-    installed=(await readExpertCatalog(page)).find(e=>e.name===resources.installTarget&&!resources.installedBefore.includes(e.id));
-    if(installed)break;
-    await page.waitForTimeout(500);
-   }
-   if(!installed)throw blocked('本轮文档生成专家安装未确认；保留安装归属，等待后台结束后收尾');
-   await target.getByText('已安装',{exact:true}).waitFor();
+   const installed=await waitForExpertInstall(page,resources);
    resources.installPending=false;await checkpoint();assert(checks,'原表文档生成专家真实安装到本机目录',installed.kind==='installed',{id:installed.id,name:installed.name});
    await capture('文档生成专家安装完成');
    pending.delete('文档生成专家市场安装');

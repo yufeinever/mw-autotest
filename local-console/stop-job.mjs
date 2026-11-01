@@ -1,5 +1,6 @@
 import {connectClient} from './client-connection.mjs';
 import {readEngineConnection} from './engine-client.mjs';
+import {readSessionLog} from './session-log.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -16,14 +17,48 @@ import {releaseAccountLogout} from '../scripts/mobilework-account-logout.mjs';
 import {resumeClientRestart} from '../scripts/mobilework-client-restart.mjs';
 import {releaseSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
 import {snapshotDraft,clearOwnedDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
-import {adoptWorkspacePage} from '../scripts/mobilework-workspaces.mjs';
+import {adoptWorkspacePage,workspaces,workspaceSessions} from '../scripts/mobilework-workspaces.mjs';
+import {normalizeComposerText} from '../scripts/mobilework-composer.mjs';
 import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,adoptMissingSessionHome,confirmFailedBeforeSession,restoreFailedSubmissionPage,settleSession} from './task-recovery.mjs';
 import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
 import {settleOwnedAutomation} from '../scripts/mobilework-automation-resources.mjs';
 import {adoptCaseTaskDraft} from '../scripts/mobilework-case-library.mjs';
 import {identifyKanbanTask} from '../scripts/mobilework-kanban.mjs';
+import {settleRecordingResources} from '../scripts/mobilework-recording-workflow.mjs';
 const exec=promisify(execFile);
+async function adoptRecordingSubmission(page,job,checkpoint){
+ if(job.sessionId||!job.submissionPending)return;
+ const owned=job.recordingResources,draft=job.ownedDraft,workspace=job.composerResources?.workspaceResources;
+ if(!draft?.text||workspace?.existingTargetId!==owned.workspaceId||!Array.isArray(workspace.beforeSessionIds))throw Error('SOP待提交任务缺少完整草稿或会话基线，保留交接');
+ const current=new URL(page.url()),origin=new URL(draft.url),route=current.hash.match(/^#\/workspace\/([^/]+)\/session\/(ses_[A-Za-z0-9]+)$/);
+ if(!route||current.origin!==origin.origin||current.pathname!==origin.pathname||route[1]!==owned.workspaceId||workspace.beforeSessionIds.includes(route[2])||(job.completedSessions||[]).some(session=>session.id===route[2]))throw Error('SOP待提交页面尚未对应本轮新的阶段Session');
+ const space=(await workspaces(page)).items.find(item=>item.id===owned.workspaceId),session=(await workspaceSessions(page,owned.workspaceId)).find(item=>item.id===route[2]);
+ if(!space||!session||!path.isAbsolute(session.directory||'')||!Number.isFinite(session.time?.created)||session.time.created<Date.parse(job.startedAt))throw Error('SOP待提交Session的空间、目录或创建边界不符');
+ const relative=path.relative(space.path,session.directory);
+ if(!relative||relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw Error('SOP待提交Session不在本轮空间的独立任务目录');
+ const data=await readSessionLog({sessionId:session.id,connection:await readEngineConnection(page)}),user=data.messages.find(message=>message.info?.role==='user');
+ const text=(user?.parts||[]).filter(part=>part.type==='text').map(part=>part.text||'').join('');
+ if(data.session.id!==session.id||path.resolve(data.session.directory).toLowerCase()!==path.resolve(session.directory).toLowerCase()||normalizeComposerText(text)!==normalizeComposerText(draft.text))throw Error('SOP待提交Session实际首条用户消息或目录与完整草稿不符');
+ job.sessionId=session.id;job.sessionUrl=page.url();job.sessionDirectory=session.directory;job.submissionPending=false;job.submittedSelection=draft.selection;
+ job.composerResources.url=job.sessionUrl;delete job.ownedDraft;
+ job.recoveryAction='已按空间基线、实际任务目录及完整首条用户消息恢复SOP阶段提交，未重复发送';await checkpoint();
+}
+// SOP capture is independent from the console's evidence video. Keep this
+// checkpoint until its recorder, late continuation and both Sessions settle.
+export async function releaseSopRecording(job,{allowAbort=false,checkpoint=async()=>{}}={}){
+ if(!job.recordingResources)return;
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ try{
+  const page=uniqueClientPage(browser);
+  await adoptRecordingSubmission(page,job,checkpoint);
+  const submittedSession=job.sessionId?{id:job.sessionId,url:job.sessionUrl}:null;
+  const settled=await settleRecordingResources(page,job.recordingResources,{allowAbort,checkpoint,submittedSession,submissionPending:Boolean(job.submissionPending||job.pendingSubmission)});
+  if(!settled?.ready||!job.recordingResources.cleanupComplete)throw Error('本轮SOP录制、续轮或回放资源尚未完成收尾');
+  delete job.recordingResources;await checkpoint();
+ }finally{await browser.close();}
+}
 export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>{}}={}){
+ if(job.recordingResources)throw Error('本轮SOP录制尚未完成收尾，保留输入区及空间资源');
  if(!job.composerResources)return;
  const reconnected=await resumeClientRestart(job.composerResources,job.config,{checkpoint});
  const browser=reconnected?.browser||await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
@@ -125,6 +160,7 @@ export async function releaseTool(job){
  }finally{await browser.close();}
 }
 export async function releaseExpert(job){
+ if(job.recordingResources)throw Error('本轮SOP录制尚未完成收尾，保留专家资源及历史');
  if(!job.expertResources)return;
  const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
  try{

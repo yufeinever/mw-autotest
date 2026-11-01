@@ -3,13 +3,15 @@ import path from 'node:path';
 import {withRecordingExpert} from './mobilework-recording-expert.mjs';
 import {readInstalledSkills} from './mobilework-skill-resources.mjs';
 import {workspaces} from './mobilework-workspaces.mjs';
+import {runCalculatorRecordingSteps} from './client-recording-calculator.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 
 export async function runRecordingWorkflowSteps(context){
  const {number,page,dir,remaining,assert,capture}=context;
+ if(number===87||number===90)return runCalculatorRecordingSteps(context);
  const save=(name,data)=>fs.writeFile(path.join(dir,name),JSON.stringify(data,null,2));
- if(number===89||number===90){
+ if(number===89){
   const workspaceId=page.url().match(/\/workspace\/([^/]+)/)[1],workspace=(await workspaces(page)).items.find(w=>w.id===workspaceId);
   const expectedSkill=number===89?'ihr-leave-application':'win-calculator-subtract-one',installed=await readInstalledSkills(page,workspace.path);
   await save('真实录制复用前置.json',{workspaceId,expectedSkill,installed:installed.includes(expectedSkill),required:['来自真实录制的独立可复用材料及来源Session/产物证据','新Session实际技能选择与回放','回放的真实应用效果及本轮清理归属'],scope:number===89?'专用IHR环境及合成账号/测试提交授权；不依赖086残留':'原表浏览器前置为笔误，保留桌面计算器录制来源；不依赖087残留',implemented:'仅已安装目录前置观察；来源核验和真实回放业务尚未接入'});

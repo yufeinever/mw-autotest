@@ -269,6 +269,11 @@
 !/scripts/mobilework-staff-market.test.mjs
 !/scripts/client-recording-workflow-steps.mjs
 !/scripts/mobilework-recording-expert.mjs
+!/scripts/mobilework-recording-workflow.mjs
+!/scripts/mobilework-recording-process.ps1
+!/scripts/mobilework-recording-binding.py
+!/scripts/mobilework-calculator.ps1
+!/scripts/client-recording-calculator.mjs
 !/scripts/client-skill-management-steps.mjs
 !/scripts/mobilework-market-ui.mjs
 
