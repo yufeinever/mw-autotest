@@ -7,7 +7,7 @@ import {normalizeComposerText} from './mobilework-composer.mjs';
 import {selectModel} from './mobilework-run-policy.mjs';
 import {readArtifact} from './client-case-checks.mjs';
 import {finalAssistantText} from './client-case-runner.mjs';
-import {previewTaskFile,matchToolDetailText} from './mobilework-task-ui.mjs';
+import {previewTaskFile} from './mobilework-task-ui.mjs';
 import {xmlText} from './client-message-display-steps.mjs';
 import {runCaseMultiRootSteps} from './client-case-multi-root-steps.mjs';
 import {caseCards,caseDialog,plainCaseText,normalizeCaseText,openOwnedCase,readCasePackage,observeCaseReplay,readCaseDetail,readCaseDocument,closeOwnedCaseReplay,readCaseFavorites,favoriteHashes,releaseCaseFavorites,adoptCaseTaskDraft,waitCaseCollection} from './mobilework-case-library.mjs';
@@ -50,6 +50,74 @@ async function replayGroupIds(group){
  });
 }
 
+// Installed UHe/Wwr/QHe/$se: only an unambiguous packaged name is remapped.
+// Ambiguous names remain their exact source URL in the product as well.
+function replayPackFile(pack,sourcePath){
+ const name=decodeURIComponent(new URL(sourcePath).pathname.split('/').filter(Boolean).at(-1));
+ const preferred='result_file/'+name;
+ const matches=pack.resourceFiles.includes(preferred)?[preferred]:pack.resourceFiles.filter(file=>file.endsWith('/'+name));
+ const resourcePath=matches.length===1?matches[0]:null;
+ return {sourcePath,resourcePath,path:resourcePath?new URL(resourcePath.split('/').map(encodeURIComponent).join('/'),pack.resourceBaseUrl).href:sourcePath,mapping:resourcePath?'pack-resource':matches.length?'product-keeps-ambiguous-source':'product-keeps-unmapped-source'};
+}
+
+async function inspectReplayFiles(group,pack,tool,record,usedFiles){
+ const value=tool.input.output_paths??tool.input.output_path;
+ const paths=Array.isArray(value)?value:[value];
+ const {controls,entries}=await replayControls(group,'file');
+ record.mode='file-card';record.fileCandidates=entries;record.files=[];record.reviewReasons=[];record.missingFields=[];
+ for(const sourcePath of paths){
+  const file=replayPackFile(pack,sourcePath);record.files.push(file);
+  const matches=entries.filter(entry=>entry.path===file.path&&entry.callIds.includes(record.callId)&&!usedFiles.has(entry.path));
+  if(matches.length!==1){record.reviewReasons.push('result_file真实文件入口缺失或不唯一：'+sourcePath);continue;}
+  const entry=matches[0],card=controls.nth(entry.index);await card.scrollIntoViewIfNeeded();
+  file.text=await card.innerText();file.visible=await card.isVisible();
+  const name=decodeURIComponent(new URL(sourcePath).pathname.split('/').filter(Boolean).at(-1));
+  if(!file.visible||!plainCaseText(file.text).includes(plainCaseText(name)))record.missingFields.push('文件卡可见文件名：'+sourcePath);
+  usedFiles.add(entry.path);
+ }
+}
+
+// The owner is proved from the real Nir, never from whole-dialog text.
+// Renderer-specific checks follow installed Bnr/ynr/knr/xze/Pnr contracts.
+async function inspectReplayTool(dialog,sessionId,tool,entry,trigger,record){
+ const page=dialog.page(),normalized=value=>String(value).replace(/\s+/g,'');
+ record.callId=entry.callId;record.entryLabel=entry.label;record.mode='tool-detail';
+ record.reviewReasons=[];record.missingFields=[];record.notDisplayed=[];
+ await trigger.scrollIntoViewIfNeeded();await trigger.click();
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const detail=await replayDetail(dialog,sessionId,entry.callId);
+ if(!detail||!await detail.isVisible())record.reviewReasons.push('点击后未取得本Session、本toolCallId的唯一可见详情：'+entry.callId);
+ else{
+  const text=await detail.innerText();record.text=text;
+  const input=tool.input||{},output=typeof tool.output==='string'?tool.output:JSON.stringify(tool.output??'');
+  const field=(key,value)=>{if(value!==undefined&&!normalized(text).includes(normalized(value)))record.missingFields.push(key);};
+  if(tool.name==='create_subagent'){
+   for(const key of ['name','role','motto'])field('input.'+key,input[key]);
+   record.notDisplayed=['input.id','output'];
+  }else if(tool.name==='read'){
+   const result=(/<content>([\s\S]*?)<\/content>/.exec(output)?.[1]??output).trim();
+   field('output.content',result);record.notDisplayed=Object.keys(input).map(key=>'input.'+key);
+  }else if(tool.name==='edit'){
+   for(const key of ['filePath','oldString','newString'])field('input.'+key,input[key]);
+   record.notDisplayed=['output',...Object.keys(input).filter(key=>!['filePath','oldString','newString'].includes(key)).map(key=>'input.'+key)];
+  }else if(tool.name==='grep'||tool.name==='glob'){
+   field('input.pattern',input.pattern);field('input.path',input.path);field('output',output);
+   record.notDisplayed=Object.keys(input).filter(key=>!['pattern','path'].includes(key)).map(key=>'input.'+key);
+  }else{
+   const parameters=detail.getByText('输入',{exact:true}).locator('xpath=..').locator(':scope > pre').filter({visible:true});
+   if(await parameters.count()!==1)record.reviewReasons.push('当前工具详情未展示唯一输入块：'+entry.callId);
+   else{
+    record.displayedInput=JSON.parse(await parameters.innerText());
+    if(!sameReplayValue(record.displayedInput,input))record.missingFields.push('input');
+   }
+   if(output)field('output',output);
+  }
+ }
+ const closed=await closeReplayTool(dialog);record.detailClosed=closed===1;
+ if(closed!==1)record.unavailable='工具详情没有唯一正常关闭入口，后续未继续观察';
+}
+
+
 async function replayControls(scope,kind){
  const selector=kind==='file'?'div.cursor-pointer[data-slot="tooltip-trigger"]':'button';
  const controls=scope.locator(selector);
@@ -67,7 +135,17 @@ async function replayControls(scope,kind){
   while(fiber){
    const name=fiber.type?.name,props=fiber.memoizedProps;
    if(kind==='tool'&&name==='DH')return [{index,callId:props.part.toolCallId,name:props.part.toolName,input:props.part.input,label:node.innerText}];
-   if(kind==='file'&&name==='oQ')return [{index,path:props.path,label:node.innerText}];
+   if(kind==='file'&&name==='oQ'){
+    const path=props.path;let owner=fiber.return;
+    while(owner&&owner.type?.name!=='$er'){
+     if(owner.type?.name==='Uer'){
+      const rows=owner.memoizedProps.rows.filter(row=>row.kind==='file'&&row.path===path);
+      return [{index,path,label:node.innerText,callIds:rows.map(row=>row.sourcePart.toolCallId),sourceStepIndices:rows.map(row=>row.sourceStepIndex)}];
+     }
+     owner=owner.return;
+    }
+    return [];
+   }
    // Never attribute a feedback/outer group button to a different entry.
    if(name==='$er')break;
    fiber=fiber.return;
@@ -173,57 +251,20 @@ export async function verifyReplayMain(dialog,pack){
   if(!turn.tools?.length)continue;
   for(const [toolIndex,tool] of turn.tools.entries()){
    const record={index:toolIndex+1,name:tool.name};item.tools.push(record);
+   record.callId=item.id+'_call'+(toolIndex+1);
    if(tool.name==='result_file'){
-    // Result file cards are group deliverables (Uer), outside the final
-    // message wrapper. Match their real path inside this exact group.
-    const {controls,entries}=await replayControls(group,'file'),path=tool.input.output_path;
-    const matches=entries.filter(entry=>entry.path===path&&!usedFiles.has(entry.path));
-    if(matches.length!==1){item.reviewReasons.push('result_file真实文件入口缺失或不唯一：'+path);item.missingTools.push(tool.name);continue;}
-    const entry=matches[0],card=controls.nth(entry.index);await card.scrollIntoViewIfNeeded();
-    record.mode='file-card';record.path=entry.path;record.text=await card.innerText();
-    record.visible=await card.isVisible();record.missingFields=record.visible&&plainCaseText(record.text).includes(plainCaseText(path.split('/').at(-1)))?[]:['文件卡可见文件名'];
-    usedFiles.add(entry.path);if(record.missingFields.length)item.missingTools.push(tool.name);
+    await inspectReplayFiles(group,pack,tool,record,usedFiles);
+    item.reviewReasons.push(...record.reviewReasons);
+    if(record.reviewReasons.length||record.missingFields.length)item.missingTools.push(tool.name);
     continue;
    }
    const {controls,entries}=await replayControls(scope,'tool');
-   const matches=entries.filter(entry=>entry.name===tool.name&&sameReplayValue(entry.input||{},tool.input||{})&&!usedCalls.has(entry.callId));
+   const matches=entries.filter(entry=>entry.callId===record.callId&&entry.name===tool.name&&sameReplayValue(entry.input||{},tool.input||{})&&!usedCalls.has(entry.callId));
    if(matches.length!==1){item.reviewReasons.push('真实工具详情入口缺失或不唯一：'+tool.name+' turn '+item.index);item.missingTools.push(tool.name);continue;}
-   const entry=matches[0],trigger=controls.nth(entry.index);record.callId=entry.callId;record.entryLabel=entry.label;
-   await trigger.scrollIntoViewIfNeeded();await trigger.click();
-   // Nir is the installed version's actual detail container. Its props only
-   // establish which tool the visible text belongs to; they are not evidence
-   // that an input/output field was displayed.
-   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-   const detail=await replayDetail(dialog,sessionId,entry.callId);
-   if(!detail||!await detail.isVisible()){
-    item.reviewReasons.push('点击后未取得本主Session、本toolCallId的唯一可见详情：'+entry.callId);item.missingTools.push(tool.name);
-    const closed=await closeReplayTool(dialog);record.detailClosed=closed===1;
-    if(closed>1)return unavailable('工具详情关闭入口不唯一，后续未继续观察');
-    continue;
-   }
-   const text=await detail.innerText(),normalized=value=>String(value).replace(/\s+/g,'');
-   record.text=text;record.mode='tool-detail';record.missingFields=[];
-   if(tool.name==='create_subagent'){
-    for(const field of ['name','role','motto']){
-     const value=tool.input?.[field];
-     if(value!==undefined&&!normalized(text).includes(normalized(value)))record.missingFields.push('input.'+field);
-    }
-    record.notDisplayed=['input.id','output'];
-   }else{
-    // Pnr renders its parameter label and JSON.stringify(input,null,2) in
-    // the same eu block. Parse that actual visible pre, then compare fields
-    // structurally; object property order is not part of input semantics.
-    const parameters=detail.getByText('参数',{exact:true}).locator('xpath=..').locator(':scope > pre').filter({visible:true});
-    if(await parameters.count()!==1)item.reviewReasons.push('当前工具详情未展示唯一参数块：'+entry.callId);
-    else{
-     record.displayedInput=JSON.parse(await parameters.innerText());
-     if(!sameReplayValue(record.displayedInput,tool.input||{}))record.missingFields.push('input');
-    }
-    if(tool.output&&!normalized(text).includes(normalized(typeof tool.output==='string'?tool.output:JSON.stringify(tool.output))))record.missingFields.push('output');
-   }
-   usedCalls.add(entry.callId);if(record.missingFields.length)item.missingTools.push(tool.name);
-   const closed=await closeReplayTool(dialog);record.detailClosed=closed===1;
-   if(closed!==1)return unavailable('工具详情没有唯一正常关闭入口，后续未继续观察');
+   const entry=matches[0];await inspectReplayTool(dialog,sessionId,tool,entry,controls.nth(entry.index),record);
+   usedCalls.add(entry.callId);item.reviewReasons.push(...record.reviewReasons);
+   if(record.reviewReasons.length||record.missingFields.length)item.missingTools.push(tool.name);
+   if(record.unavailable)return unavailable(record.unavailable);
   }
  }
  return finalize();
@@ -310,7 +351,13 @@ export async function runCaseLibraryTaskSteps(context,items){
  assert('做同款真实预填与原案例完整提示词相同',normalizeComposerText(originalDraft.text)===normalizeComposerText(prompt));
  await save('做同款实际原始预填.json',originalDraft);await capture('做同款真实预填');finish('做同款真实跳转与原文预填');
  let submitted=prompt;
- if(number===111){
+ if(number===113){
+  submitted=prompt+'\n\n本条用例的交付格式要求：请将上述完整合规审查报告直接生成为可编辑的Word（.docx）文件，并作为真实交付文件供预览和保存。';
+  resources.caseTask.editedPrompt=submitted;await checkpointResources();
+  await editorOf(page).fill(submitted);const edited=await snapshotDraft(page);await checkpointPage(edited);
+  assert('113完整原文保留且Word交付要求实际写入草稿',normalizeComposerText(edited.text)===normalizeComposerText(submitted));
+  await save('Word交付要求后的真实预填.json',edited);await capture('113原文追加Word交付格式');finish('Word初版交付格式准备');
+ }else if(number===111){
   const split=prompt.indexOf('\n\n机构：');if(split<0)throw blocked('原案例素材结构已变化，未覆盖成无关提示词');
   const head=prompt.slice(0,split),lines=head.split('\n'),experts=lines.filter(line=>/^\d+\.\s*@/.test(line));
   if(experts.length!==5)throw blocked('原案例不是预期五位专家，保留预填等待复核');
@@ -323,17 +370,20 @@ export async function runCaseLibraryTaskSteps(context,items){
  delete resources.caseTask;await checkpointResources();
  await selectModel(page,config.model||'自动',config);
  await send(submitted,{prefilled:true});finish('原预填真实提交及模型终态');
- const data=getData(),children=await control.get('/session/'+getSessionId()+'/children'),parts=taskTools(data),assignments=parts.filter(p=>p.tool==='task'&&p.state?.metadata?.sessionId);
- await save('专家真实分派与子Session.json',{children,assignments});
- const expected=number===111?3:5,childIds=new Set(assignments.map(p=>p.state.metadata.sessionId));
- assert('本轮实际分派'+expected+'位专家独立子会话',children.length===expected&&childIds.size===expected&&children.every(child=>child.parentID===getSessionId()&&childIds.has(child.id)));
- for(const child of children){
-  const messages=await control.get('/session/'+child.id+'/message');await save(child.id+'-session-log.json',{session:child,messages});outputs.push({name:'专家会话日志',path:child.id+'-session-log.json'});
-  assert('专家子任务实际有完成回复：'+child.id,messages.some(m=>m.info?.role==='assistant'&&m.info.time?.completed&&!m.info.error&&(m.parts||[]).some(p=>p.type==='text'&&p.text.trim())));
- }
+ const data=getData();
  const roles=number===111?['医疗健康营销合规','医疗客服','内容创作']:['医疗健康营销合规','医疗客服','内容创作','品牌','法务'];
- assert('真实分派覆盖原文指定角色职责',roles.every(role=>assignments.some(p=>JSON.stringify(p.state.input).includes(role))),assignments.map(p=>p.state.input));finish('真实专家分派及子Session完成');
- const report=await verifyLiveReport(context,data,roles);finish('本轮真实报告正文与业务目标');finish('报告实际预览及保存');await context.saveTrace();
+ if(number!==113){
+  const children=await control.get('/session/'+getSessionId()+'/children'),parts=taskTools(data),assignments=parts.filter(p=>p.tool==='task'&&p.state?.metadata?.sessionId);
+  await save('专家真实分派与子Session.json',{children,assignments});
+  const expected=number===111?3:5,childIds=new Set(assignments.map(p=>p.state.metadata.sessionId));
+  assert('本轮实际分派'+expected+'位专家独立子会话',children.length===expected&&childIds.size===expected&&children.every(child=>child.parentID===getSessionId()&&childIds.has(child.id)));
+  for(const child of children){
+   const messages=await control.get('/session/'+child.id+'/message');await save(child.id+'-session-log.json',{session:child,messages});outputs.push({name:'专家会话日志',path:child.id+'-session-log.json'});
+   assert('专家子任务实际有完成回复：'+child.id,messages.some(m=>m.info?.role==='assistant'&&m.info.time?.completed&&!m.info.error&&(m.parts||[]).some(p=>p.type==='text'&&p.text.trim())));
+  }
+  assert('真实分派覆盖原文指定角色职责',roles.every(role=>assignments.some(p=>JSON.stringify(p.state.input).includes(role))),assignments.map(p=>p.state.input));finish('真实专家分派及子Session完成');
+ }
+ const report=await verifyLiveReport(context,data,roles,number===113?{extension:'.docx'}:{});finish('本轮真实报告正文与业务目标');finish('报告实际预览及保存');await context.saveTrace();
  if(number===113)await runReportFollowups(context,report);
 }
 
@@ -392,14 +442,34 @@ async function inspectAllReplayChildren(context,dialog,pack){
   details.push({index:index+1,sessionId:child.sessionId,role:child.subagentType,task:child.description,tooltip,text,tools:toolDetails});
   await fs.writeFile(path.join(dir,'全部子任务实际核对.json'),JSON.stringify(details,null,2));
   assert('切换后为对应子Session实际正文：'+(index+1),plainCaseText(text).includes(plainCaseText(child.result)));
-  for(const tool of child.tools||[]){
-   const trigger=message.getByText(tool.title||tool.name,{exact:true});
-   if(await trigger.count()!==1)throw review('专家工具入口未唯一识别，未以工具名称存在冒充详情：'+child.sessionId+' '+tool.name);
-   await trigger.click();const toolText=await dialog.innerText();
-   const actual={tool:tool.name,input:tool.input||{},output:tool.output||'',text:toolText};toolDetails.push(actual);
+  const groups=dialog.locator('div.group\\/message-group'),mapped=[];
+  for(let at=0;at<await groups.count();at++)if((await replayGroupIds(groups.nth(at))).includes(child.sessionId+'_m1'))mapped.push(at);
+  if(mapped.length!==1)throw review('子Session没有唯一实际合并组：'+child.sessionId);
+  const group=groups.nth(mapped[0]),expand=button(group,'展开执行过程');
+  if(await expand.count()===1){
+   if(await expand.getAttribute('aria-expanded')!=='false')throw review('子任务过程开关状态不可确认：'+child.sessionId);
+   await expand.scrollIntoViewIfNeeded();await expand.click();
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  }
+  const clusters=[],clusterIssue=await openReplayClusters(group,clusters);
+  details.at(-1).clusters=clusters;
+  if(clusterIssue)throw review(clusterIssue);
+  const usedFiles=new Set();
+  for(const [toolIndex,tool] of (child.tools||[]).entries()){
+   const actual={index:toolIndex+1,tool:tool.name,callId:child.sessionId+'_m1_call'+(toolIndex+1)};toolDetails.push(actual);
+   if(tool.name==='result_file')await inspectReplayFiles(group,pack,tool,actual,usedFiles);
+   else{
+    const callId=child.sessionId+'_m1_call'+(toolIndex+1);
+    const {controls,entries}=await replayControls(group,'tool');
+    const matches=entries.filter(entry=>entry.callId===callId&&entry.name===tool.name&&sameReplayValue(entry.input||{},tool.input||{}));
+    actual.candidates=entries;
+    if(matches.length!==1)throw review('子任务工具入口未按真实callId、名称和完整输入唯一识别：'+callId);
+    const entry=matches[0];await inspectReplayTool(dialog,child.sessionId,tool,entry,controls.nth(entry.index),actual);
+   }
    await fs.writeFile(path.join(dir,'全部子任务实际核对.json'),JSON.stringify(details,null,2));
-   const matched=matchToolDetailText({tool:tool.name,state:{input:tool.input||{},output:tool.output||''}},toolText);
-   assert('子任务工具详情与原包真实输入输出相符：'+(index+1)+' '+tool.name,Boolean(matched),{tool:tool.name});
+   if(actual.unavailable)throw review(actual.unavailable);
+   if(actual.reviewReasons.length)throw review(actual.reviewReasons.join('；'));
+   assert('子任务实际可见工具字段与原包相符：'+(index+1)+' '+tool.name,actual.missingFields.length===0,{callId:actual.callId,missingFields:actual.missingFields,notDisplayed:actual.notDisplayed||[]});
   }
   if(!captured.has(child.subagentType)||index===children.length-1){await capture('分任务-'+(index+1)+'-'+child.subagentType);captured.add(child.subagentType);}
   await button(dialog,'返回主会话继续会话').click();
@@ -409,10 +479,10 @@ async function inspectAllReplayChildren(context,dialog,pack){
  remaining.delete('全部子任务真实切换及正文');remaining.delete('各专家悬停说明及工具输入输出');remaining.delete('逐项返回主任务');
 }
 
-async function verifyLiveReport(context,data,roles){
+async function verifyLiveReport(context,data,roles,{extension}={}){
  const {dir,control,page,config,assert,capture,outputs}=context;
  const entries=await fs.readdir(control.directory,{recursive:true,withFileTypes:true});
- const candidates=entries.filter(entry=>entry.isFile()&&/\.(docx|md|txt|html|pdf)$/i.test(entry.name)&&/审查|合规|报告|compliance|report/i.test(entry.name)).map(entry=>path.relative(control.directory,path.join(entry.parentPath,entry.name)));
+ const candidates=entries.filter(entry=>entry.isFile()&&(extension?path.extname(entry.name).toLowerCase()===extension:/\.(docx|md|txt|html|pdf)$/i.test(entry.name)&&/审查|合规|报告|compliance|report/i.test(entry.name))).map(entry=>path.relative(control.directory,path.join(entry.parentPath,entry.name)));
  const toolText=JSON.stringify(taskTools(data).filter(p=>p.state?.status==='completed')),records=[];
  for(const relative of candidates){
   const bytes=await readArtifact(control.directory,relative,{binary:true}),ext=path.extname(relative).toLowerCase();let text;
@@ -424,11 +494,11 @@ async function verifyLiveReport(context,data,roles){
   records.push({relative,text,bytes:bytes.length,referenced:toolText.includes(path.basename(relative))});
  }
  await fs.writeFile(path.join(dir,'本轮候选报告实际正文.json'),JSON.stringify(records,null,2));
- const report=records.find(record=>record.referenced&&/安宁睡眠/.test(record.text)&&/风险/.test(record.text)&&/建议|替代/.test(record.text));
- assert('模型实际生成可读且有本轮工具来源的合规报告',Boolean(report),records.map(({relative,bytes,referenced})=>({relative,bytes,referenced})));
- const combined=report.text+'\n'+finalAssistantText(data);
+ const report=records.find(record=>(!extension||path.extname(record.relative).toLowerCase()===extension)&&record.referenced&&/安宁睡眠/.test(record.text)&&/风险/.test(record.text)&&/建议|替代/.test(record.text));
+ assert(extension?'模型实际生成可读且有本轮工具来源的Word合规报告':'模型实际生成可读且有本轮工具来源的合规报告',Boolean(report),records.map(({relative,bytes,referenced})=>({relative,bytes,referenced})));
+ const combined=extension?report.text:report.text+'\n'+finalAssistantText(data);
  assert('最终报告覆盖素材事实及医疗营销边界',[/安宁睡眠/,/99\s*元|99元/,/风险/,/替代|改写/,/客服|接待|转诊/,/审核|审查/,/隐私|个人信息/,/不能替代|不替代|不构成.{0,8}诊断|不作.{0,6}诊断/,/不.{0,6}承诺|避免.{0,6}承诺|禁止.{0,6}承诺|不.{0,6}保证/].every(pattern=>pattern.test(combined)));
- assert('报告体现被分派专家的实际业务工作',roles.every(role=>role.includes('医疗健康')?/宣传|疗效|卖点/.test(report.text):role.includes('客服')?/客服|接待|转诊/.test(report.text):role.includes('内容')?/广告|短视频|落地页/.test(report.text):role==='品牌'?/品牌|语气|视觉/.test(report.text):/个人信息|消费者|广告法/.test(report.text)));
+ assert(context.number===113?'Word报告覆盖原案例角色职责对应的业务内容':'报告体现被分派专家的实际业务工作',roles.every(role=>role.includes('医疗健康')?/宣传|疗效|卖点/.test(report.text):role.includes('客服')?/客服|接待|转诊/.test(report.text):role.includes('内容')?/广告|短视频|落地页/.test(report.text):role==='品牌'?/品牌|语气|视觉/.test(report.text):/个人信息|消费者|广告法/.test(report.text)));
  await control.acquire(page,'EVIDENCE');await previewTaskFile(page,config,path.basename(report.relative),capture,['安宁睡眠']);
  const archive='交付-'+path.basename(report.relative);await fs.copyFile(path.join(control.directory,report.relative),path.join(dir,archive));outputs.push({name:'本轮合规报告',path:archive});
  assert('真实生成报告已保存且证据副本与原文件一致',(await fs.readFile(path.join(control.directory,report.relative))).equals(await fs.readFile(path.join(dir,archive))));

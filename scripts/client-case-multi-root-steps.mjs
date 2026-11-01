@@ -201,16 +201,25 @@ export async function runCaseMultiRootSteps(context,items,{verifyMedicalReport})
    bResources.caseReplay={title:targets.B.title,assetId:targets.B.assetId,opening:true};await group.checkpointResources(bResources);await card.click({timeout:1500});return false;
   });
  };
- const samples=[];
- await group.wait({timeoutMs:definition.timeoutMs,advance,onSample:async sample=>{samples.push(sample);await fs.appendFile(path.join(dir,'两根实际执行采样.jsonl'),JSON.stringify(sample)+'\n');},onRootComplete:async task=>{
+ const overlap=[];let registrationChecked=false;
+ await group.wait({timeoutMs:definition.timeoutMs,advance,onSample:async sample=>{
+  await fs.appendFile(path.join(dir,'两根实际执行采样.jsonl'),JSON.stringify(sample)+'\n');
+  if(!registrationChecked&&group.tasks.length===2){
+   const actualDirectories=await Promise.all(group.tasks.map(task=>fs.realpath(task.directory)));
+   assert('112两条案例实际创建不同根Session与任务目录',new Set(group.tasks.map(task=>task.id)).size===2&&new Set(actualDirectories.map(directory=>directory.toLowerCase())).size===2);
+   registrationChecked=true;remaining.delete('两根真实Session与目录隔离');remaining.delete('两个真实案例完整来源及预填');
+  }
+  if(['A','B'].every(key=>sample.roots.some(root=>root.key===key&&root.state==='busy'))){
+   overlap.push(sample);
+   if(overlap.length===1){
+    await fs.writeFile(path.join(dir,'实际运行重叠证据.json'),JSON.stringify({observed:true,samples:[sample],scope:'首次实际重叠样本；完整采样见两根实际执行采样.jsonl'},null,2));
+    assert('112实际采样观察两根模型同时busy',true);remaining.delete('模型实际运行重叠');
+   }
+  }
+ },onRootComplete:async task=>{
   await fs.writeFile(path.join(dir,task.evidence,'模型实际终态.json'),JSON.stringify({key:task.key,id:task.id,result:task.result,error:task.error,observedAt:new Date().toISOString()},null,2));
  }});
- const actualDirectories=await Promise.all(group.tasks.map(task=>fs.realpath(task.directory)));
- assert('112两条案例实际创建不同根Session与任务目录',group.tasks.length===2&&new Set(group.tasks.map(task=>task.id)).size===2&&new Set(actualDirectories.map(directory=>directory.toLowerCase())).size===2);
- remaining.delete('两根真实Session与目录隔离');remaining.delete('两个真实案例完整来源及预填');
- const overlap=samples.filter(sample=>['A','B'].every(key=>sample.roots.some(root=>root.key===key&&root.state==='busy')));
  await fs.writeFile(path.join(dir,'实际运行重叠证据.json'),JSON.stringify({observed:overlap.length>0,samples:overlap},null,2));
- if(overlap.length){assert('112实际采样观察两根模型同时busy',true);remaining.delete('模型实际运行重叠');}
  const problems=[];
  for(const task of group.tasks){
   try{
@@ -221,7 +230,7 @@ export async function runCaseMultiRootSteps(context,items,{verifyMedicalReport})
    task.result='PASS';
   }catch(error){task.result=error.review?'REVIEW':error.blocked?'BLOCKED':'FAIL';task.error=error.message;problems.push({key:task.key,result:task.result,error});}
  }
- if(group.tasks.every(task=>task.evidenceStored))remaining.delete('各根日志Trace与产物归档');
+ if(group.tasks.every(task=>task.evidenceStored))remaining.delete('各根日志Trace归档');
  if(!overlap.length)problems.push({key:'group',result:'REVIEW',error:review('未观察到两根真实执行时段重叠；不能用各自完成冒充同时运行')});
  await fs.writeFile(path.join(dir,'两项业务独立结论.json'),JSON.stringify({roots:group.tasks.map(({key,id,result,error})=>({key,id,result,error})),overlap:{result:overlap.length?'PASS':'REVIEW',observed:overlap.length>0,error:overlap.length?null:'未观察到两根真实执行时段重叠'}},null,2));
  if(problems.length){const selected=problems.find(item=>item.result==='BLOCKED')||problems.find(item=>item.result==='FAIL')||problems[0];throw selected.error;}

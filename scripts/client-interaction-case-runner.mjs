@@ -337,6 +337,7 @@ export async function runInteractionCase(number){
     catch(error){log('根任务证据保存失败',task.key+'：'+error.message);errorText+=(errorText?'；':'')+error.message;result='BLOCKED';}
     sessions.push({key:task.key,id:task.id,directory:task.directory,evidence:task.evidence,source:task.source,result:task.result,error:task.error,completed:task.completed,trace:task.trace?{...task.trace,path:task.evidence+'/trace.json'}:null});
    }
+   if(number===112&&rootGroup.tasks.length===2&&rootGroup.tasks.every(task=>task.evidenceStored))remaining.delete('各根日志Trace归档');
    const first=rootGroup.tasks[0];sessionId=first?.id;data=first?.data;trace=first?.trace?{...first.trace,path:first.evidence+'/trace.json'}:null;
    try{await rootGroup.close();}
    catch(error){log('根任务组交接未完成',error.message);errorText+=(errorText?'；':'')+error.message;result='BLOCKED';}
