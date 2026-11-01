@@ -1,5 +1,5 @@
 import {connectClient} from './client-connection.mjs';
-import {readEngineConnection,engineRequest} from './engine-client.mjs';
+import {readEngineConnection} from './engine-client.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -17,7 +17,7 @@ import {resumeClientRestart} from '../scripts/mobilework-client-restart.mjs';
 import {releaseSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
 import {snapshotDraft,clearOwnedDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
 import {adoptWorkspacePage} from '../scripts/mobilework-workspaces.mjs';
-import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession} from './task-recovery.mjs';
+import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,confirmFailedBeforeSession,restoreFailedSubmissionPage,settleSession} from './task-recovery.mjs';
 import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
 import {settleOwnedAutomation} from '../scripts/mobilework-automation-resources.mjs';
 import {adoptCaseTaskDraft} from '../scripts/mobilework-case-library.mjs';
@@ -32,6 +32,9 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
   await releaseAccountLogout(page,job.composerResources,{checkpoint});
   await releaseSettingsPanel(page,job.composerResources);
   await adoptFailedWorkspaceSession(page,job,{allowAbort,checkpoint});
+  if(confirmFailedBeforeSession(job))await checkpoint();
+  const failure=await restoreFailedSubmissionPage(page,job);
+  if(!failure.ready)throw Error(failure.reason);
   const workspace=job.composerResources.workspaceResources;
   if(workspace?.existingTargetId){
    if(job.submissionPending&&!job.sessionId){
@@ -70,21 +73,16 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
   const adopted=await adoptWorkspacePage(page,job.composerResources);
   if(adopted){job.ownedDraft=adopted;job.composerResources.url=page.url();await checkpoint();}
   if(page.url()!==job.composerResources.url)throw Error('本轮输入区页面归属已变化，未清理');
+  // The worker has exited. Settle its own session before restoring controls.
+  if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled){
+   const settled=await settleSession(page,job,undefined,{allowAbort});
+   await checkpoint();
+   if(!settled)throw Error('本轮会话仍未结束，保留输入区资源并等待收尾');
+  }
   for(const text of job.composerResources.queueTexts){
    const row=queuedRow(page,text);
    if(await row.count()>1)throw Error('排队消息不唯一，未清理');
    if(await row.count())await row.getByRole('button',{name:'删除排队消息',exact:true}).click();
-  }
-  // The worker has exited. Settle its own session before restoring controls.
-  if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled){
-   if(!allowAbort)throw Error('本轮会话仍未结束，保留输入区资源并等待收尾');
-   const connection=await readEngineConnection(page);await stopSession(job,{connection});
-   const deadline=Date.now()+10000;
-   while((await engineRequest(connection,'/session/status'))[job.sessionId]?.type==='busy'){
-    if(Date.now()>=deadline)throw Error('本轮会话停止后仍忙碌，未恢复权限');
-    await new Promise(resolve=>setTimeout(resolve,200));
-   }
-   job.sessionSettled=true;
   }
   if(deferredModule)await restoreModuleNavigation(page,job.composerResources,{modelSettled:Boolean(job.modelCompleted||job.sessionSettled),cdpPort:job.config.cdpPort});
   if(job.ownedDraft&&await composerFieldOf(page).count()===1){
