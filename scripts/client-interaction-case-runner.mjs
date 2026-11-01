@@ -7,6 +7,8 @@ import {normalizeConfig} from '../local-console/policy.mjs';
 import {getClientCase,caseSheet,caseWorkbook} from './client-case-catalog.mjs';
 import {createRunDirectory,createEvidenceRecorder,beijingLogTime} from './mobilework-evidence.mjs';
 import {createTaskControl} from './mobilework-task-control.mjs';
+import {RootSessionGroup} from './mobilework-root-session-group.mjs';
+import {archiveRootEvidence} from './client-case-multi-root-steps.mjs';
 import {appendComposerText,readComposerState,normalizeComposerText} from './mobilework-composer.mjs';
 import {snapshotDraft,clearOwnedDraft,editorOf,resetComposerPermission,readComposerPermission} from './mobilework-isolation.mjs';
 import {waitCreatedSession,finalAssistantText} from './client-case-runner.mjs';
@@ -74,9 +76,17 @@ export async function runInteractionCase(number){
  const started=new Date(),dir=await createRunDirectory(path.join(root,'runs'),definition.label,started);
  const checks=[],events=[],outputs=[],sessions=[],remaining=new Set(definition.steps),recorder=createEvidenceRecorder(dir);
  const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+beijingLogTime()+'] '+step+' '+detail);};
- const control=createTaskControl({log});let browser,page,owned,resources,sessionId,data,trace,result='BLOCKED',errorText='';
+ const control=createTaskControl({log});let browser,page,owned,resources,sessionId,data,trace,rootGroup,result='BLOCKED',errorText='';
  const assert=(name,pass,actual)=>{checks.push({name,pass:Boolean(pass),...(actual===undefined?{}:{actual})});if(!pass)throw Error('断言失败：'+name);};
- const capture=step=>control.withUI(page,'EVIDENCE',()=>recorder.capture(page,step));
+ const capture=(step,key)=>{
+  key??=rootGroup?.activeControl?.rootKey||rootGroup?.pending?.key||rootGroup?.currentRootKey;
+  const record=()=>recorder.capture(page,key&&!step.startsWith('任务'+key)?'任务'+key+'-'+step:step);
+  if(rootGroup?.activeControl)return rootGroup.activeControl.withUI(page,'EVIDENCE',record);
+  if(rootGroup?.pending)return rootGroup.withPendingUI('EVIDENCE',record);
+  if(rootGroup?.tasks.length)return rootGroup.withRootUI(rootGroup.tasks.some(task=>task.key===key)?key:rootGroup.tasks[0].key,'EVIDENCE',record);
+  return control.withUI(page,'EVIDENCE',record);
+ };
+ const createRootGroup=()=>{if(rootGroup)throw Error('本用例已建立根任务组');rootGroup=new RootSessionGroup({control,page,config,dir,capture,log});return rootGroup;};
  const checkpointResources=()=>control.call('checkpoint',{composerResources:resources});
  const replaceClient=async next=>{const previous=browser;browser=next.browser;page=next.page;page.setDefaultTimeout(10000);await previous.close();};
  const checkpointPage=async(draft)=>{owned=draft||await snapshotDraft(page);await control.checkpointDraft(owned);resources.url=owned.url;await checkpointResources();};
@@ -313,7 +323,7 @@ export async function runInteractionCase(number){
     await send('请直接完成以下虚构任务：起草星桥科技综合管理部关于办公设备盘点的通知，范围为电脑、显示器、打印机。各部门在2026年11月6日17时前向赵宁提交资产编号、使用人和设备状态。只输出通知，不发出、不改文件。');
     const output=finalAssistantText(data);assert('公文正文符合素材及通知用途',['通知','电脑','显示器','打印机','赵宁'].every(word=>output.includes(word))&&/11.{0,3}6/.test(output));remaining.delete('公文任务与实际Skill调用');
    }else if(number>=32){
-    await (number>=202?runUpdateSteps:number>=200?runFeedbackSteps:number>=199?runHelpFeedbackSteps:number>=192?runSecuritySettingsSteps:number>=187?runConversationSettingsSteps:number>=182?runSystemMemorySteps:number>=177?runSystemSettingsSteps:number>=172?runAccountProfileSteps:number>=167?runAccountNavigationSteps:number>=165?runAccountUsageSteps:number>=162?runEfficiencySteps:number>=152?runKanbanOperationsSteps:number>=147?runKanbanTaskSteps:number>=145?runKanbanSteps:number>=114?runKnowledgeManagementSteps:number>=104?runCaseLibrarySteps:number>=97?runAutomationSteps:number>=92?runExpertModuleSteps:number===91?runSkillManagementSteps:number>=87?runRecordingWorkflowSteps:number>=85?runGuiRecordingSteps:number>=82?runStaffMarketSteps:number>=80?runRpaPreconditions:number>=77?runWorkspaceManagementSteps:number>=72?runBrowserWorkspaceSteps:number>=67?runMindmapTodoSteps:number>=62?runOfficeFileSteps:number>=57?runFilePreviewSteps:number>=52?runQueueWorkbenchSteps:number>=47?runMessageActionsSteps:number>=42?runLoadingUsageSteps:number>=37?runMessageDisplaySteps:runTaskLifecycleSteps)({number,definition,page,config,control,dir,resources,remaining,outputs,assert,capture,captureElement:(element,step)=>control.withUI(page,'EVIDENCE',()=>recorder.captureElement(element,step)),replaceClient,captureBrowser:(target,step)=>control.withUI(page,'EVIDENCE',()=>recorder.capture(target,step)),log,send,sendKanbanTask,adoptExternalSession,fill,markDraftSent,waitBusy,newSession,recordPreparedSession,checkpointResources,checkpointPage,getData:()=>data,getSessionId:()=>sessionId,saveTrace:async()=>{
+    await (number>=202?runUpdateSteps:number>=200?runFeedbackSteps:number>=199?runHelpFeedbackSteps:number>=192?runSecuritySettingsSteps:number>=187?runConversationSettingsSteps:number>=182?runSystemMemorySteps:number>=177?runSystemSettingsSteps:number>=172?runAccountProfileSteps:number>=167?runAccountNavigationSteps:number>=165?runAccountUsageSteps:number>=162?runEfficiencySteps:number>=152?runKanbanOperationsSteps:number>=147?runKanbanTaskSteps:number>=145?runKanbanSteps:number>=114?runKnowledgeManagementSteps:number>=104?runCaseLibrarySteps:number>=97?runAutomationSteps:number>=92?runExpertModuleSteps:number===91?runSkillManagementSteps:number>=87?runRecordingWorkflowSteps:number>=85?runGuiRecordingSteps:number>=82?runStaffMarketSteps:number>=80?runRpaPreconditions:number>=77?runWorkspaceManagementSteps:number>=72?runBrowserWorkspaceSteps:number>=67?runMindmapTodoSteps:number>=62?runOfficeFileSteps:number>=57?runFilePreviewSteps:number>=52?runQueueWorkbenchSteps:number>=47?runMessageActionsSteps:number>=42?runLoadingUsageSteps:number>=37?runMessageDisplaySteps:runTaskLifecycleSteps)({number,definition,page,config,control,dir,resources,remaining,outputs,checks,assert,capture,createRootGroup,captureElement:(element,step)=>control.withUI(page,'EVIDENCE',()=>recorder.captureElement(element,step)),replaceClient,captureBrowser:(target,step)=>control.withUI(page,'EVIDENCE',()=>recorder.capture(target,step)),log,send,sendKanbanTask,adoptExternalSession,fill,markDraftSent,waitBusy,newSession,recordPreparedSession,checkpointResources,checkpointPage,getData:()=>data,getSessionId:()=>sessionId,saveTrace:async()=>{
      trace=await saveRunTrace({page,sessionId,number,dir,checks,log,readLog:children=>control.readLog(children)});return trace;
     }});
    }
@@ -321,7 +331,18 @@ export async function runInteractionCase(number){
   }
  }catch(error){errorText=error.message;result=error.review?'REVIEW':error.blocked?'BLOCKED':'FAIL';log(result,errorText);if(page)await capture('异常现场').catch(e=>log('异常截图失败',e.message));}
  finally{
-  if(page&&resources){try{
+  if(rootGroup){
+   for(const task of rootGroup.tasks){
+    try{await archiveRootEvidence(task,{page,number,dir,checks,log,outputs});}
+    catch(error){log('根任务证据保存失败',task.key+'：'+error.message);errorText+=(errorText?'；':'')+error.message;result='BLOCKED';}
+    sessions.push({key:task.key,id:task.id,directory:task.directory,evidence:task.evidence,source:task.source,result:task.result,error:task.error,completed:task.completed,trace:task.trace?{...task.trace,path:task.evidence+'/trace.json'}:null});
+   }
+   const first=rootGroup.tasks[0];sessionId=first?.id;data=first?.data;trace=first?.trace?{...first.trace,path:first.evidence+'/trace.json'}:null;
+   try{await rootGroup.close();}
+   catch(error){log('根任务组交接未完成',error.message);errorText+=(errorText?'；':'')+error.message;result='BLOCKED';}
+   // Shared resources and all active roots remain registered. Only the server's
+   // group barrier may settle them and hand the client to the next case.
+  }else if(page&&resources){try{
    if(resources.clientRestart){const next=await resumeClientRestart(resources,config,{checkpoint:checkpointResources});await replaceClient(next);}
    await control.acquire(page,'EVIDENCE');
    await releaseSettingsPanel(page,resources);await checkpointResources();
@@ -344,10 +365,11 @@ export async function runInteractionCase(number){
     assert('本轮附件、队列与权限设置收尾完成',true);
    }
   }catch(error){log('输入区收尾未完成',error.message);errorText+=(errorText?'；':'')+error.message;result='BLOCKED';}}
-  if(page&&sessionId){if(!trace)trace=await saveRunTrace({page,sessionId,number,dir,checks,log,readLog:children=>control.readLog(children)});if(result==='PASS'&&checks.some(check=>!check.pass))result='FAIL';}
-  const summary={result,caseId:definition.id,sheet:caseSheet,workbook:caseWorkbook,row:definition.row,title:definition.title,startedAt:started.toISOString(),endedAt:new Date().toISOString(),sessionId,sessions:[...sessions,...(sessionId?[{id:sessionId,directory:control.directory,evidence:'.'}]:[])],checks,events,outputs,evidence:recorder.evidence,trace,error:errorText,remainingSteps:[...remaining],scope:definition.note};
+  if(!rootGroup&&page&&sessionId){if(!trace)trace=await saveRunTrace({page,sessionId,number,dir,checks,log,readLog:children=>control.readLog(children)});if(result==='PASS'&&checks.some(check=>!check.pass))result='FAIL';}
+  if(rootGroup&&result==='PASS'&&checks.some(check=>!check.pass))result='FAIL';
+  const summary={result,caseId:definition.id,sheet:caseSheet,workbook:caseWorkbook,row:definition.row,title:definition.title,startedAt:started.toISOString(),endedAt:new Date().toISOString(),sessionId,sessions:[...sessions,...(!rootGroup&&sessionId?[{id:sessionId,directory:control.directory,evidence:'.'}]:[])],checks,events,outputs,evidence:recorder.evidence,trace,error:errorText,remainingSteps:[...remaining],scope:definition.note,...(rootGroup?{rootSessionVersion:1,rootPending:rootGroup.pending?{key:rootGroup.pending.key,state:rootGroup.pending.state,source:rootGroup.pending.source,submittedAt:rootGroup.pending.submittedAt}:null}:{} )};
   await fs.writeFile(path.join(dir,'执行结果.json'),JSON.stringify(summary,null,2));await fs.writeFile(path.join(dir,'执行日志.txt'),events.map(e=>e.time+' '+e.step+' '+e.detail).join('\n')+'\n');
   await fs.writeFile(path.join(dir,'执行报告.md'),['# '+definition.id+' 执行报告','','- 用例：'+definition.title,'- 原表：'+caseSheet+'，第'+definition.row+'行','- 结果：'+result,'- Session：'+(sessionId||(sessions.length?'已准备'+sessions.length+'条真实任务，未发起模型对话':'未创建')),'- 原因：'+(errorText||'无'),'','## 阶段会话证据','',...summary.sessions.map((item,index)=>'- 阶段'+(index+1)+'：'+item.id+'；[日志]('+item.evidence+'/'+item.id+'-session-log.json)；[Trace]('+item.evidence+'/trace.json)'),'','## 未完成步骤','',...[...remaining].map(s=>'- '+s),'','## 断言','',...checks.map(c=>'- '+(c.pass?'通过':'**失败**')+'：'+c.name),'','## 执行过程','',...events.map(e=>'- '+e.time+' '+e.step+' '+e.detail),'','## 过程截图','',...recorder.evidence.flatMap(e=>['### '+e.step,'','!['+e.step+']('+e.screenshot+')',''])].join('\n')+'\n');
-  await control?.close(page).catch(e=>log('交接未完成',e.message));await browser?.close().catch(e=>log('断开连接失败',e.message));console.log('报告：'+path.join(dir,'执行报告.md'));process.exitCode=['PASS','CHECKED','REVIEW'].includes(result)?0:result==='BLOCKED'?2:1;
+  if(!rootGroup)await control?.close(page).catch(e=>log('交接未完成',e.message));await browser?.close().catch(e=>log('断开连接失败',e.message));console.log('报告：'+path.join(dir,'执行报告.md'));process.exitCode=['PASS','CHECKED','REVIEW'].includes(result)?0:result==='BLOCKED'?2:1;
  }
 }

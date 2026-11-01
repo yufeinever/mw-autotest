@@ -1,3 +1,6 @@
+import {isRootSessionJob,isRootOwnedPage,rootSession,checkpointRootSubmission,registerRootSession,updateRootSummary,hasUnresolvedRoots} from './root-sessions.mjs';
+import {settleRootSessions} from './root-session-recovery.mjs';
+import {validateEngineConnection} from './engine-client.mjs';
 import {validateSystemSettings} from '../scripts/mobilework-system-settings.mjs';
 import {validateSystemStorage} from '../scripts/mobilework-default-storage.mjs';
 import {validateWindowClose} from '../scripts/mobilework-window-close.mjs';
@@ -151,7 +154,17 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    else delete job.queueHold;
   }
  };
- const resourceCleanupNames=['关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
+ const rootRuntimes=job=>{
+  let runtime=taskRuntimes.get(job.id);
+  if(!(runtime instanceof Map)){runtime=new Map();taskRuntimes.set(job.id,runtime);}
+  return runtime;
+ };
+ const settleRoots=async(job,allowAbort)=>{
+  const result=await settleRootSessions(job,{runtimes:rootRuntimes(job),allowAbort,checkpoint:()=>writeJob(job)});
+  if(!result.ready)throw Error(result.reason);
+  return result;
+ };
+ const resourceCleanupNames=['确认全部根任务及各自资源结束','关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
  const canRecoverCleanup=job=>!(job.cleanupErrors||[]).some(error=>!resourceCleanupNames.some(name=>error.startsWith(name+'：')));
  const reconcileHandoff=async(job,{allowAbort=false}={})=>{
   if(unlocking)return false;
@@ -164,6 +177,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   try{
    if(job.recoveryConnection)await verifyRestartPort(job,job.recoveryConnection.port);
    const target=job.recoveryConnection?new Proxy(job,{get:(object,key)=>key==='config'?{...object.config,cdpPort:object.recoveryConnection.port}:object[key]}):job;
+   if(isRootSessionJob(job))await settleRoots(target,allowAbort);
    await releaseNativeFolder(target);
    await releaseKnowledge(target);
    await releaseExpert(target);
@@ -171,7 +185,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    await releaseSkill(target);
    await composerReleaser(target,{allowAbort,checkpoint:()=>writeJob(job)});
    job.cleanupErrors=(job.cleanupErrors||[]).filter(error=>!resourceCleanupNames.some(name=>error.startsWith(name+'：')));
-   job.handoff=await recovery(target,{connection:taskRuntimes.get(job.id),allowAbort,jobs});
+   job.handoff=await recovery(target,{connection:taskRuntimes.get(job.id),allowAbort,jobs,checkpoint:()=>writeJob(job)});
    if(job.handoff.ready&&job.handoff.url)scheduler.renderer(job.config.cdpPort).expectedUrl=job.handoff.url;
    job.schedulingHold=!job.handoff.ready;
    if(job.schedulingHold)job.error=(job.result?.error||job.error?.split('；页面交接：')[0]||'')+'；页面交接：'+job.handoff.reason;
@@ -194,7 +208,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   recovering.set(job.id,pending);return pending;
  };
  // Rebuild holds after a restart without resuming or rewriting historical runs.
- for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
+ for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(hasUnresolvedRoots(j)||j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
   if(editingCdp)return;
   for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&canRecoverCleanup(j))){
@@ -234,10 +248,11 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     stopHandled=true;job.phase='STOPPING';
     if(!await step('结束脚本进程',stopWorker))return false;
     try{
-     stopMessage=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await sessionStopper(job,{connection:taskRuntimes.get(job.id)});
+     if(isRootSessionJob(job)){await settleRoots(job,true);stopMessage='本用例全部根任务已确认结束';}
+     else stopMessage=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await sessionStopper(job,{connection:taskRuntimes.get(job.id)});
      if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;
     }catch(error){stopMessage='会话停止未确认：'+error.message;return false;}
-    const hasClientState=Boolean(job.sessionId||job.ownedDraft||job.submissionPending);
+    const hasClientState=Boolean(hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
     if(job.cooperative&&hasClientState){
      let ready;
      try{ready=await reconcileHandoff(job,{allowAbort:true});}
@@ -258,17 +273,20 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }
      job.sessionId??=jobSessionId(job);
     });
+    const rootsReady=!isRootSessionJob(job)||await step('确认全部根任务及各自资源结束',()=>settleRoots(job,job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome)));
+    if(rootsReady){
     await step('关闭本轮原生文件夹窗口',()=>releaseNativeFolder(job));
     await step('核对并移除本轮知识库注册',()=>releaseKnowledge(job));
     await step('恢复本轮专家资源与历史',()=>releaseExpert(job));
     await step('恢复本轮工具配置',()=>releaseTool(job));
     await step('移除本轮新增技能',()=>releaseSkill(job));
     await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+    }
     await step('保存录像并断开录制连接',()=>finishRecording(job,job.stopRequested?'stopped':'completed'));
     if(job.stopRequested)confirmed=await stopClient();
     else{
      job.cleanupStage='核对会话及页面交接';await writeJob(job).catch(()=>{});
-     const hasClientState=Boolean(job.sessionId||job.ownedDraft||job.submissionPending);
+     const hasClientState=Boolean(hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
      confirmed=job.cooperative&&hasClientState?await reconcileHandoff(job,{allowAbort:['FAIL','BLOCKED','REVIEW'].includes(outcome)}):!Boolean(job.sessionId&&!job.modelCompleted&&!job.sessionSettled);
     }
    }catch(error){job.cleanupErrors.push('收尾异常：'+error.message);}
@@ -345,10 +363,37 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const id=controlMatch[1],action=controlMatch[2],job=jobs.find(j=>j.id===id);
     if(!job||job.stopRequested||job.finalizing||job.status!=='RUNNING')return send(409,{error:'任务已结束或正在收尾'});
     if(action==='acquire')return send(200,scheduler.acquire(id,body.phase));
-    if(action==='release'){scheduler.release(id,body);if(body.runtime)taskRuntimes.set(id,body.runtime);await writeJob(job);return send(200,{ok:true});}
-    if(action==='completed'){job.modelCompleted=true;job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});}
+    if(action==='release'){
+     if(isRootSessionJob(job)&&body.runtime){
+      const root=rootSession(job,body.rootKey);validateEngineConnection(body.runtime);rootRuntimes(job).set(root.key,body.runtime);
+     }
+     scheduler.release(id,body);
+     if(!isRootSessionJob(job)&&body.runtime)taskRuntimes.set(id,body.runtime);
+     await writeJob(job);return send(200,{ok:true});
+    }
+    if(action==='completed'){
+     if(isRootSessionJob(job)){
+      const root=rootSession(job,body.rootKey);root.modelCompleted=true;root.completedAt=new Date().toISOString();updateRootSummary(job);
+     }else job.modelCompleted=true;
+     job.phase='VERIFYING';await writeJob(job);return send(200,{ok:true});
+    }
     if(action==='checkpoint'){
      if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
+     if(body.rootSessionVersion===1){
+      if(job.sessionId||job.submissionPending||job.rootSessionVersion)throw Error('只能在首个根任务提交前开启集合模式');
+      job.rootSessionVersion=1;job.expectedRootKeys=['A','B'];job.rootSessions=[];
+     }
+     if(body.rootSubmission){
+      if(!isRootSessionJob(job))throw Error('根任务集合模式尚未开启');
+      checkpointRootSubmission(job,body.rootSubmission);
+     }
+     if(body.rootSession){
+      if(!isRootSessionJob(job))throw Error('根任务集合模式尚未开启');
+      validateEngineConnection(body.runtime);
+      const root=registerRootSession(job,body.rootSession);
+      rootRuntimes(job).set(root.key,body.runtime);
+     }
+     if(isRootSessionJob(job)&&body.sessionId)throw Error('集合模式须显式登记根任务，不接受单Session覆盖');
      if(body.preparationError){
       if(job.sessionId||job.submissionPending||typeof body.preparationError!=='string'||body.preparationError.length>400)throw Error('初始化失败登记无效');
       job.preparationError=body.preparationError;scheduler.pausePreparation(job,body.preparationError);updateQueueHolds();
@@ -356,10 +401,10 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      if(body.continuing===true){job.modelCompleted=false;job.sessionSettled=false;}
      if(Object.hasOwn(body,'composerResources')){
       const owned=body.composerResources;
-      if(owned===null)delete job.composerResources;
+      if(owned===null){if(isRootSessionJob(job))throw Error('集合共享资源只能在全部根收尾后由控制台释放');delete job.composerResources;}
       else{
        if(typeof owned.url!=='string'||!isClientPageUrl(owned.url)||!Array.isArray(owned.attachments)||!Array.isArray(owned.queueTexts)||typeof owned.restorePermission!=='boolean'||[...owned.attachments,...owned.queueTexts].some(value=>typeof value!=='string'||!value))throw Error('输入区资源归属格式无效');
-       if(owned.url!==job.sessionUrl&&owned.url!==job.ownedDraft?.url&&owned.url!==scheduler.renderer(job.config.cdpPort).expectedUrl&&owned.url!==job.composerResources?.url)throw Error('输入区资源页面归属不匹配');
+       if(owned.url!==job.sessionUrl&&owned.url!==job.ownedDraft?.url&&owned.url!==scheduler.renderer(job.config.cdpPort).expectedUrl&&owned.url!==job.composerResources?.url&&!(isRootSessionJob(job)&&isRootOwnedPage(job,owned.url)))throw Error('输入区资源页面归属不匹配');
        if(owned.taskPin){
         const pin=owned.taskPin;
         if(typeof pin.title!=='string'||!pin.title||typeof pin.baseline!=='boolean')throw Error('本轮置顶恢复归属无效');
@@ -437,7 +482,8 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
        if(owned.toolSelection&&(owned.toolSelection.name!=='腾讯文档'||typeof owned.toolSelection.baseline!=='boolean'||job.composerResources?.toolSelection&&job.composerResources.toolSelection.baseline!==owned.toolSelection.baseline))throw Error('工具任务选择恢复基线无效');
        if(owned.workspaceResources){const value=owned.workspaceResources;if(!Array.isArray(value.beforeIds)||typeof value.previousId!=='string'||!Array.isArray(value.sidebar)||typeof value.sectionExpanded!=='boolean'||!value.storage||Object.keys(value.storage).some(key=>!['openwork.react.workspaceOrder','openwork.react.activeWorkspace','openwork.react.newTaskDraftWorkspace','openwork.react.newTaskHomepageWorkspace'].includes(key))||value.target&&(typeof value.target.name!=='string'||!value.target.name||value.target.path&&!path.isAbsolute(value.target.path))||value.existingTargetId&&(!value.beforeIds.includes(value.existingTargetId)||value.target)||value.beforeSessionIds&&(!value.existingTargetId||!Array.isArray(value.beforeSessionIds)||value.beforeSessionIds.some(id=>typeof id!=='string'||!/^ses_[A-Za-z0-9]+$/.test(id))))throw Error('工作空间恢复归属无效');if(job.composerResources?.workspaceResources&&JSON.stringify(job.composerResources.workspaceResources)!==JSON.stringify(value))throw Error('不能替换本轮空间恢复基线');}
        if(owned.homeModel&&(typeof owned.homeModel.restore!=='string'||!owned.homeModel.restore||owned.homeModel.restore.length>256||owned.homeModel.value!==null&&(Array.isArray(owned.homeModel.value)?owned.homeModel.value.length!==2||owned.homeModel.value.some(part=>typeof part!=='string'||!part||part.length>1024):typeof owned.homeModel.value!=='string'||owned.homeModel.value.length>2048)||job.composerResources?.homeModel&&JSON.stringify(job.composerResources.homeModel)!==JSON.stringify(owned.homeModel)))throw Error('首页模型恢复归属无效');
-       job.composerResources={url:owned.url,attachments:owned.attachments,queueTexts:owned.queueTexts,restorePermission:owned.restorePermission,...Object.fromEntries(['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','accountMemory','conversationSettings','clientRestart','homeModel','taskPin','personalization','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','workspaceResources','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].filter(key=>owned[key]).map(key=>[key,owned[key]]))};
+       const shared=isRootSessionJob(job)?Object.fromEntries(['workspaceResources','homeModel'].filter(key=>job.composerResources?.[key]).map(key=>[key,job.composerResources[key]])):{};
+       job.composerResources={url:owned.url,attachments:owned.attachments,queueTexts:owned.queueTexts,restorePermission:owned.restorePermission,...Object.fromEntries(['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','accountMemory','conversationSettings','clientRestart','homeModel','taskPin','personalization','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','workspaceResources','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].filter(key=>owned[key]).map(key=>[key,owned[key]])),...shared};
       }
      }
      if(Object.hasOwn(body,'nativeFolder')){
@@ -489,8 +535,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }
      if(body.draft===null)delete job.ownedDraft;
      else if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
-     if(body.submitting)job.submissionPending=true;
+     if(body.submitting){if(isRootSessionJob(job))throw Error('根任务提交须先登记唯一pending来源');job.submissionPending=true;}
      if(body.nextSession===true){
+      if(isRootSessionJob(job))throw Error('活跃根任务不走串行阶段newSession');
       // The immutable workspace baseline belongs to the whole case; completed
       // stage Sessions can share its isolated workspace until final cleanup.
       if(!job.sessionId||!job.modelCompleted||job.submissionPending||job.ownedDraft||job.composerResources?.attachments.length||job.composerResources?.queueTexts.length||job.composerResources?.restorePermission||['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','clientRestart','homeModel','taskPin','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].some(key=>job.composerResources?.[key]))throw Error('上一阶段会话或输入区资源未完成，不能新建阶段会话');
@@ -499,9 +546,14 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       job.modelCompleted=false;job.sessionSettled=false;taskRuntimes.delete(job.id);
      }
      if(body.sessionId){if(!/^ses_[A-Za-z0-9]+$/.test(body.sessionId)||!body.sessionUrl?.endsWith('/session/'+body.sessionId)||job.sessionId&&job.sessionId!==body.sessionId)throw Error('会话登记不一致');job.sessionId=body.sessionId;job.sessionUrl=body.sessionUrl;job.submissionPending=false;if(job.ownedDraft)job.submittedSelection=job.ownedDraft.selection;delete job.ownedDraft;}
+     if(isRootSessionJob(job)&&Object.hasOwn(body,'composerResources')&&body.composerResources){
+      const {workspaceResources,homeModel,...local}=body.composerResources;
+      if(job.pendingSubmission?.key===body.rootKey)job.pendingSubmission.resources=structuredClone(local);
+      else if(body.rootKey)rootSession(job,body.rootKey).resources=structuredClone(local);
+     }
      await writeJob(job);return send(200,{ok:true});
     }
-    return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
+    return send(200,{managed:jobs.some(j=>j.config.cdpPort===job.config.cdpPort&&(j.sessionUrl===body.url||j.rootSessions?.some(root=>root.url===body.url)))});
    }
    if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
@@ -550,7 +602,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       if(j.ownedDraft)j.releasedDraft=structuredClone(j.ownedDraft);
       let clientRecovery={ready:false,reason:'没有本任务草稿归属，未清理客户端'};
       if(j.ownedDraft){
-       try{clientRecovery=await recovery(j,{connection:taskRuntimes.get(j.id),allowAbort:false,jobs});}
+       try{clientRecovery=await recovery(j,{connection:taskRuntimes.get(j.id),allowAbort:false,jobs,checkpoint:()=>writeJob(j)});}
        catch(e){clientRecovery={ready:false,reason:e.message};}
       }
       j.forcedUnlock={at,previousHandoff,previousSubmissionPending,sessionStopped:false,clientRecovery};

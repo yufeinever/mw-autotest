@@ -73,6 +73,7 @@ export async function runCaseLibrarySteps(context){
   assert('回放提示和输入只读控件一致',await dialog.locator('textarea:not([disabled]),input:not([disabled]),[contenteditable="true"]').count()===0);finish('回放只读输入');
   const replay=await observeCaseReplay(dialog,{timeoutMs:context.definition.timeoutMs,onObserver:async key=>{resources.caseReplay.observation=key;await checkpointResources();},onSample:sample=>fs.appendFile(path.join(dir,'案例回放逐步采样.jsonl'),JSON.stringify(sample)+'\n')});
   const details=await verifyReplayMain(dialog,pack);await save('案例回放实际记录核对.json',{replay,details});
+  if(details.some(item=>item.status==='REVIEW'))throw review('主回放实际展示存在未确认项，详见案例回放实际记录核对.json');
   assert('回放主会话全部文本及执行记录完整展示',details.every(item=>!item.missingText&&!item.missingTools.length),details.filter(item=>item.missingText||item.missingTools.length));await capture('案例主会话与真实执行记录');finish('完整回放文本与工具记录');
   // The shipped client opens final files in the internal side panel. Verify
   // actual document contents there rather than requiring an obsolete OS window.

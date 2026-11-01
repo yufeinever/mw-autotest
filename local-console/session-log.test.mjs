@@ -31,3 +31,21 @@ test('后台等待读取Session也隐藏客户端自定义密钥，不依赖当�
   assert.ok(!JSON.stringify(data).includes('custom-background-secret-value'));assert.match(data.messages[0].parts[0].text,/REDACTED/);
  }finally{globalThis.fetch=oldFetch;globalThis.window=oldWindow;}
 });
+
+test('显式采集预算覆盖超过64个子会话并准确标记默认截断',async()=>{
+ const oldFetch=globalThis.fetch,children=Array.from({length:180},(_,index)=>({id:'ses_child'+index,parentID:'ses_root'}));
+ globalThis.fetch=async url=>{
+  const route=new URL(url).pathname,id=route.split('/')[2];
+  const value=route.endsWith('/children')?id==='ses_root'?children:[]:route.endsWith('/message')?[{info:{sessionID:id,role:'assistant'},parts:[]}]:{id,directory:'D:/synthetic-log-test',...(id==='ses_root'?{}:{parentID:'ses_root'})};
+  return {ok:true,json:async()=>value};
+ };
+ try{
+  const request={sessionId:'ses_root',includeChildren:true,connection:{baseUrl:'http://127.0.0.1:1234',opencodeUsername:'test',opencodePassword:'synthetic-only'}};
+  const limited=await readSessionLog(request);
+  assert.equal(limited.children.length,63);assert.equal(limited.collection.truncated,true);assert.match(limited.traceErrors.join(),/数量上限 64/);
+  const full=await readSessionLog({...request,collection:{maxSessions:512,timeoutMs:180000}});
+  assert.equal(full.children.length,180);assert.equal(new Set(full.children.map(child=>child.sessionId)).size,180);
+  assert.deepEqual(full.traceErrors,[]);assert.equal(full.collection.sessions,181);assert.equal(full.collection.truncated,false);
+  assert.deepEqual(full.collection.limits,{maxSessions:512,timeoutMs:180000});
+ }finally{globalThis.fetch=oldFetch;}
+});

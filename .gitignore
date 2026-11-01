@@ -81,6 +81,9 @@
 !/local-console/preparation.test.mjs
 !/local-console/style.css
 !/local-console/task-scheduler.mjs
+!/local-console/root-sessions.mjs
+!/local-console/root-session-recovery.mjs
+!/local-console/root-session-state.mjs
 !/local-console/task-scheduler.test.mjs
 !/local-console/trace-browser.mjs
 !/local-console/trace-data.mjs
@@ -122,6 +125,8 @@
 !/scripts/mobilework-permission-events.mjs
 !/scripts/mobilework-permission-recovery.test.mjs
 !/scripts/mobilework-task-control.mjs
+!/scripts/mobilework-root-session-group.mjs
+!/scripts/client-case-multi-root-steps.mjs
 !/scripts/mobilework-task-control.test.mjs
 !/scripts/mobilework-trace.mjs
 !/scripts/node-runner.cmd

@@ -1,6 +1,7 @@
+import {hasUnresolvedRoots} from './root-session-state.mjs';
 // Reuse the identity-checked per-job stop API, including on running consoles.
 export function canStopJob(job){
- return Boolean(job.schedulingHold)||['QUEUED','RUNNING'].includes(job.status)||
+ return hasUnresolvedRoots(job)||Boolean(job.schedulingHold)||['QUEUED','RUNNING'].includes(job.status)||
   (job.status==='FAIL'&&job.schedulingHold&&!job.modelCompleted&&Boolean(job.sessionId||job.result?.sessionId))||
   (['BLOCKED','INTERRUPTED','REVIEW'].includes(job.status)&&!job.modelCompleted&&!job.sessionSettled&&
    Boolean(job.sessionId||job.result?.sessionId||job.schedulingHold||job.status==='INTERRUPTED'&&job.pid));

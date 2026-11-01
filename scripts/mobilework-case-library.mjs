@@ -128,7 +128,7 @@ export async function observeCaseReplay(dialog,{timeoutMs,onSample=async()=>{},o
    const sample=await dialog.evaluate((node,key)=>{
     const o=window[key];if(!o)throw Error('本轮回放观察句柄已消失');
     if(o.ref.current&&o.ref.current!==o.runtime)throw Error('回放被重新启动，原观察不能冒充本轮完成');
-    return {at:Date.now(),done:o.done,error:o.error,endedAt:o.endedAt,messages:[...node.querySelectorAll('[data-message-id]')].map(n=>({id:n.dataset.messageId,text:n.innerText}))};
+    return {at:Date.now(),done:o.done,error:o.error,endedAt:o.endedAt,messages:[...node.querySelectorAll('[data-message-id][data-message-role]')].map(n=>({id:n.dataset.messageId,text:n.innerText}))};
    },key);
    if(sample.error)throw Error('案例回放失败：'+sample.error);
    const signature=JSON.stringify(sample.messages);if(signature!==previous||sample.done){samples.push(sample);await onSample(sample);previous=signature;}

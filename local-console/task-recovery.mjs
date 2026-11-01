@@ -67,10 +67,10 @@ export async function adoptOwnedSession(page,job){
 // its recorded task directory. A different page or a user draft is preserved.
 export async function adoptMissingSessionHome(page,job){
  const owned=job.composerResources,id=job.sessionId;
- if(!id||!job.modelCompleted||!job.sessionUrl?.endsWith('/session/'+id)||owned?.url!==job.sessionUrl)return false;
+ if(!id||!(job.modelCompleted||job.sessionMissing&&job.sessionSettled)||!job.sessionUrl?.endsWith('/session/'+id)||owned?.url!==job.sessionUrl)return false;
  const home=job.sessionUrl.slice(0,-('/'+id).length);
  if(page.url()!==home)return false;
- const directory=job.result?.sessions?.find(item=>item.id===id)?.directory;
+ const directory=job.sessionDirectory||job.result?.sessions?.find(item=>item.id===id)?.directory;
  if(!directory)return false;
  const connection=await readEngineConnection(page);
  const response=await fetch(connection.baseUrl.replace(/\/$/,'')+'/session/'+id+'?directory='+encodeURIComponent(directory),{
@@ -217,7 +217,12 @@ export async function recoverJobPage(page,job,{connection,allowAbort=false,other
  }
  return {...handoff,url:page.url()};
 }
-export async function recoverJob(job,{connection,allowAbort=false,jobs=[]}={}){
+export async function recoverJob(job,{connection,allowAbort=false,jobs=[],checkpoint=async()=>{}}={}){
+ if(job.rootSessionVersion===1){
+  const {settleRootSessions}=await import('./root-session-recovery.mjs');
+  return settleRootSessions(job,{runtimes:connection instanceof Map?connection:new Map(),allowAbort,checkpoint});
+ }
+
  const browser=await connectClient('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000});
  try{
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));

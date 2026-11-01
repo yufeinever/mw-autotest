@@ -60,6 +60,7 @@ export async function selectedFiles(){
  selected.push('scripts/mobilework-knowledge-ingest.mjs','scripts/client-knowledge-ingest-steps.mjs');
  selected.push('scripts/mobilework-knowledge-create.mjs','scripts/mobilework-knowledge-parse.mjs','scripts/mobilework-knowledge-source-ui.mjs','scripts/client-knowledge-source-steps.mjs');
  selected.push('scripts/client-case-library-task-steps.mjs');
+ selected.push('scripts/mobilework-root-session-group.mjs','scripts/client-case-multi-root-steps.mjs');
  selected.push('scripts/client-case-library-steps.mjs','scripts/mobilework-case-library.mjs');
  selected.push('scripts/client-automation-steps.mjs','scripts/mobilework-automation-resources.mjs');
  selected.push('scripts/client-expert-module-steps.mjs','scripts/mobilework-module-resources.mjs');

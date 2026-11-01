@@ -12,7 +12,7 @@ export function createTaskControl({log=()=>{},url=process.env.MW_TASK_CONTROL_UR
 export class TaskControl {
  constructor({url,token,log=()=>{}}){this.url=url;this.token=token;this.log=log;this.held=false;this.sessionId=null;}
  async call(action,body={}){
-  const response=await fetch(this.url+'/'+action,{method:'POST',headers:{'content-type':'application/json','x-task-token':this.token},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
+  const response=await fetch(this.url+'/'+action,{method:'POST',headers:{'content-type':'application/json','x-task-token':this.token},body:JSON.stringify({...this.rootKey?{rootKey:this.rootKey}:{},...body}),signal:AbortSignal.timeout(10000)});
   const data=await response.json();if(!response.ok)throw blocked(data.error||'任务调度器不可用');return data;
  }
  async acquire(page,phase){
@@ -87,7 +87,7 @@ export class TaskControl {
    throw Object.assign(blocked('读取本任务引擎状态失败：HTTP '+response.status+'；接口 '+route+'；未切换其他任务的引擎'),{patchPermissionError});
   }return response.json();
  }
- async readLog(includeChildren=false){return readSessionLog({sessionId:this.sessionId,includeChildren,connection:this.connection});}
+ async readLog(includeChildren=false,collection){return readSessionLog({sessionId:this.sessionId,includeChildren,collection,connection:this.connection});}
  async focus(page){
   await this.assertNoDraft(page);
   if(page.url()!==this.sessionUrl){
@@ -140,26 +140,8 @@ export class TaskControl {
   result.permissionApiUnavailable=permissionApiUnavailable;
   return result;
  }
- async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000,interactionHandler,onQuestion=()=>{},observe,afterMessageId}={}){
-  if(this.connection&&this.directory&&!this.permissionEvents){
-   this.permissionEvents=new PermissionEvents({connection:this.connection,directory:this.directory,sessionId:this.sessionId});
-   const ready=await this.permissionEvents.start();
-   log('审批事件订阅',ready?'已连接本会话引擎；等待审批列表建立基线':'不可用，继续使用审批列表；不使用过期事件');
-  }
-  const deadline=Date.now()+timeoutMs,observed=new Map();let lastLog=0,permissionErrorSince=null;
-  const reconcile=pending=>{
-   const keys=new Set(pending.map(q=>q.key));
-   for(const key of observed.keys())if(!keys.has(key)){log('交互请求已消失，继续等待模型',key);observed.delete(key);}
-   for(const q of pending)if(!observed.has(q.key)){observed.set(q.key,{since:Date.now(),clicked:false});log('发现本会话待处理交互',q.key);}
-  };
-  while(Date.now()<deadline){
-   try{
-   const [states,pending]=await Promise.all([this.get('/session/status'),this.pendingInteractions(page)]);
-   if(observe)await observe({states,pending});
-   if(pending.permissionApiUnavailable&&!this.permissionFallbackLogged){log('审批列表400，使用本会话实时审批事件','已核对有效基线与连续连接；仍按真实请求ID和原DOM审批');this.permissionFallbackLogged=true;}
-   reconcile(pending);
-   if(pending.length){
-    await this.withUI(page,'INTERACTING',async()=>{
+ async handlePendingInteractions(page,config,{capture,log=this.log,observed,reconcile,interactionHandler,onQuestion=()=>{},interactionTimeoutMs=15000}){
+  await this.withUI(page,'INTERACTING',async()=>{
      // A request may resolve while acquiring/focusing the shared page. Never
      // treat the pre-acquire API snapshot as proof that a DOM control exists.
      const current=await this.pendingInteractions(page);reconcile(current);
@@ -196,6 +178,27 @@ export class TaskControl {
       if(!handled&&!state.logged){log('交互尚未同步，交还页面后重试',q.key);state.logged=true;}
      }
     });
+ }
+ async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000,interactionHandler,onQuestion=()=>{},observe,afterMessageId}={}){
+  if(this.connection&&this.directory&&!this.permissionEvents){
+   this.permissionEvents=new PermissionEvents({connection:this.connection,directory:this.directory,sessionId:this.sessionId});
+   const ready=await this.permissionEvents.start();
+   log('审批事件订阅',ready?'已连接本会话引擎；等待审批列表建立基线':'不可用，继续使用审批列表；不使用过期事件');
+  }
+  const deadline=Date.now()+timeoutMs,observed=new Map();let lastLog=0,permissionErrorSince=null;
+  const reconcile=pending=>{
+   const keys=new Set(pending.map(q=>q.key));
+   for(const key of observed.keys())if(!keys.has(key)){log('交互请求已消失，继续等待模型',key);observed.delete(key);}
+   for(const q of pending)if(!observed.has(q.key)){observed.set(q.key,{since:Date.now(),clicked:false});log('发现本会话待处理交互',q.key);}
+  };
+  while(Date.now()<deadline){
+   try{
+   const [states,pending]=await Promise.all([this.get('/session/status'),this.pendingInteractions(page)]);
+   if(observe)await observe({states,pending});
+   if(pending.permissionApiUnavailable&&!this.permissionFallbackLogged){log('审批列表400，使用本会话实时审批事件','已核对有效基线与连续连接；仍按真实请求ID和原DOM审批');this.permissionFallbackLogged=true;}
+   reconcile(pending);
+   if(pending.length){
+    await this.handlePendingInteractions(page,config,{capture,log,observed,reconcile,interactionHandler,onQuestion,interactionTimeoutMs});
    }else if((states[this.sessionId]?.type||'idle')==='idle'){
     const data=await this.readLog(),last=data.messages.at(-1);
     const boundary=afterMessageId?data.messages.findIndex(m=>m.info?.id===afterMessageId):-1;

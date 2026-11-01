@@ -9,6 +9,7 @@ import {readArtifact} from './client-case-checks.mjs';
 import {finalAssistantText} from './client-case-runner.mjs';
 import {previewTaskFile,matchToolDetailText} from './mobilework-task-ui.mjs';
 import {xmlText} from './client-message-display-steps.mjs';
+import {runCaseMultiRootSteps} from './client-case-multi-root-steps.mjs';
 import {caseCards,caseDialog,plainCaseText,normalizeCaseText,openOwnedCase,readCasePackage,observeCaseReplay,readCaseDetail,readCaseDocument,closeOwnedCaseReplay,readCaseFavorites,favoriteHashes,releaseCaseFavorites,adoptCaseTaskDraft,waitCaseCollection} from './mobilework-case-library.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -29,16 +30,203 @@ async function readReplayText(message,expected){
  return text;
 }
 
-export async function verifyReplayMain(dialog,pack){
- const details=[];
- for(const [index,turn] of pack.caseJson.turns.entries()){
-  const id=pack.caseJson.case.sessionId+'_m'+(index+1),message=dialog.locator('[data-message-id="'+id+'"]');
-  await message.waitFor();const actual=await message.innerText();
-  const missingText=turn.text&&!plainCaseText(actual).includes(plainCaseText(turn.text));
-  const missingTools=(turn.tools||[]).filter(tool=>tool.name==='create_subagent'?!actual.includes(tool.input.name)&&!actual.includes(tool.input.role):tool.name==='result_file'?!actual.includes(tool.input.output_path.split('/').at(-1)):!actual.includes(tool.title||tool.name)).map(tool=>tool.name);
-  details.push({index:index+1,id,missingText:Boolean(missingText),missingTools,text:actual});
+// Read mounted React props only to identify the real group/entry. All actions
+// below use product controls, and all content checks use displayed DOM text.
+function sameReplayValue(actual,expected){
+ if(actual===expected)return true;
+ if(actual===null||expected===null||typeof actual!=='object'||typeof expected!=='object'||Array.isArray(actual)!==Array.isArray(expected))return false;
+ const keys=Object.keys(expected);
+ return Object.keys(actual).length===keys.length&&keys.every(key=>Object.hasOwn(actual,key)&&sameReplayValue(actual[key],expected[key]));
+}
+
+async function replayGroupIds(group){
+ return group.evaluate(node=>{
+  let fiber=node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))];
+  while(fiber){
+   if(fiber.type?.name==='$er')return (fiber.memoizedProps.items||[]).map(item=>item.message.id);
+   fiber=fiber.return;
+  }
+  return [];
+ });
+}
+
+async function replayControls(scope,kind){
+ const selector=kind==='file'?'div.cursor-pointer[data-slot="tooltip-trigger"]':'button';
+ const controls=scope.locator(selector);
+ const entries=await controls.evaluateAll((nodes,kind)=>nodes.flatMap((node,index)=>{
+  let fiber=node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))];
+  if(kind==='cluster'){
+   // x7t returns this button directly. Component identity is stable; its
+   // memoizedProps.expanded on a cached/alternate fiber is not DOM state.
+   if(fiber?.type!=='button'||fiber.stateNode!==node||fiber.return?.type?.name!=='x7t')return [];
+   const content=node.nextElementSibling;
+   const known=!content||content.tagName==='DIV'&&content.classList.contains('space-y-2')&&content.classList.contains('pl-[19px]');
+   const mounted=Boolean(content),visible=Boolean(content&&content.getClientRects().length&&getComputedStyle(content).visibility!=='hidden');
+   return [{index,label:node.innerText,state:!known?'unknown':!mounted?'collapsed':visible?'expanded':'hidden',contentMounted:mounted,contentVisible:visible}];
+  }
+  while(fiber){
+   const name=fiber.type?.name,props=fiber.memoizedProps;
+   if(kind==='tool'&&name==='DH')return [{index,callId:props.part.toolCallId,name:props.part.toolName,input:props.part.input,label:node.innerText}];
+   if(kind==='file'&&name==='oQ')return [{index,path:props.path,label:node.innerText}];
+   // Never attribute a feedback/outer group button to a different entry.
+   if(name==='$er')break;
+   fiber=fiber.return;
+  }
+  return [];
+ }),kind);
+ return {controls,entries};
+}
+
+async function openReplayClusters(group,observations){
+ for(;;){
+  const {controls,entries}=await replayControls(group,'cluster');
+  const unknown=entries.find(entry=>!['collapsed','expanded'].includes(entry.state));
+  if(unknown){observations.push({observed:unknown});return '真实工具簇内容DOM状态不可确认：'+unknown.label;}
+  const closed=entries.find(entry=>entry.state==='collapsed');
+  if(!closed)observations.push({observed:entries});
+  if(!closed)return null;
+  const trigger=controls.nth(closed.index);
+  await trigger.scrollIntoViewIfNeeded();await trigger.click();
+  const after=await replayControls(group,'cluster');
+  const current=after.entries.find(entry=>entry.index===closed.index);
+  observations.push({before:closed,after:current||null});
+  if(current?.state!=='expanded')return '真实工具簇点击后内容DOM未展开：'+closed.label;
  }
- return details;
+}
+
+async function replayDetail(dialog,sessionId,callId){
+ const roots=dialog.locator('aside div');
+ const indices=await roots.evaluateAll((nodes,{sessionId,callId})=>nodes.flatMap((element,index)=>{
+  // Installed Nir directly returns <div><Bnr .../></div> when its tool
+  // exists. Identify that actual host and its owner, not a descendant's
+  // nearest Nir ancestor or an assumed composite child.stateNode.
+  const host=element[Object.keys(element).find(key=>key.startsWith('__reactFiber$'))],owner=host?.return;
+  return host?.type==='div'&&host.stateNode===element&&owner?.type?.name==='Nir'&&owner.memoizedProps.sessionId===sessionId&&owner.memoizedProps.toolCallId===callId?[index]:[];
+ }),{sessionId,callId});
+ return indices.length===1?roots.nth(indices[0]):null;
+}
+
+async function closeReplayTool(dialog){
+ const close=button(dialog,'关闭侧边栏').filter({visible:true}),count=await close.count();
+ if(count===1){await close.click();await close.waitFor({state:'hidden'});}
+ return count;
+}
+
+export async function verifyReplayMain(dialog,pack){
+ const turns=pack.caseJson.turns,sessionId=pack.caseJson.case.sessionId,page=dialog.page();
+ const details=turns.map((turn,index)=>({index:index+1,id:sessionId+'_m'+(index+1),role:turn.role,missingText:false,missingTools:[],reviewReasons:[],tools:[]}));
+ const finalize=()=>details.map(item=>({...item,status:item.reviewReasons.length?'REVIEW':item.missingText||item.missingTools.length?'FAIL':'PASS'}));
+ const unavailable=reason=>details.map(item=>({...item,status:'REVIEW',reviewReasons:[...item.reviewReasons,reason]}));
+ // Shipped ybr sets role="dialog", aria-modal=true, aria-label=e.title
+ // directly. This attribute contract comes from its source, not getByRole.
+ if(await dialog.count()!==1||await dialog.getAttribute('aria-label')!==pack.caseJson.case.title)return unavailable('精确案例dialog与原包标题不一致');
+ const mainInput=dialog.locator('[data-message-role="user"][data-message-id="'+sessionId+'_m1"]');
+ if(await mainInput.count()!==1||!await mainInput.isVisible())return unavailable('当前显示的不是原包主会话，未接管子任务或其他Session');
+ const groups=dialog.locator('div.group\\/message-group'),mapped=[];
+ for(let index=0;index<await groups.count();index++)mapped.push({index,ids:await replayGroupIds(groups.nth(index))});
+ const usedCalls=new Set(),usedFiles=new Set(),offsets=new Map();
+ for(const item of details){
+  const turn=turns[item.index-1];let scope,key,group;
+  if(turn.role==='user'){
+   scope=dialog.locator('[data-message-role="user"][data-message-id="'+item.id+'"]');key=item.id;
+   if(await scope.count()!==1){item.reviewReasons.push('源user消息没有唯一真实容器');continue;}
+   item.mapping={kind:'message',messageId:item.id};
+  }else{
+   const matches=mapped.filter(entry=>entry.ids.includes(item.id));
+   if(matches.length!==1){item.reviewReasons.push('源assistant turn没有唯一实际合并组');continue;}
+   const actual=matches[0];group=groups.nth(actual.index);
+   item.mapping={kind:'assistant-group',groupIndex:actual.index,sourceMessageIds:actual.ids};
+   if(actual.ids.some(id=>!details.some(source=>source.id===id))){item.reviewReasons.push('实际分组混有不属于当前原包的消息');continue;}
+   const processExpand=button(group,'展开执行过程');
+   if(await processExpand.count()===1){
+    if(await processExpand.getAttribute('aria-expanded')!=='false'){item.reviewReasons.push('过程开关状态不可确认');continue;}
+    await processExpand.scrollIntoViewIfNeeded();await processExpand.click();
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   }
+   const clusterObservations=[];item.mapping.clusters=clusterObservations;
+   const clusterIssue=await openReplayClusters(group,clusterObservations);
+   if(clusterIssue){item.reviewReasons.push(clusterIssue);continue;}
+   const own=group.locator('[data-message-role="assistant"][data-message-id="'+item.id+'"]');
+   if(await own.count()===1&&await own.isVisible()){
+    scope=own;key=item.id;item.mapping.area='message';
+   }else{
+    const expand=button(group,'展开执行过程'),collapse=button(group,'收起执行过程');
+    if(await expand.count()===1){
+     if(await expand.getAttribute('aria-expanded')!=='false'){item.reviewReasons.push('过程开关状态不可确认');continue;}
+     await expand.scrollIntoViewIfNeeded();await expand.click();
+    }
+    if(await collapse.count()!==1||await collapse.getAttribute('aria-expanded')!=='true'){item.reviewReasons.push('实际过程区未展开');continue;}
+    scope=collapse.locator('xpath=../following-sibling::div');
+    if(await scope.count()!==1){item.reviewReasons.push('实际展开过程区不唯一');continue;}
+    await scope.waitFor({state:'visible'});
+    key='group:'+actual.index+':process';item.mapping.area='merged-process';
+   }
+  }
+  // Read only markdown blocks in the selected message/process area. Tool
+  // panels, child tabs and the case description cannot satisfy turn text.
+  const blocks=turn.role==='user'?[await scope.innerText()]:await scope.locator('.markdown-content').filter({visible:true}).allInnerTexts();
+  const text=blocks.join('\n'),normalized=plainCaseText(text),expected=plainCaseText(turn.text||''),start=offsets.get(key)||0;
+  const position=expected?normalized.indexOf(expected,start):start;
+  item.text=text;item.mapping.textOffset=position;
+  item.missingText=Boolean(expected&&position<0);
+  if(position>=0)offsets.set(key,position+expected.length);
+  if(!turn.tools?.length)continue;
+  for(const [toolIndex,tool] of turn.tools.entries()){
+   const record={index:toolIndex+1,name:tool.name};item.tools.push(record);
+   if(tool.name==='result_file'){
+    // Result file cards are group deliverables (Uer), outside the final
+    // message wrapper. Match their real path inside this exact group.
+    const {controls,entries}=await replayControls(group,'file'),path=tool.input.output_path;
+    const matches=entries.filter(entry=>entry.path===path&&!usedFiles.has(entry.path));
+    if(matches.length!==1){item.reviewReasons.push('result_file真实文件入口缺失或不唯一：'+path);item.missingTools.push(tool.name);continue;}
+    const entry=matches[0],card=controls.nth(entry.index);await card.scrollIntoViewIfNeeded();
+    record.mode='file-card';record.path=entry.path;record.text=await card.innerText();
+    record.visible=await card.isVisible();record.missingFields=record.visible&&plainCaseText(record.text).includes(plainCaseText(path.split('/').at(-1)))?[]:['文件卡可见文件名'];
+    usedFiles.add(entry.path);if(record.missingFields.length)item.missingTools.push(tool.name);
+    continue;
+   }
+   const {controls,entries}=await replayControls(scope,'tool');
+   const matches=entries.filter(entry=>entry.name===tool.name&&sameReplayValue(entry.input||{},tool.input||{})&&!usedCalls.has(entry.callId));
+   if(matches.length!==1){item.reviewReasons.push('真实工具详情入口缺失或不唯一：'+tool.name+' turn '+item.index);item.missingTools.push(tool.name);continue;}
+   const entry=matches[0],trigger=controls.nth(entry.index);record.callId=entry.callId;record.entryLabel=entry.label;
+   await trigger.scrollIntoViewIfNeeded();await trigger.click();
+   // Nir is the installed version's actual detail container. Its props only
+   // establish which tool the visible text belongs to; they are not evidence
+   // that an input/output field was displayed.
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   const detail=await replayDetail(dialog,sessionId,entry.callId);
+   if(!detail||!await detail.isVisible()){
+    item.reviewReasons.push('点击后未取得本主Session、本toolCallId的唯一可见详情：'+entry.callId);item.missingTools.push(tool.name);
+    const closed=await closeReplayTool(dialog);record.detailClosed=closed===1;
+    if(closed>1)return unavailable('工具详情关闭入口不唯一，后续未继续观察');
+    continue;
+   }
+   const text=await detail.innerText(),normalized=value=>String(value).replace(/\s+/g,'');
+   record.text=text;record.mode='tool-detail';record.missingFields=[];
+   if(tool.name==='create_subagent'){
+    for(const field of ['name','role','motto']){
+     const value=tool.input?.[field];
+     if(value!==undefined&&!normalized(text).includes(normalized(value)))record.missingFields.push('input.'+field);
+    }
+    record.notDisplayed=['input.id','output'];
+   }else{
+    // Pnr renders its parameter label and JSON.stringify(input,null,2) in
+    // the same eu block. Parse that actual visible pre, then compare fields
+    // structurally; object property order is not part of input semantics.
+    const parameters=detail.getByText('参数',{exact:true}).locator('xpath=..').locator(':scope > pre').filter({visible:true});
+    if(await parameters.count()!==1)item.reviewReasons.push('当前工具详情未展示唯一参数块：'+entry.callId);
+    else{
+     record.displayedInput=JSON.parse(await parameters.innerText());
+     if(!sameReplayValue(record.displayedInput,tool.input||{}))record.missingFields.push('input');
+    }
+    if(tool.output&&!normalized(text).includes(normalized(typeof tool.output==='string'?tool.output:JSON.stringify(tool.output))))record.missingFields.push('output');
+   }
+   usedCalls.add(entry.callId);if(record.missingFields.length)item.missingTools.push(tool.name);
+   const closed=await closeReplayTool(dialog);record.detailClosed=closed===1;
+   if(closed!==1)return unavailable('工具详情没有唯一正常关闭入口，后续未继续观察');
+  }
+ }
+ return finalize();
 }
 
 async function verifyCaseFile(context,dialog,pack,{compare}={}){
@@ -59,10 +247,7 @@ async function verifyCaseFile(context,dialog,pack,{compare}={}){
 export async function runCaseLibraryTaskSteps(context,items){
  const {number,page,resources,dir,remaining,assert,capture,checkpointResources,checkpointPage,send,config,control,getData,getSessionId,outputs,definition}=context;
  const save=(name,value)=>fs.writeFile(path.join(dir,name),JSON.stringify(value,null,2)),finish=step=>remaining.delete(step);
- if(number===112){
-  await save('同用例多任务接入缺口.json',{original:'同一用例内两个案例做同款，模型运行时段重叠且互不影响',constraint:'不同用例保持严格串行，当前框架尚未管理同一job的多个活跃Session',result:'BLOCKED',implemented:false,missing:['分别登记两项真实Session、目录及提交归属','单一等待循环按Session处理审批、观察执行重叠及结果','正常与强停须确认本job全部任务终态后再放行下一用例']});
-  throw blocked('本条同用例多任务不与用例间串行冲突；框架多个活跃Session的归属、审批及统一收尾尚未接入，不能以串行完成替代重叠执行');
- }
+ if(number===112)return runCaseMultiRootSteps(context,items,{verifyMedicalReport:verifyLiveReport});
  if(number===108){
   const before=await readCaseFavorites(page),beforeCount=Object.values(before.value).filter(v=>v?.favorite).length;
   const targets=items.filter(item=>!Object.hasOwn(before.value,item.id)&&items.filter(other=>other.title===item.title).length===1).slice(0,5);
@@ -100,6 +285,7 @@ export async function runCaseLibraryTaskSteps(context,items){
    if(count++===0)await capture('从头回放初始过程');
   }});await save('回放真实完成与采样.json',replay);
   const details=await verifyReplayMain(dialog,pack);await save('主回放逐轮原包核对.json',details);
+  if(details.some(item=>item.status==='REVIEW'))throw review('主回放实际展示存在未确认项，详见主回放逐轮原包核对.json');
   assert('回放真实完成且原包主消息与执行记录完整',replay.endedAt>=replay.startedAt&&details.every(item=>!item.missingText&&item.missingTools.length===0),details.filter(item=>item.missingText||item.missingTools.length));
   // Length must change during this same run; preloaded final content is not a replay.
   const lengths=replay.samples.map(s=>s.messages.reduce((sum,m)=>sum+m.text.length,0));

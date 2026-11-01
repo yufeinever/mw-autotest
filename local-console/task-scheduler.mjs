@@ -1,3 +1,4 @@
+import {isRootSessionJob,isRootOwnedPage} from './root-sessions.mjs';
 import {isClientPageUrl} from './client-page.mjs';
 // One script runs through completion and handoff before admitting the next.
 // Renderer ownership checks still protect interactions, evidence and recovery.
@@ -69,8 +70,19 @@ export class TaskScheduler {
   if(!['WAITING_MODEL','VERIFYING','PREPARING'].includes(phase))throw Error('任务阶段无效');
   if(sessionId){
    if(!/^ses_[A-Za-z0-9]+$/.test(sessionId)||!url.endsWith('/session/'+sessionId))throw Error('会话与页面地址不一致');
-   if(job.sessionId&&job.sessionId!==sessionId)throw Error('不得更换本任务所属会话');
+   if(isRootSessionJob(job)){
+    const root=job.rootSessions.find(item=>item.id===sessionId);
+    if(!root||root.url!==url)throw Error('页面Session未登记到本用例根任务');
+    job.pageTarget={kind:'root',key:root.key};
+   }else if(job.sessionId&&job.sessionId!==sessionId)throw Error('不得更换本任务所属会话');
    job.sessionId=sessionId;job.sessionUrl=url;entry.preparing=false;
+  }
+  if(isRootSessionJob(job)&&!sessionId){
+   const root=job.rootSessions.find(item=>item.url===url),pending=job.pendingSubmission;
+   const pendingPage=pending&&isRootOwnedPage(job,url);
+   if(root){job.pageTarget={kind:'root',key:root.key};job.sessionId=root.id;job.sessionUrl=root.url;}
+   else if(pendingPage)job.pageTarget={kind:'preparing',key:pending.key};
+   else throw Error('根任务准备阶段页面不属本用例');
   }
   r.expectedUrl=url;r.owner=null;job.phase=phase;this.changed(job);this.pump();
  }
