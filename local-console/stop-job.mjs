@@ -17,7 +17,7 @@ import {resumeClientRestart} from '../scripts/mobilework-client-restart.mjs';
 import {releaseSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
 import {snapshotDraft,clearOwnedDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
 import {adoptWorkspacePage} from '../scripts/mobilework-workspaces.mjs';
-import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,confirmFailedBeforeSession,restoreFailedSubmissionPage,settleSession} from './task-recovery.mjs';
+import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,adoptMissingSessionHome,confirmFailedBeforeSession,restoreFailedSubmissionPage,settleSession} from './task-recovery.mjs';
 import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
 import {settleOwnedAutomation} from '../scripts/mobilework-automation-resources.mjs';
 import {adoptCaseTaskDraft} from '../scripts/mobilework-case-library.mjs';
@@ -72,6 +72,7 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
   if(!deferredModule)await restoreModuleNavigation(page,job.composerResources,{cdpPort:job.config.cdpPort});
   const adopted=await adoptWorkspacePage(page,job.composerResources);
   if(adopted){job.ownedDraft=adopted;job.composerResources.url=page.url();await checkpoint();}
+  if(page.url()!==job.composerResources.url&&await adoptMissingSessionHome(page,job))await checkpoint();
   if(page.url()!==job.composerResources.url)throw Error('本轮输入区页面归属已变化，未清理');
   // The worker has exited. Settle its own session before restoring controls.
   if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled){

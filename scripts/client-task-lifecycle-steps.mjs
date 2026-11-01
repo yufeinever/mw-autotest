@@ -1,15 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {execFile as execFileCallback} from 'node:child_process';
-import {promisify} from 'node:util';
-import {fileURLToPath} from 'node:url';
 import {unzipSync,strFromU8} from 'fflate';
 import {finalAssistantText} from './client-case-runner.mjs';
 import {attachmentRow} from './mobilework-composer-resources.mjs';
 import {taskRow,openTaskMenu,selectWorkbench,previewTaskFile} from './mobilework-task-ui.mjs';
 import {uploadTaskAttachment} from './mobilework-attachment-ui.mjs';
+import {inspectExplorer} from './mobilework-explorer.mjs';
+import {snapshotDraft,inspectPageHandoff} from './mobilework-isolation.mjs';
 
-const execFile=promisify(execFileCallback);
 const review=message=>Object.assign(Error(message),{review:true});
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 const button=(page,name)=>page.getByRole('button',{name,exact:true}).filter({visible:true});
@@ -54,12 +52,18 @@ export async function runTaskLifecycleSteps(context){
   await attachmentRow(page,name).waitFor();await capture('同一会话上传合成材料');assert('第二轮附件标签显示真实文件',await attachmentRow(page,name).count()===1);finish('会话中上传真实合成文档');
   const boundary=await send('请读取刚上传文件，结合其内容补充异常数据测试点，并给出样本数、通过数、异常数、负责人和截止日期。不要联网。',{continuing:true});
   const messages=getData().messages,turn=messages.slice(messages.findIndex(message=>message.info?.id===boundary)+1);
-  assert('附件作为本Session第二轮真实文件消息提交',turn.some(message=>message.info?.role==='user'&&(message.parts||[]).some(part=>part.type==='file'&&[part.filename,part.url].some(value=>String(value||'').includes(name)||String(value||'').includes(encodeURIComponent(name))))));
+  const users=turn.filter(message=>message.info?.role==='user'),relative=path.join('.mobilework','inbox',getSessionId(),name),expected=path.resolve(control.directory,relative);
+  const references=users.flatMap(message=>[...messageText(message).matchAll(/\[附件文件:([^\]\r\n]+)\]/g)].map(match=>({messageId:message.info.id,path:match[1],resolvedPath:path.resolve(control.directory,match[1])})));
+  const actualReferences=references.filter(item=>item.resolvedPath.toLowerCase()===expected.toLowerCase());
+  const inputPaths=[relative,expected].map(value=>value.replaceAll('\\','/').replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  const inputPath=new RegExp('(?:^|[\\s"\\x27\\x60(])(?:'+inputPaths.join('|')+')(?=$|[\\s"\\x27\\x60);])','i');
+  const toolEvidence=completedTools({messages:turn}).map(part=>({tool:part.tool,input:part.state.input,output:part.state.output,pathMatches:Object.values(part.state.input||{}).some(value=>typeof value==='string'&&inputPath.test(value.replaceAll('\\','/'))),contentMatches:String(typeof part.state.output==='string'?part.state.output:JSON.stringify(part.state.output)).includes(facts)}));
+  const extracted=users.some(message=>(message.parts||[]).some(part=>part.type==='text'&&part.text.includes(facts)));
+  await fs.writeFile(path.join(dir,'会话附件提交与读取依据.json'),JSON.stringify({sessionId:getSessionId(),boundary,expectedPath:expected,references,userMessages:users.map(message=>({id:message.info.id,parts:message.parts})),toolEvidence,extracted},null,2));
+  assert('附件作为本Session第二轮真实上传引用提交',actualReferences.length===1,{expectedPath:expected,references});
   const output=finalAssistantText(getData());
   assert('回复保留文件事实并提供异常测试点',['47','43','4','许棠','重复','缺失'].every(word=>output.includes(word))&&/11.{0,3}9|2026-11-09/.test(output));
-  const fileParts=turn.filter(message=>message.info?.role==='user').flatMap(message=>message.parts||[]);
-  const extracted=fileParts.some(part=>part.type==='text'&&['许棠','47','43'].every(word=>part.text?.includes(word)));
-  const read=completedTools({messages:turn}).some(part=>['许棠','47','43'].every(word=>JSON.stringify(part.state.output).includes(word)));
+  const read=toolEvidence.some(item=>item.pathMatches&&item.contentMatches);
   if(!read&&!extracted)throw review('最终回复吻合附件事实，但未取得附件解析文本或完成读取工具输出，不能完整验收文件解析');
   resources.attachments=[];await checkpointResources();finish('附件发送及内容读取');
  }else if(number===33){
@@ -95,18 +99,31 @@ export async function runTaskLifecycleSteps(context){
   const renamed=current.title+'-重命名';await openTaskMenu(page,current.title);await page.getByRole('menuitem',{name:'重命名',exact:true}).click();
   const input=page.getByRole('textbox',{name:'会话名称',exact:true}).filter({visible:true});await input.fill(renamed);await input.press('Enter');await input.waitFor({state:'hidden'});
   await wait(async()=>(await session()).title===renamed);row=taskRow(page,renamed);await row.waitFor();assert('真实Session及历史列表已持久化新名称',(await session()).title===renamed);await capture('本轮任务重命名');finish('重命名持久化');
-  const helper=path.join(path.dirname(fileURLToPath(import.meta.url)),'mobilework-explorer-folder.py');
+  const baseline=await inspectExplorer(control.directory,{reveal:true});
+  await fs.writeFile(path.join(dir,'任务文件夹Explorer窗口基线.json'),JSON.stringify(baseline,null,2));
   await openTaskMenu(page,renamed);await page.getByRole('menuitem',{name:'打开文件夹',exact:true}).click();
-  let opened;await wait(async()=>{const response=await execFile(process.env.MW_PYTHON||'python',[helper,'--path',control.directory],{windowsHide:true,encoding:'utf8'});opened=JSON.parse(response.stdout);return opened.windows.length>0;});
-  await fs.writeFile(path.join(dir,'任务文件夹实际窗口.json'),JSON.stringify(opened,null,2));assert('Windows实际打开本Session任务文件夹',opened.windows.some(item=>path.resolve(item.path).toLowerCase()===path.resolve(control.directory).toLowerCase()));finish('实际任务文件夹可打开');
+  let opened;await wait(async()=>{opened=await inspectExplorer(control.directory,{reveal:true});return opened.windows.some(item=>item.targetVisible);});
+  await fs.writeFile(path.join(dir,'任务文件夹实际窗口.json'),JSON.stringify(opened,null,2));
+  const added=opened.windows.filter(item=>item.targetVisible&&!baseline.windows.some(before=>before.hwnd===item.hwnd));
+  if(added.length===1){resources.explorerWindow={path:control.directory,hwnd:added[0].hwnd,reveal:true};await checkpointResources();}
+  assert('Windows实际打开或定位本Session任务文件夹',opened.windows.some(item=>item.targetVisible),opened);finish('实际任务文件夹可打开');
   // Deletion is the business operation; preserve logs first because the engine
   // correctly returns 404 afterwards. Never delete historical user sessions.
-  await saveTrace();await openTaskMenu(page,renamed);await page.getByRole('menuitem',{name:'删除',exact:true}).click();
+  const trace=await saveTrace();
+  if(trace.error)throw blocked('删除前会话日志/Trace未保存，已保留本轮Session：'+trace.error);
+  await openTaskMenu(page,renamed);await page.getByRole('menuitem',{name:'删除',exact:true}).click();
   const dialog=page.getByRole('dialog').filter({visible:true});await dialog.waitFor();
   assert('删除确认对应本轮名称',(await dialog.innerText()).includes(renamed));await capture('本轮任务删除确认');await dialog.getByRole('button',{name:'删除',exact:true}).click();await dialog.waitFor({state:'hidden'});await taskRow(page,renamed).waitFor({state:'hidden'});
   const response=await fetch(control.connection.baseUrl.replace(/\/$/,'')+'/session/'+getSessionId()+'?directory='+encodeURIComponent(control.directory),{headers:{Authorization:'Basic '+btoa(control.connection.opencodeUsername+':'+control.connection.opencodePassword)},signal:AbortSignal.timeout(15000)});
   assert('本轮任务已从真实引擎移除',response.status===404);assert('删除Session后保留本轮本机产物',(await fs.readFile(file,'utf8')).includes(marker));
-  await control.release(page,'VERIFYING');resources.url=page.url();await checkpointResources();await control.acquire(page,'EVIDENCE');finish('删除确认与本轮任务移除');
+  const home=control.sessionUrl.slice(0,-('/'+getSessionId()).length);
+  await page.waitForURL(home);
+  const handoff=await inspectPageHandoff(page);
+  if(!handoff.ready)throw blocked('删除后首页尚未交接：'+handoff.reason);
+  await context.checkpointPage(await snapshotDraft(page));
+  // The archived Session stays on the job; the active page is now its home.
+  control.sessionId=null;
+  await control.release(page,'VERIFYING');finish('删除确认与本轮任务移除');
  }else if(number===35||number===36){
   const sales=number===35,intermediate=sales?'明细.csv':'网页摘录.md',report=sales?'验收销售报告.docx':'网页摘要.docx';
   const seen={todosDuring:false,intermediateBeforeFinal:false,browser:false};

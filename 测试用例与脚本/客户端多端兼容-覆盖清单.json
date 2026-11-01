@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "469e0bf222ef2964eaed3265a958a87588f533d5917f42b4d14741d666c410c3",
+  "workbookSha256": "3856d177cc6460d0161422c3016598ace187926e585964152cc23d20a1760bcc",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -575,15 +575,17 @@
         "总体预期结果": "主流程通过，展示模型类型成功、模型切换正常"
       },
       "script": "scripts/run-client-case021.mjs",
-      "coverage": "已实机尝试，前置阻塞",
-      "execution": "BLOCKED",
+      "coverage": "已实机执行，待复核",
+      "execution": "REVIEW",
       "evidence": [
         "runs/1101-2318-模型选择-第01次/执行报告.md",
         "runs/1101-2318-模型选择-第01次/执行结果.json",
         "runs/1101-2335-模型选择-第01次/执行报告.md",
-        "runs/1101-2335-模型选择-第01次/执行结果.json"
+        "runs/1101-2335-模型选择-第01次/执行结果.json",
+        "runs/1101-2345-模型选择-第01次/执行报告.md",
+        "runs/1101-2345-模型选择-第01次/执行结果.json"
       ],
-      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。当前模型的唯一选中项或身份不可读取，未切换模型仅收尾断言通过，业务模型切换未执行；原BLOCKED保留。安装版slot覆盖链已二次适配，效果待下轮实机。",
+      "notes": "正式批次c4ceaf35-eb47-4c65-aa13-6774f5a59b8d；录像COMPLETED。真实读取自动及自定义模型的provider/model身份，已切换目标、回读并恢复自动模型，4/4项断言通过。当前没有同时存在的系列/自定义分组及可匹配官方简介，悬停未覆盖；原表名称限制与自定义跳转步骤不明，保留REVIEW。旧BLOCKED及报告保留，强停恢复分支另待验证。",
       "optimizedSheet": "客户端-优化用例",
       "optimizedId": "021",
       "optimized": {
@@ -618,6 +620,18 @@
             "total": 1
           },
           "report": "runs/1101-2335-模型选择-第01次/执行报告.md"
+        },
+        {
+          "batchId": "c4ceaf35-eb47-4c65-aa13-6774f5a59b8d",
+          "jobId": "1ca7c784-20d6-4e7e-aea5-8d59b335f4b4",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T15:45:12.946Z",
+          "endedAt": "2026-11-01T15:45:53.985Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1101-2345-模型选择-第01次/执行报告.md"
         }
       ]
     },
@@ -1202,17 +1216,34 @@
         "总体预期结果": "对话框输入正常；人工介入会话展示已中止；\n排队执行上一条会话执行结束后，自动执行"
       },
       "script": "scripts/run-client-case029.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "按当前产品的排队列表与逐项人工介入入口验证两种路径。以真实busy、消息发送时间与中止证据判定，不靠固定延迟或最终答案证明中止。 输入区资源归属、正常/异常及强停恢复已接入，强停专项未验收。 当前产品先发送并加入排队，再由队列项人工介入；输入期间任务已结束记REVIEW，不冒充排队或中止成功。本轮未实测。",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1101-2356-人工介入-第01次/执行报告.md",
+        "runs/1101-2356-人工介入-第01次/执行结果.json"
+      ],
+      "notes": "正式批次57255f7a-b80b-44b3-9bf5-4eac65d7b7b3；录像COMPLETED。真实busy期间排队时消息未提前提交，首轮助手完成后排队消息发送且计算结果正确，人工介入后的新指令完成，正常收尾通过；5/5项已记录断言通过。本轮通过仅代表报告覆盖的排队与介入路径，不扩大为其他队列或强停分支通过。",
       "optimized": {
         "goal": "验证模型执行期间发送排队消息及人工介入两种路径的真实执行顺序。",
         "precondition": "独立Session；自动模型；必须观察到真实busy，不能将已完成任务当作介入。",
         "operations": "1. 发送分三次工具读取目录的无副作用任务，等待真实busy。\n2. 输入合成算术问题，点击发送并加入排队，核对队列。\n3. 引擎消息此时不含该问题，首轮结束后才发送并完成。\n4. 再开启忙碌任务，加入另一问题后点击队列项人工介入。\n5. 核对上一轮中止证据和新轮结果。\n6. 仅清理本轮未发送队列。",
         "expected": "排队不抢占，前轮完成后再发；人工介入终止当前轮并执行新问题。未观察到busy或中止证据记REVIEW。",
         "assertions": "busy状态、队列项、引擎用户消息时间、前轮助手完成时间、中止错误或事件、正确运算结果。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "57255f7a-b80b-44b3-9bf5-4eac65d7b7b3",
+          "jobId": "151fd73f-1d80-442f-87f5-7251597eb477",
+          "result": "PASS",
+          "startedAt": "2026-11-01T15:56:20.785Z",
+          "endedAt": "2026-11-01T15:58:16.904Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1101-2356-人工介入-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 31,
@@ -1277,17 +1308,34 @@
         "总体预期结果": "1、输出会话结果\n2、技能调用正常，会话执行正常"
       },
       "script": "scripts/run-client-case031.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "原表公文写作与小说任务冲突，改为合成设备盘点通知。通过/菜单选择原表技能，验证标签、业务正文和实际Skill调用Trace。 输入区资源归属、正常/异常及强停恢复已接入，强停专项未验收。 本轮未实测，实际Skill调用由统一Trace断言，不能以标签替代。",
+      "coverage": "已实机尝试，前置阻塞",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1101-2358-斜线技能-第01次/执行报告.md",
+        "runs/1101-2358-斜线技能-第01次/执行结果.json"
+      ],
+      "notes": "正式批次57255f7a-b80b-44b3-9bf5-4eac65d7b7b3；录像COMPLETED。斜线菜单未唯一定位原表公文写作技能，在发起模型任务前BLOCKED；1/1仅正常收尾，技能标签、业务正文和实际Skill调用均未验收。后续静态及现场留证确认脚本在菜单loading期间过早count，已修为等待终态，未追加实机复验；原BLOCKED保留，不认定技能实际缺失。",
       "optimized": {
         "goal": "验证/技能候选、真实公文技能标签、合成通知正文和实际Skill调用。",
         "precondition": "自动模型；公文写作技能当前可用；不安装其他技能替代。",
         "operations": "1. 输入身份功能问题及/，打开技能下拉。\n2. 搜索公文并选择唯一公文写作技能。\n3. 核对chinese-official-writing标签。\n4. 输入合成办公设备盘点通知素材并发送。\n5. 检查通知对象、设备范围、日期、联系人及Skill调用Trace。",
         "expected": "斜线技能选择正常；公文正文符合素材；本Session真实调用预期技能。原表小说与公文技能冲突，改为适合该技能的通知任务。",
         "assertions": "斜线菜单、Skill ID标签、正文业务事实、实际Skill调用Trace；模型自述不作为调用依据。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "57255f7a-b80b-44b3-9bf5-4eac65d7b7b3",
+          "jobId": "8ff2f41e-8406-4815-9054-ba985fc2ca0b",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T15:58:19.748Z",
+          "endedAt": "2026-11-01T15:58:34.099Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2358-斜线技能-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 33,
@@ -1306,17 +1354,34 @@
         "总体预期结果": "1、上传文件正常，并成功执行会话"
       },
       "script": "scripts/run-client-case032.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "在本轮独立Session先完成测试计划，再通过真实上传入口发送合成文档。断言附件标签、同一Session的第二轮文件消息、完成后的真实读取内容和关键事实；不以文件名或模型自述已读判定解析成功。 本轮仅静态实现与构建，未实测；强停及新菜单连接仍待验证。",
+      "coverage": "已实机执行，脚本或业务失败待诊断",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1101-2358-会话上传-第01次/执行报告.md",
+        "runs/1101-2358-会话上传-第01次/执行结果.json"
+      ],
+      "notes": "正式批次57255f7a-b80b-44b3-9bf5-4eac65d7b7b3；录像COMPLETED。首轮测试计划和同Session上传标签通过，附件作为第二轮真实文件消息提交的断言失败，正常收尾通过，3/4项已记录断言通过。原Session日志确认TXT通过用户text中的附件marker提交且工具真实读取，脚本强制要求file part导致本次FAIL；已按真实协议修正，待复验。后续业务事实断言本次未到达，不将读取证据扩大为整条通过。",
       "optimized": {
         "goal": "验证本轮历史会话中上传文档、保留附件、续轮提交和真实内容读取。",
         "precondition": "已登录；自动模型；真实上传入口可用；仅使用本轮合成TXT输入；保留历史任务。",
         "operations": "1. 独立Session生成设备台账测试计划，核对新增、编辑、搜索目标。\n2. 在本轮输入目录生成合成材料：47台，通过43台，异常4台，许棠负责，11月9日复核；事实不写入先前对话。\n3. 在同一Session点击上传入口，通过真实文件选择事件选取文档并检查标签。\n4. 发送读取与补充测试点请求，核对第二轮文件消息。\n5. 核对完成工具的实际读取输出或附件解析文本、关键事实与异常测试点；收尾仅清理本轮附件。",
         "expected": "同一Session可继续上传、发送并读取真实材料；事实准确，异常数据对应检查目标；缺少解析证据记REVIEW。",
         "assertions": "实际filechooser与标签；本Session第二轮file消息；附件解析文本或真实读取输出；47/43/4、许棠、日期及重复/缺失；日志与Trace。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "57255f7a-b80b-44b3-9bf5-4eac65d7b7b3",
+          "jobId": "b0862ce9-9c93-41d2-9549-d4886a929bf0",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T15:58:36.663Z",
+          "endedAt": "2026-11-01T15:59:58.205Z",
+          "assertions": {
+            "passed": 3,
+            "total": 4
+          },
+          "report": "runs/1101-2358-会话上传-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 34,
@@ -1335,17 +1400,34 @@
         "总体预期结果": "历史任务状态展示正常，可以继续执行任务。"
       },
       "script": "scripts/run-client-case033.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "仅在本轮创建的Session验证历史查看、进行中状态、真实停止及续轮。待确认与错误状态仅在实际触发时验证；没有观测到的分支保留覆盖缺口，不伪造错误。 本轮仅静态实现与构建，未实测；强停及新菜单连接仍待验证。",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1102-0000-任务状态-第01次/执行报告.md",
+        "runs/1102-0000-任务状态-第01次/执行结果.json"
+      ],
+      "notes": "正式批次57255f7a-b80b-44b3-9bf5-4eac65d7b7b3；录像COMPLETED。真实历史任务完成、用户停止后引擎确认非busy、同一Session续轮完成及正常收尾通过，4/4项已记录断言通过。未实际触发的待确认和错误状态不在本次已验证范围，按原用例保留覆盖缺口。",
       "optimized": {
         "goal": "验证本轮历史任务可查看，进行中状态真实可见，用户停止后可在同一Session恢复执行。",
         "precondition": "已登录；自动模型；任务历史面板可用；只使用本轮新Session，不操作用户旧任务。",
         "operations": "1. 独立任务计算18+27，确认45与完成记录。\n2. 在历史列表点击本任务，按真实消息ID检查原对话可查看。\n3. 同Session发送详细测试计划，观察引擎busy及列表执行中图标。\n4. 操作前再次核对busy，点击产品停止按钮，等待引擎空闲并保存中止快照。\n5. 同Session发送继续计算，核对第二轮完成与45。未捕获中止证据记REVIEW，待确认/错误状态保留未触发分支。",
         "expected": "历史可打开；列表状态与真实引擎一致；停止及续轮有实际证据；不能把自然完成当作停止。",
         "assertions": "历史行及用户消息ID；执行中状态图标与busy；停止后非busy及实际中止证据；同Session续轮及正确结果。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "57255f7a-b80b-44b3-9bf5-4eac65d7b7b3",
+          "jobId": "1fd040e0-e0d5-41f8-843c-c7fe02d1c81c",
+          "result": "PASS",
+          "startedAt": "2026-11-01T16:00:01.474Z",
+          "endedAt": "2026-11-01T16:00:52.273Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1102-0000-任务状态-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 35,
@@ -1364,17 +1446,34 @@
         "总体预期结果": "任务管理的置顶任务、重命名、打开文件夹和删除等操作都正常"
       },
       "script": "scripts/run-client-case034.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "仅操作本轮合成任务。通过真实菜单验证置顶属性及取消、重命名持久化、Windows文件夹实际路径及删除确认；先保存Session日志与Trace再删除，保留本机产物与测试证据。 本轮仅静态实现与构建，未实测；强停及新菜单连接仍待验证。",
+      "coverage": "已实机执行，收尾阻塞",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1102-0000-任务管理-第01次/执行报告.md",
+        "runs/1102-0000-任务管理-第01次/执行结果.json"
+      ],
+      "notes": "正式批次57255f7a-b80b-44b3-9bf5-4eac65d7b7b3；录像COMPLETED。8/8项已记录业务断言通过：本轮目录及文件、置顶区域、新名称持久化、Explorer真实定位、删除确认、引擎Session移除及本机产物保留均有证据；日志与Trace在删除前已保存。删除后自动返回空首页，脚本仍按旧Session页面交接而阻塞；已修精确空首页交接及后台同空间/目录404核验，18888重启后本条资源恢复且hold解除。原BLOCKED保留，普通整条修正仍待复验，不因收尾恢复改判PASS。",
       "optimized": {
         "goal": "验证本轮任务的置顶、取消、重命名、实际文件夹和删除；保留已有任务及本地材料。",
         "precondition": "已登录；自动模型；仅新建本轮合成任务；Python+pywin32可读Windows Explorer实际目录。",
         "operations": "1. 独立Session生成本轮标记文件并确认实际目录。\n2. 登记本轮置顶基线，通过真实菜单置顶、核对属性及置顶区域，再取消。\n3. 通过菜单重命名，核对列表和实际Session名称。\n4. 点击打开文件夹，读取Explorer实际目录，核对本Session路径。\n5. 先保存Session日志及Trace，再打开删除确认并核对目标名称，确认删除。\n6. 核对列表移除与引擎404、本地文件保留；更新页面交接。强停时恢复本轮置顶，保留新任务及材料。",
         "expected": "菜单操作有实际效果；名称持久化；Windows打开正确任务目录；仅本轮Session删除；先留证再删除；历史任务保留。",
         "assertions": "data-pinned-session与基线恢复；真实Session标题；Explorer目录；删除确认名称、列表移除和404；产物仍存在；删除前Trace。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "57255f7a-b80b-44b3-9bf5-4eac65d7b7b3",
+          "jobId": "0453583d-7400-4387-b774-5cbb6cd52b1f",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T16:00:55.261Z",
+          "endedAt": "2026-11-01T16:01:43.816Z",
+          "assertions": {
+            "passed": 8,
+            "total": 8
+          },
+          "report": "runs/1102-0000-任务管理-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 36,
@@ -6095,10 +6194,13 @@
         "总体预期结果": "批注可以正常修改删除"
       },
       "script": "scripts/run-client-case151.mjs",
-      "coverage": "已编写，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "独立静态组件，真实iframe元素点击触发产品批注，不伪造message或调用内部setter；保存需求、点击原标记回填/修改、删除并核对输入与标记同步；重新创建最终批注发送，真实Session工具/HTML及iframe验证实施。产品发送会清空原批注，原表要求发送后再修改删除的顺序冲突REVIEW，不能擅称原顺序通过。批注弹框/草稿/任务归属进入正常异常强停。待实机。 源码及隔离检查不代表产品实机通过。",
+      "coverage": "已实机执行，交接阻塞",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1101-1819-看板元素批注修改删除及AI实现-第01次/执行报告.md",
+        "runs/1101-1819-看板元素批注修改删除及AI实现-第01次/执行结果.json"
+      ],
+      "notes": "正式批次09f461c3-6341-4d3b-8411-4ca4898a94ef；录像COMPLETED。补录既有实机记录，非本轮重跑。6/6项已记录断言证明合成组件批注保存、回填、修改及删除同步；随后看板自动发送未交接到本轮空间Session，输入区收尾亦未确认，原BLOCKED保留。AI修改实现与发送后的原顺序差异仍未验收，不能用6/6当整条通过。",
       "optimized": {
         "module": "AI工作台/看板通用能力",
         "goal": "验证批注、修改与删除。",
@@ -6106,7 +6208,21 @@
         "operations": "1.准备本轮静态widget，点击编辑，再真实点击iframe的h1元素触发批注。\n2.输入初稿保存，检查widgetId/元素/需求进入真实输入框及标记；点击标记核对回填，修改并保存。\n3.点击该标记的删除按钮，检查批注需求和标记同时消失；重新创建最终批注。\n4.从看板发送，产品自动Session同空间/指令核对，模型真实修改同widget的HTML；iframe展示新内容且保留对照。\n5.记录产品发送即清空与原表发送后再修改顺序的冲突REVIEW；归属弹框/草稿及停止模型后资源统一收尾。",
         "expected": "批注可以正常修改删除",
         "assertions": "真实元素点击批注；保存、回填、修改和删除均实际UI且需求/标记同步；重建批注后发送自动Session，实际工具及同widget HTML实施、iframe回显。原发送后修改顺序与clearAnnotations冲突保留REVIEW，不以发送前修改冒充原顺序通过。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "09f461c3-6341-4d3b-8411-4ca4898a94ef",
+          "jobId": "cb5ad975-3ace-4c8e-b701-d9e034bcf296",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T10:19:21.113Z",
+          "endedAt": "2026-11-01T10:21:13.404Z",
+          "assertions": {
+            "passed": 6,
+            "total": 6
+          },
+          "report": "runs/1101-1819-看板元素批注修改删除及AI实现-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 153,
@@ -6125,10 +6241,17 @@
         "总体预期结果": "组件可以正常的拖动、缩放、刷新、展开、固定至桌面、删除、加入组件库"
       },
       "script": "scripts/run-client-case152.mjs",
-      "coverage": "已编写",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "原表先移除再加入库顺序矛盾，优化为先存库后移除；固定到桌面实际为独立窗口，不是下载文件。安全fixture来源明确，数据刷新不以静态重载替代。待实机。",
+      "coverage": "已实机尝试，前置阻塞",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1101-1825-组件拖动刷新固定与组件库-第01次/执行报告.md",
+        "runs/1101-1825-组件拖动刷新固定与组件库-第01次/执行结果.json",
+        "runs/1101-1830-组件拖动刷新固定与组件库-第01次/执行报告.md",
+        "runs/1101-1830-组件拖动刷新固定与组件库-第01次/执行结果.json",
+        "runs/1101-1837-组件拖动刷新固定与组件库-第01次/执行报告.md",
+        "runs/1101-1837-组件拖动刷新固定与组件库-第01次/执行结果.json"
+      ],
+      "notes": "正式批次1c208dfd-fd1e-4698-add1-a32b457d54c4；录像COMPLETED。补录既有三次实机记录，非本轮重跑：18:25因刷新计划接口HTTP400及创建归属未确认BLOCKED1/1；18:30因重载及收尾等待超时BLOCKED1/1；最新18:37因初始化残留弹窗BLOCKED0/0，业务未开始。分别追加真实job/batch及原报告，最新状态保持BLOCKED，不将准备断言或零断言当拖动/刷新/固定业务通过。",
       "optimized": {
         "module": "AI工作台",
         "goal": "验证已有组件真实拖动、缩放、数据刷新、放大、独立桌面固定、加入组件库和移除。",
@@ -6136,7 +6259,45 @@
         "operations": "1.正常API准备本条唯一空板、合成组件、手动Python automation及binding；仅生成带真实runId的stamp，不联网或读取用户文件。\n2.实际拖动header与右下控件，核对同placement布局持久化及重载。\n3.组件菜单刷新，核对真实emit、本轮run成功、artifact和iframe经数据桥显示stamp。\n4.实际放大/关闭；钉到桌面按canvasId/widgetId定向连接独立窗口，验证同stamp并取消固定。\n5.先经真实弹框加入唯一命名组件库，核对快照/库卡片；再真实从板移除，核对placement、独占widget消失与快照保留。\n6.正常/异常/强停先停止本轮run、关闭本轮固定窗口，再清理本轮库快照及板/绑定/automation。",
         "expected": "验证已有组件真实拖动、缩放、数据刷新、放大、独立桌面固定、加入组件库和移除。；原表冲突/证据不足分支明确REVIEW。",
         "assertions": "真实鼠标操作和重载布局；真实Python执行及runId产物和宿主回显；独立桌面窗口身份/取消关闭；库快照HTML及真实卡片，移除独占组件不删快照；保护用户原有窗口、组件、库及任务。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "4da1ae80-b890-4a34-a780-223c1658f035",
+          "jobId": "cfe95db6-98f9-4b5e-923f-d534a6f01f8c",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T10:25:05.156Z",
+          "endedAt": "2026-11-01T10:25:27.372Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-1825-组件拖动刷新固定与组件库-第01次/执行报告.md"
+        },
+        {
+          "batchId": "6759603e-ffff-44f5-8da7-84d4c3fe4a77",
+          "jobId": "84368cd9-abcf-4990-806b-dee2e5a80f62",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T10:30:58.216Z",
+          "endedAt": "2026-11-01T10:31:45.011Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-1830-组件拖动刷新固定与组件库-第01次/执行报告.md"
+        },
+        {
+          "batchId": "1c208dfd-fd1e-4698-add1-a32b457d54c4",
+          "jobId": "39196155-6e48-47ed-8d68-fae41087d3ce",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T10:37:04.863Z",
+          "endedAt": "2026-11-01T10:37:06.331Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1101-1837-组件拖动刷新固定与组件库-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 154,
@@ -7569,9 +7730,11 @@
       "execution": "FAIL",
       "evidence": [
         "runs/1101-2336-Guard当前状态与首次默认-第01次/执行报告.md",
-        "runs/1101-2336-Guard当前状态与首次默认-第01次/执行结果.json"
+        "runs/1101-2336-Guard当前状态与首次默认-第01次/执行结果.json",
+        "runs/1101-2345-Guard当前状态与首次默认-第01次/执行报告.md",
+        "runs/1101-2345-Guard当前状态与首次默认-第01次/执行结果.json"
       ],
-      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。Unexpected token '<', \"<!doctype \"... is not valid JSON仅收尾断言通过；安全接口返回HTML，尚未验证Guard或审计业务。已将误用的OpenCode服务改为安装版实际MobileWork Server及Bearer鉴权，待复验；不能据此判定产品审计缺陷。",
+      "notes": "正式批次c4ceaf35-eb47-4c65-aa13-6774f5a59b8d；录像COMPLETED。真实安全接口已返回JSON，1/2项断言通过；Guard开关与接口状态一致性断言失败。安装版设置加载期间开关先禁用且显示关闭，存在异步加载竞态嫌疑；本次未记录读取时的API/UI值，根因尚未证实，不能判定产品Guard缺陷。首次默认分支未覆盖。",
       "optimized": {
         "module": "安全与审计",
         "goal": "检查Guard安全拦截当前状态、完整说明和首次默认值证据。",
@@ -7592,6 +7755,18 @@
             "total": 1
           },
           "report": "runs/1101-2336-Guard当前状态与首次默认-第01次/执行报告.md"
+        },
+        {
+          "batchId": "c4ceaf35-eb47-4c65-aa13-6774f5a59b8d",
+          "jobId": "1be18471-8c34-4011-a066-817e1a460945",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T15:45:56.640Z",
+          "endedAt": "2026-11-01T15:46:09.392Z",
+          "assertions": {
+            "passed": 1,
+            "total": 2
+          },
+          "report": "runs/1101-2345-Guard当前状态与首次默认-第01次/执行报告.md"
         }
       ]
     },
@@ -7612,13 +7787,15 @@
         "总体预期结果": "行为审计记录正确展示并可查看明细。"
       },
       "script": "scripts/run-client-case194.mjs",
-      "coverage": "已实机执行，脚本或业务失败待诊断",
-      "execution": "FAIL",
+      "coverage": "已实机执行，待复核",
+      "execution": "REVIEW",
       "evidence": [
         "runs/1101-2336-行为审计真实工具记录-第01次/执行报告.md",
-        "runs/1101-2336-行为审计真实工具记录-第01次/执行结果.json"
+        "runs/1101-2336-行为审计真实工具记录-第01次/执行结果.json",
+        "runs/1101-2346-行为审计真实工具记录-第01次/执行报告.md",
+        "runs/1101-2346-行为审计真实工具记录-第01次/执行结果.json"
       ],
-      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。Unexpected token '<', \"<!doctype \"... is not valid JSON仅收尾断言通过；安全接口返回HTML，尚未验证Guard或审计业务。已将误用的OpenCode服务改为安装版实际MobileWork Server及Bearer鉴权，待复验；不能据此判定产品审计缺陷。",
+      "notes": "正式批次c4ceaf35-eb47-4c65-aa13-6774f5a59b8d；录像COMPLETED。真实Session已结束，但没有产生读取合成文件的真实工具调用，1/1仅为正常收尾，行为审计业务未触发，记REVIEW。没有用未触发或模型自述代替审计验证；旧接口HTML错误与本轮结果分别保留。",
       "optimized": {
         "module": "安全与审计",
         "goal": "验证真实工具行为出现在行为审计及详情中，可按会话和时间追溯。",
@@ -7639,6 +7816,18 @@
             "total": 1
           },
           "report": "runs/1101-2336-行为审计真实工具记录-第01次/执行报告.md"
+        },
+        {
+          "batchId": "c4ceaf35-eb47-4c65-aa13-6774f5a59b8d",
+          "jobId": "8b04048a-66e2-4976-a5b1-e3e2dedc67fd",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T15:46:11.989Z",
+          "endedAt": "2026-11-01T15:47:05.356Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2346-行为审计真实工具记录-第01次/执行报告.md"
         }
       ]
     },
@@ -7659,13 +7848,15 @@
         "总体预期结果": "会话审计记录正确展示并可查看明细。"
       },
       "script": "scripts/run-client-case195.mjs",
-      "coverage": "已实机执行，脚本或业务失败待诊断",
-      "execution": "FAIL",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
       "evidence": [
         "runs/1101-2336-会话审计真实消息记录-第01次/执行报告.md",
-        "runs/1101-2336-会话审计真实消息记录-第01次/执行结果.json"
+        "runs/1101-2336-会话审计真实消息记录-第01次/执行结果.json",
+        "runs/1101-2347-会话审计真实消息记录-第01次/执行报告.md",
+        "runs/1101-2347-会话审计真实消息记录-第01次/执行结果.json"
       ],
-      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。Unexpected token '<', \"<!doctype \"... is not valid JSON仅收尾断言通过；安全接口返回HTML，尚未验证Guard或审计业务。已将误用的OpenCode服务改为安装版实际MobileWork Server及Bearer鉴权，待复验；不能据此判定产品审计缺陷。",
+      "notes": "正式批次c4ceaf35-eb47-4c65-aa13-6774f5a59b8d；录像COMPLETED。真实Session消息与安全审计记录关联、界面列表及详情通过，4/4项断言通过；本轮业务与正常收尾PASS。旧接口HTML失败报告保留，不将本轮通过扩大为所有审计分支通过。",
       "optimized": {
         "module": "安全与审计",
         "goal": "验证真实会话消息出现在会话安全审计及详情中，并可追溯时间与内容。",
@@ -7686,6 +7877,18 @@
             "total": 1
           },
           "report": "runs/1101-2336-会话审计真实消息记录-第01次/执行报告.md"
+        },
+        {
+          "batchId": "c4ceaf35-eb47-4c65-aa13-6774f5a59b8d",
+          "jobId": "6c75a15a-0ac5-41cb-933b-a7abbe38921e",
+          "result": "PASS",
+          "startedAt": "2026-11-01T15:47:09.041Z",
+          "endedAt": "2026-11-01T15:47:41.708Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1101-2347-会话审计真实消息记录-第01次/执行报告.md"
         }
       ]
     },
@@ -7706,10 +7909,13 @@
         "总体预期结果": "版本号展示正确且可复制。"
       },
       "script": "scripts/run-client-case196.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "如原剪贴板包含不可恢复格式则不执行复制；未实机。",
+      "coverage": "已实机执行，收尾阻塞",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1101-2347-客户端版本展示与复制粘贴-第01次/执行报告.md",
+        "runs/1101-2347-客户端版本展示与复制粘贴-第01次/执行结果.json"
+      ],
+      "notes": "正式批次c4ceaf35-eb47-4c65-aa13-6774f5a59b8d；录像COMPLETED。版本展示与安装包产品版本一致，复制后剪贴板回读成功；真实Ctrl+V粘贴内容断言失败，1/2项断言通过，并出现本轮草稿清理归属未确认，最终BLOCKED。现有证据不能判为产品复制失败，粘贴事件/输入读取时序及收尾仍待定位。",
       "optimized": {
         "module": "软件配置",
         "goal": "验证软件配置的客户端版本与当前安装版本一致并可真实复制粘贴。",
@@ -7717,7 +7923,21 @@
         "operations": "读取安装包产品版本，进入软件配置核对展示；登记原剪贴板，点击复制版本，在本轮空输入区真实粘贴并清理。",
         "expected": "界面版本与安装包一致；粘贴结果为产品名称及当前展示版本，原剪贴板恢复。",
         "assertions": "实际UI版本、复制后的剪贴板及真实粘贴文字分别核对；不记录原剪贴板内容。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c4ceaf35-eb47-4c65-aa13-6774f5a59b8d",
+          "jobId": "9bf5979b-64b4-4cec-a5e0-bca2606857cc",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T15:47:44.313Z",
+          "endedAt": "2026-11-01T15:47:59.988Z",
+          "assertions": {
+            "passed": 1,
+            "total": 2
+          },
+          "report": "runs/1101-2347-客户端版本展示与复制粘贴-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 198,

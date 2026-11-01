@@ -6,7 +6,7 @@ import {testEnvironment} from '../local-console/environment.mjs';
 import {openSettings,releaseSettingsPanel} from './mobilework-account-settings.mjs';
 import {prepareConversationSettings,readConversationPreferences,readSendMessageShortcut,chooseSendMessageShortcut,releaseConversationSettings} from './mobilework-conversation-settings.mjs';
 import {beginMessageClipboard,expectMessageClipboard,restoreMessageClipboard} from './mobilework-message-clipboard.mjs';
-import {snapshotDraft,clearOwnedDraft,editorOf} from './mobilework-isolation.mjs';
+import {snapshotDraft,clearOwnedDraft,draftOwnership,editorOf} from './mobilework-isolation.mjs';
 import {readComposerState} from './mobilework-composer.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -100,12 +100,19 @@ export async function runSecuritySettingsSteps(context){
   const guard=await auditRequest(page,'/guard');
   await settings('security',async panel=>{
    const toggle=panel.getByRole('switch',{name:'Guard安全拦截',exact:true});
-   context.assert('Guard开关与安全插件当前状态一致',(await toggle.getAttribute('aria-checked')==='true')===guard.enabled);
+   const element=await toggle.elementHandle();let state;
+   try{
+    if(!guard.lock?.locked)await page.waitForFunction(node=>node.isConnected&&!node.disabled&&node.getAttribute('aria-disabled')!=='true',element,{timeout:15000});
+   }finally{
+    await element.dispose();
+    state={enabled:guard.enabled,enforcement:guard.enforcement,effectiveEnforcement:guard.effectiveEnforcement,locked:guard.lock?.locked,uiChecked:await toggle.getAttribute('aria-checked')==='true',uiDisabled:!await toggle.isEnabled()};
+    await save(context,'Guard当前状态',state);await context.capture('Guard加载后实际状态');
+   }
    if(guard.lock?.locked)throw review('安全策略锁定了Guard说明，无法核对原表完整说明');
+   context.assert('Guard开关与安全插件当前状态一致',state.uiChecked===guard.enabled);
    context.assert('Guard安全拦截完整说明可见',await panel.getByText('开启 Guard 将对智能体交互过程中的会话、行为进行安全检测和拦截，保障智能体安全运行',{exact:true}).isVisible());
    await context.capture('Guard当前状态及完整说明');
   });
-  await save(context,'Guard当前状态',{enabled:guard.enabled,enforcement:guard.enforcement,effectiveEnforcement:guard.effectiveEnforcement,locked:guard.lock?.locked});
   remaining.delete('Guard真实当前开关及说明');
   throw review('已核对当前Guard状态和说明；现有账号可能保存过设置，无法据此证明首次安装默认开启');
  }
@@ -165,28 +172,51 @@ export async function runSecuritySettingsSteps(context){
   const build=JSON.parse(await fs.readFile(testEnvironment.buildInfoPath,'utf8')),version=build.productVersion;
   if(!version)throw review('安装包未提供产品版本，无法核对界面展示');
   let owner;
-  await settings('software',async panel=>{
-   await panel.getByText(version,{exact:true}).waitFor();
-   const row=panel.getByText('客户端版本',{exact:true}).locator('xpath=..');
-   context.assert('客户端版本与安装包产品版本一致',(await row.innerText()).includes(version));
-   owner=randomUUID();const baseline=await beginMessageClipboard(page,owner);
-   if(!baseline.supported)throw review('剪贴板含不可恢复格式，未覆盖原内容');
-   resources.clipboardOwner=owner;await context.checkpointResources();
-   await expectMessageClipboard(page,owner,'MobileWork '+version);
-   await panel.getByRole('button',{name:'复制版本',exact:true}).click();
-   await page.waitForFunction(value=>navigator.clipboard.readText().then(text=>text===value),'MobileWork '+version);
-   await context.capture('软件配置版本与复制');
-  });
-  const text='MobileWork '+version,editor=editorOf(page),draft=await snapshotDraft(page);
-  await context.checkpointPage({...draft,text});await editor.click();await page.keyboard.press('Control+v');
-  context.assert('真实粘贴内容包含产品名及展示版本',(await readComposerState(editor)).text===text);await context.capture('版本复制后真实粘贴');
-  const pasted=await snapshotDraft(page);await context.checkpointPage(pasted);
-  if(!await clearOwnedDraft(page,pasted,context.config))throw blocked('版本粘贴草稿归属未确认');
-  await context.checkpointPage();
-  const restored=await restoreMessageClipboard(page,owner);delete resources.clipboardOwner;await context.checkpointResources();
-  context.log('剪贴板收尾',restored.restored?'原内容已恢复':restored.reason);
-  await save(context,'版本复制核对',{version,copied:text,clipboardRestored:restored.restored});
-  remaining.delete('安装包与界面版本一致');remaining.delete('真实复制粘贴及剪贴板恢复');return;
+  try{
+   await settings('software',async panel=>{
+    await panel.getByText(version,{exact:true}).waitFor();
+    const row=panel.getByText('客户端版本',{exact:true}).locator('xpath=..');
+    context.assert('客户端版本与安装包产品版本一致',(await row.innerText()).includes(version));
+    owner=randomUUID();const baseline=await beginMessageClipboard(page,owner);
+    if(!baseline.supported)throw review('剪贴板含不可恢复格式，未覆盖原内容');
+    resources.clipboardOwner=owner;await context.checkpointResources();
+    await expectMessageClipboard(page,owner,'MobileWork '+version);
+    await panel.getByRole('button',{name:'复制版本',exact:true}).click();
+    await page.waitForFunction(value=>navigator.clipboard.readText().then(text=>text===value),'MobileWork '+version);
+    await context.capture('软件配置版本与复制');
+   });
+   remaining.delete('安装包与界面版本一致');
+   const text='MobileWork '+version,editor=editorOf(page),draft=await snapshotDraft(page),expected={...draft,text};
+   if(draft.text||draft.skills.length||draft.selection.length)throw blocked('版本粘贴前输入区不是本轮空白状态');
+   await editor.click();
+   if(!await editor.evaluate(element=>document.activeElement===element))throw blocked('版本粘贴输入框未获得焦点');
+   await context.checkpointPage(expected);
+   try{
+    await page.keyboard.press('Control+v');
+    const element=await editor.elementHandle();
+    try{await page.waitForFunction(({element,text})=>element.isConnected&&element.textContent===text,{element,text},{timeout:10000});}
+    catch(error){if(!(error instanceof errors.TimeoutError))throw error;}
+    finally{await element.dispose();}
+   }finally{
+    // A failed paste may leave the original empty editor. Only these two known
+    // states belong to this run; never adopt unrelated text during recovery.
+    if((await draftOwnership(page,expected)).matches)await context.checkpointPage(await snapshotDraft(page));
+    else if((await draftOwnership(page,draft)).matches)await context.checkpointPage(draft);
+   }
+   const pasted=await snapshotDraft(page),focused=await editor.evaluate(element=>document.activeElement===element);
+   await save(context,'版本粘贴核对',{version,expected:text,actual:pasted.text===text||pasted.text===draft.text?pasted.text:'[非本轮内容已隐藏]',actualLength:pasted.text.length,focused});
+   await context.capture('版本复制后真实粘贴');
+   context.assert('真实粘贴内容包含产品名及展示版本',pasted.text===text);
+   if(!await clearOwnedDraft(page,pasted,context.config))throw blocked('版本粘贴草稿归属未确认');
+   await context.checkpointPage();
+  }finally{
+   if(resources.clipboardOwner===owner&&owner){
+    const restored=await restoreMessageClipboard(page,owner);delete resources.clipboardOwner;await context.checkpointResources();
+    context.log('剪贴板收尾',restored.restored?'原内容已恢复':restored.reason);
+    await save(context,'版本复制核对',{version,copied:'MobileWork '+version,clipboardRestored:restored.restored});
+   }
+  }
+  remaining.delete('真实复制粘贴及剪贴板恢复');return;
  }
  if(number===198){
   const baseline=await ui(()=>prepareConversationSettings(context,'shortcut'));

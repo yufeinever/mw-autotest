@@ -63,6 +63,28 @@ export async function adoptOwnedSession(page,job){
  return true;
 }
 
+// Reconcile a missing task only on its exact, empty workspace home and in
+// its recorded task directory. A different page or a user draft is preserved.
+export async function adoptMissingSessionHome(page,job){
+ const owned=job.composerResources,id=job.sessionId;
+ if(!id||!job.modelCompleted||!job.sessionUrl?.endsWith('/session/'+id)||owned?.url!==job.sessionUrl)return false;
+ const home=job.sessionUrl.slice(0,-('/'+id).length);
+ if(page.url()!==home)return false;
+ const directory=job.result?.sessions?.find(item=>item.id===id)?.directory;
+ if(!directory)return false;
+ const connection=await readEngineConnection(page);
+ const response=await fetch(connection.baseUrl.replace(/\/$/,'')+'/session/'+id+'?directory='+encodeURIComponent(directory),{
+  headers:{Authorization:'Basic '+btoa(connection.opencodeUsername+':'+connection.opencodePassword)},redirect:'error',signal:AbortSignal.timeout(5000)
+ });
+ if(response.status!==404)return false;
+ const draft=await snapshotDraft(page);
+ if(draft.url!==home||draft.text||draft.skills.length||draft.selection.length||!(await inspectPageHandoff(page)).ready)return false;
+ owned.url=home;job.ownedDraft=draft;
+ job.sessionMissing=true;job.sessionSettled=true;
+ job.recoveryAction='已核对本轮Session在原任务目录返回404、同空间空首页及无弹框，继续原资源收尾；历史结果不变';
+ return true;
+}
+
 export async function adoptExistingWorkspaceSession(page,job){
  const workspace=job.composerResources?.workspaceResources;
  if(job.sessionId||!job.submissionPending||!workspace?.existingTargetId||!Array.isArray(workspace.beforeSessionIds)||!job.ownedDraft?.text)return false;

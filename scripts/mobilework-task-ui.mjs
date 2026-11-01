@@ -56,10 +56,17 @@ export async function previewTaskFile(page,config,name,capture,facts=[]){
  const panel=page.locator('[data-slot="resizable-panel"]').filter({visible:true}).last();
  await panel.getByText(name,{exact:false}).first().waitFor();
  await waitTaskPreviewReady(panel,name);
+ const csv=/\.csv$/i.test(name);let text;
+ if(csv){
+  const cells=panel.locator('table td input');await cells.first().waitFor();
+  text=(await cells.evaluateAll(elements=>elements.map(element=>element.value))).join('\n');
+ }
  await capture('文件预览-'+name);
- let text=await panel.innerText();
- const frame=panel.locator('iframe').filter({visible:true});
- if(await frame.count()===1)text+='\n'+await frame.contentFrame().locator('body').innerText();
+ if(!csv){
+  text=await panel.innerText();
+  const frame=panel.locator('iframe').filter({visible:true});
+  if(await frame.count()===1)text+='\n'+await frame.contentFrame().locator('body').innerText();
+ }
  if(facts.some(fact=>!text.includes(fact)))throw Object.assign(Error('文件入口已打开，但尚未在预览内容中核对关键事实：'+name),{review:true});
  return panel;
 }

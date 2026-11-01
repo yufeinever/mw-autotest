@@ -227,7 +227,7 @@ export async function runScenarioCase(number,inputConfig){
      assert('Session返回本次默认任务空间的实际目录',path.isAbsolute(sent.session.directory||'')&&path.resolve(sent.session.directory).toLowerCase().startsWith(path.resolve(testEnvironment.taskRoot).toLowerCase()+path.sep),sent.session.directory);
      const users=sent.messages.filter(m=>m.info?.role==='user');
      assert('Session实际用户消息包含完整材料',receipt.complete);
-     assert('Session未使用输入附件',!users.some(m=>(m.parts||[]).some(p=>p.type==='file')));
+     assert('Session未使用输入附件',!users.some(m=>(m.parts||[]).some(p=>p.type==='file'||p.type==='text'&&/^\[附件文件:[^\r\n]+\]/m.test(p.text||''))));
      log('完整发送已核对','agent='+String(users[0]?.info?.agent||'未返回'));
     }
    }

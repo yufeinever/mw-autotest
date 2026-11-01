@@ -284,9 +284,23 @@ export async function runInteractionCase(number){
    }else if(number===31){
     const editor=editorOf(page);await fill('/');
     const search=page.locator('input[placeholder="输入名称搜索..."]').filter({visible:true});await search.waitFor();await search.fill('公文');
-    const target=page.getByRole('presentation').getByRole('button').filter({hasText:'公文'}).filter({visible:true});
+    const menu=search.locator('xpath=../../..').getByRole('presentation'),element=await menu.elementHandle();let ready=false;
+    try{
+     await page.waitForFunction(node=>{
+      if(!node.isConnected||node.textContent.includes('正在加载命令与技能…'))return false;
+      return node.querySelectorAll('button').length>0||node.textContent.trim()==='未找到命令或技能。';
+     },element,{timeout:45000});ready=true;
+    }catch(error){if(error.name!=='TimeoutError')throw error;}
+    finally{
+     await element.dispose();
+     const candidates=await menu.getByRole('button').evaluateAll(nodes=>nodes.map(node=>({text:node.innerText,disabled:node.getAttribute('aria-disabled')==='true'})));
+     await fs.writeFile(path.join(dir,'斜线技能候选.json'),JSON.stringify({query:await search.inputValue(),ready,loading:await menu.getByText('正在加载命令与技能…',{exact:true}).isVisible(),candidates},null,2));
+     await capture('斜线技能候选');
+    }
+    if(!ready)throw blocked('当前/菜单45秒仍未完成候选加载，未把加载中判断为技能不存在');
+    const target=menu.getByRole('button').filter({hasText:'公文'}).filter({visible:true});
     if(await target.count()!==1)throw blocked('当前/菜单未唯一找到原表公文写作技能，未替换为其他技能');
-    await capture('斜线技能候选');await target.click();await editor.locator('[data-skill-remove="chinese-official-writing"]').waitFor();
+    await target.click();await editor.locator('[data-skill-remove="chinese-official-writing"]').waitFor();
     owned=await snapshotDraft(page);await control.checkpointDraft(owned);assert('斜线选择真实生成公文写作技能标签',owned.skills.includes('chinese-official-writing'));remaining.delete('斜线菜单与技能标签');
     await send('请直接完成以下虚构任务：起草星桥科技综合管理部关于办公设备盘点的通知，范围为电脑、显示器、打印机。各部门在2026年11月6日17时前向赵宁提交资产编号、使用人和设备状态。只输出通知，不发出、不改文件。');
     const output=finalAssistantText(data);assert('公文正文符合素材及通知用途',['通知','电脑','显示器','打印机','赵宁'].every(word=>output.includes(word))&&/11.{0,3}6/.test(output));remaining.delete('公文任务与实际Skill调用');
