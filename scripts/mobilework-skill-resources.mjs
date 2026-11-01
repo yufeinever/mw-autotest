@@ -1,4 +1,4 @@
-import {draftOwnership,editorOf} from './mobilework-isolation.mjs';
+import {draftOwnership,editorOf,modalDialogs} from './mobilework-isolation.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 
@@ -74,6 +74,18 @@ export async function settleSkillReload(page,{waitForPrompt=false}={}){
  await modal.getByRole('button',{name:'等待会话结束后生效',exact:true}).click();
  await modal.waitFor({state:'hidden'});
  return true;
+}
+
+// Shared post-reload readiness only. Callers keep their own route/resource
+// ownership contracts; this helper does not navigate or register a page.
+export async function waitForReloadedShell(page,ready){
+ await ready.waitFor({timeout:90000});
+ await settleSkillReload(page,{waitForPrompt:true});
+ const dialogs=await modalDialogs(page).allTextContents();
+ if(dialogs.length){
+  if(dialogs.length===1&&dialogs[0].includes('配置已更新，需要重新加载引擎'))await settleSkillReload(page);
+  else throw blocked('重载后存在未知弹框，保留现场');
+ }
 }
 
 export async function waitForSkillInstall(page,targetName){

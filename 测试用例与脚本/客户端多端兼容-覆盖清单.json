@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "9898842d048a0a387b4eddffaee344c02c352797e0107d8c61daa3e5320988a9",
+  "workbookSha256": "17aada077f37aa47229c4e9f090bfdc41d932d916fc1e1ea09a29c47979951cf",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -6391,8 +6391,8 @@
         "总体预期结果": "右侧加载对应知识卡片详情，展示标题题、更新时间、标签、卡片内容；展示知识卡片间关联关系、关联知识卡片列表，可查看与当前关联的知识卡片详情"
       },
       "script": "scripts/run-client-case134.mjs",
-      "coverage": "已实机执行；关联区定位误读导致FAIL，修正后待独立复验",
-      "execution": "FAIL",
+      "coverage": "五卡元数据及完整关系列表、四次关联卡片真实同ID跳转已验；正文摘要/裁切与原表内容要求尚未闭环，保留REVIEW。",
+      "execution": "REVIEW",
       "evidence": [
         "runs/1102-0637-知识卡片列表详情与内容-第01次/执行报告.md",
         "runs/1102-0637-知识卡片列表详情与内容-第01次/执行结果.json",
@@ -6403,9 +6403,17 @@
         "tmp/knowledge-round8-archive-notes-20261102.json",
         "runs/1102-0637-知识卡片列表详情与内容-第01次/知识卡片全部详情观察.json",
         "runs/1102-0637-知识卡片列表详情与内容-第01次/1102-0644-05-异常现场.png",
-        "tmp/card-relations-20261102/candidate.json"
+        "tmp/card-relations-20261102/candidate.json",
+        "runs/1102-0653-知识卡片列表详情与内容-第01次/执行报告.md",
+        "runs/1102-0653-知识卡片列表详情与内容-第01次/执行结果.json",
+        "runs/1102-0653-知识卡片列表详情与内容-第01次/执行日志.txt",
+        "tmp/knowledge-round9-20261102.json",
+        "tmp/knowledge-round9-final-20261102.json",
+        "tmp/knowledge-round9-original-hashes-20261102.json",
+        "tmp/knowledge-round9-archive-notes-20261102.json",
+        "tmp/knowledge-round9-case134-original-hashes-20261102.json"
       ],
-      "notes": "本批正式FAIL，17/18项记录断言通过，包含公共收尾；首张卡片关联完整列表断言失败。原观察的两个数组同时混入空按钮、卡片和Wiki；截图与安装源码证明两个实际关联区分开，脚本section has匹配也选中了上层阅读区。已准备确切可见标题最近section的单点定位候选，尚未应用/复验；不判定为产品关系缺失。当前详情只展示摘要，原表正文语义及其余卡片/关联点击仍待验。正式收尾完成、hold=false，原失败证据保留。",
+      "notes": "本批真实执行50/50项记录断言通过，包含公共收尾；不能将其等同完整业务通过。最近section定位已走通，五卡正文完整可读仍待复核。原报告、结果及日志哈希保持，FINISHED、收尾完成、hold=false；旧FAIL历史保留。",
       "optimized": {
         "module": "知识中心/解析与知识阅读",
         "goal": "验证知识卡片列表展示是否完整",
@@ -6426,6 +6434,18 @@
             "total": 18
           },
           "report": "runs/1102-0637-知识卡片列表详情与内容-第01次/执行报告.md"
+        },
+        {
+          "batchId": "999ae657-a753-4721-8f58-162fc82e6a57",
+          "jobId": "6c34dc28-3a8b-48a1-a216-02cf0f567981",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T22:53:47.491Z",
+          "endedAt": "2026-11-01T23:02:17.554Z",
+          "assertions": {
+            "passed": 50,
+            "total": 50
+          },
+          "report": "runs/1102-0653-知识卡片列表详情与内容-第01次/执行报告.md"
         }
       ]
     },
@@ -6446,7 +6466,7 @@
         "总体预期结果": "1.关联知识：展示知识卡片间关联关系，关联知识卡片列表：列表内点击知识卡片可查看与当前关联的知识卡片详情\n2.关联wiki：展示知识卡片关联的wiki"
       },
       "script": "scripts/run-client-case135.mjs",
-      "coverage": "已实机执行；同关联区定位误读导致FAIL，关联点击待独立复验",
+      "coverage": "四卡完整关系及三次关联卡片跳转已验；首Wiki真实打开后正文连续比较失败，其余Wiki跳转未验完。",
       "execution": "FAIL",
       "evidence": [
         "runs/1102-0644-知识卡片关联及Wiki跳转-第01次/执行报告.md",
@@ -6457,9 +6477,19 @@
         "tmp/knowledge-round8-original-hashes-20261102.json",
         "tmp/knowledge-round8-archive-notes-20261102.json",
         "runs/1102-0644-知识卡片关联及Wiki跳转-第01次/知识卡片全部详情观察.json",
-        "tmp/card-relations-20261102/candidate.json"
+        "tmp/card-relations-20261102/candidate.json",
+        "runs/1102-0702-知识卡片关联及Wiki跳转-第01次/执行报告.md",
+        "runs/1102-0702-知识卡片关联及Wiki跳转-第01次/执行结果.json",
+        "runs/1102-0702-知识卡片关联及Wiki跳转-第01次/执行日志.txt",
+        "tmp/knowledge-round9-20261102.json",
+        "tmp/knowledge-round9-final-20261102.json",
+        "tmp/knowledge-round9-original-hashes-20261102.json",
+        "tmp/knowledge-round9-archive-notes-20261102.json",
+        "tmp/knowledge-round9-case135-original-hashes-20261102.json",
+        "tmp/knowledge135-preview-diagnosis-20261102/README.md",
+        "tmp/knowledge137-empty-edges-diagnosis-20261102/README.md"
       ],
-      "notes": "本批正式FAIL，17/18项记录断言通过，包含公共收尾。真实两源解析完成并产生卡片，首张卡片元数据通过；两个实际关联区均被脚本读取为同一上层区域的完整按钮集合，混入空按钮、3项卡片及2项Wiki，导致关系断言失败。属于与134共用定位缺口，不据此判产品关系错误；确切标题最近section的候选尚未应用/复验。全部卡片与关联卡片/Wiki实际跳转仍待验。正式收尾完成、hold=false，原失败证据保留。",
+      "notes": "44/45项记录断言通过。源Markdown行首列表符号与实际li文本不一致造成脚本全文误比；另有产品跨行Wiki链接转换使目标标签错配的静态证据，不能仅以API/UI共同错误证明原始正文完整。局部归一候选与独立链接保真核对待后续验证，不改原FAIL。已完成收尾、hold=false，原三份哈希保持。",
       "optimized": {
         "module": "知识中心/解析与知识阅读",
         "goal": "验证知识卡片是否关联成功",
@@ -6480,6 +6510,18 @@
             "total": 18
           },
           "report": "runs/1102-0644-知识卡片关联及Wiki跳转-第01次/执行报告.md"
+        },
+        {
+          "batchId": "999ae657-a753-4721-8f58-162fc82e6a57",
+          "jobId": "c1f52b21-f1a7-445b-832c-c249962625c2",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T23:02:22.315Z",
+          "endedAt": "2026-11-01T23:08:37.681Z",
+          "assertions": {
+            "passed": 44,
+            "total": 45
+          },
+          "report": "runs/1102-0702-知识卡片关联及Wiki跳转-第01次/执行报告.md"
         }
       ]
     },
@@ -6549,10 +6591,20 @@
         "总体预期结果": "1.节点大小：代表节点关联数量，关联越多节点尺寸越大\n2.节点颜色：区分节点类型，黑色 = 实体，蓝色 = 概念（无来源/节点内容为空的节点浅灰、浅蓝色）\n3.连线：实线/虚线代表系强弱；实线强；虚线弱，强弱由模型决定\n名称展示：视图缩放至一定比例自动显示节点名称，缩放过小隐藏名称避免重叠。\n画布缩放系数 ≥0.6（建议，以世纪效果为准）：显示节点文字标签；\n画布缩放系数 ＜0.6：自动隐藏全部节点名称，避免大量节点文字重叠挤压"
       },
       "script": "scripts/run-client-case137.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01按原表顺序核对，依据123真实解析诊断document_parser_runtime_unavailable（0xc0000135）暂缓。实际生成图谱的节点大小/类型颜色/边强弱及缩放标签尚未实机验收；不能预制Wiki/卡片/图谱或以配置保存代替真实业务。本轮未启动、不生成正式BLOCKED，缺环境先跳过后续集中确认。",
+      "coverage": "真实解析及源保护完成，图谱为4节点0边；脚本缺边即提前REVIEW，尺寸配色、缩放和完整可视化分支均未进入。",
+      "execution": "REVIEW",
+      "evidence": [
+        "runs/1102-0708-知识图谱真实可视化规则-第01次/执行报告.md",
+        "runs/1102-0708-知识图谱真实可视化规则-第01次/执行结果.json",
+        "runs/1102-0708-知识图谱真实可视化规则-第01次/执行日志.txt",
+        "tmp/knowledge-round9-20261102.json",
+        "tmp/knowledge-round9-final-20261102.json",
+        "tmp/knowledge-round9-original-hashes-20261102.json",
+        "tmp/knowledge-round9-archive-notes-20261102.json",
+        "tmp/knowledge-round9-case137-original-hashes-20261102.json",
+        "tmp/knowledge137-empty-edges-diagnosis-20261102/README.md"
+      ],
+      "notes": "10/10仅前置及公共收尾。四卡正文只有sources引用，无concept/entity卡片间显式双链，按安装后端合同可解释零边；不能由零边推断产品必然隐藏孤点。原截图空态发生在等待画布布局之前，未完成颜色语义观察。已完成收尾、hold=false；拆开节点可测分支与缺边的候选尚未应用/测试，原结论与哈希保留。",
       "optimized": {
         "module": "知识中心/图谱与设置",
         "goal": "验证知识图谱可视化规则",
@@ -6560,7 +6612,21 @@
         "operations": "1.独立UI新库及两份合成源，真实解析终态和Wiki产物。\n2.进入真实图谱，核对本库graph节点/边ID全集与当前canvas的G6只读观察一致。\n3.逐节点核关联数尺寸档位、实体/概念和缺来源/空内容类型样式；逐边核真实强弱线型，实际样式与当前主题色同时记录。\n4.真实按钮缩放跨0.6阈值，逐节点核显示/隐藏标签，保留完整观察及截图。\n5.完成其它真实可测分支后，汇总缺实体/概念、缺来源/内容、强弱边或多尺寸等实际样本缺口为REVIEW，不注入关系或预制Wiki。\n6.原表实体黑色、缺来源/空内容实体浅灰的颜色语义尚未确认，保存原目标与现场actualPalette供人工复核；此为本版本专项验收门槛，不以CSS一致自动判此项PASS，也不自动宣称现场仍有固定颜色差异。",
         "expected": "1.节点大小：代表节点关联数量，关联越多节点尺寸越大\n2.节点颜色：区分节点类型，黑色 = 实体，蓝色 = 概念（无来源/节点内容为空的节点浅灰、浅蓝色）\n3.连线：实线/虚线代表系强弱；实线强；虚线弱，强弱由模型决定\n名称展示：视图缩放至一定比例自动显示节点名称，缩放过小隐藏名称避免重叠。\n画布缩放系数 ≥0.6（建议，以世纪效果为准）：显示节点文字标签；\n画布缩放系数 ＜0.6：自动隐藏全部节点名称，避免大量节点文字重叠挤压",
         "assertions": "本库真实节点/边全集、关联数尺寸分档、类型与缺来源/内容样式、真实强弱边线型、跨0.6标签显隐及原源保护；未覆盖样本REVIEW。原表黑色/浅灰语义尚未确认，记录原目标和现场实际颜色，完成其它可测分支后保留人工REVIEW门槛；不将G6与CSS一致冒充原表颜色通过。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "999ae657-a753-4721-8f58-162fc82e6a57",
+          "jobId": "20d70456-4530-4ff4-9378-573e39d1c180",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T23:08:42.204Z",
+          "endedAt": "2026-11-01T23:14:55.058Z",
+          "assertions": {
+            "passed": 10,
+            "total": 10
+          },
+          "report": "runs/1102-0708-知识图谱真实可视化规则-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 139,
@@ -6579,10 +6645,20 @@
         "总体预期结果": "1.鼠标滚轮支持当大缩小知识图谱\n2.鼠标悬浮节点或长按显示节点关联关系，拖动节点可移动节点相对位置（选中状态关联节点和连线高亮、其他未关联置灰）\n鼠标拖动空白处可移动整体图谱位置\n放大/缩小：点击放大/缩小支持放大图谱，建议每次放大5%；\n全屏：全屏展示知识图谱，点击节点自动收起，右侧展示节点详情"
       },
       "script": "scripts/run-client-case138.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01按原表顺序核对，依据123真实解析诊断document_parser_runtime_unavailable（0xc0000135）暂缓。实际生成图谱的缩放、悬停长按、拖动平移及全屏详情尚未实机验收；不能预制Wiki/卡片/图谱或以配置保存代替真实业务。本轮未启动、不生成正式BLOCKED，缺环境先跳过后续集中确认。",
+      "coverage": "真实解析成功，6节点15边及截图图谱可见；四层canvas导致脚本严格模式定位失败，缩放、悬停、拖动、平移及全屏详情均未开始。",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1102-0714-知识图谱真实交互与详情-第01次/执行报告.md",
+        "runs/1102-0714-知识图谱真实交互与详情-第01次/执行结果.json",
+        "runs/1102-0714-知识图谱真实交互与详情-第01次/执行日志.txt",
+        "tmp/knowledge-round9-20261102.json",
+        "tmp/knowledge-round9-final-20261102.json",
+        "tmp/knowledge-round9-original-hashes-20261102.json",
+        "tmp/knowledge-round9-archive-notes-20261102.json",
+        "tmp/knowledge-round9-case138-original-hashes-20261102.json",
+        "tmp/knowledge137-empty-edges-diagnosis-20261102/README.md"
+      ],
+      "notes": "10/10只含前置及公共收尾。失败不是图谱数据缺失；openGraph及共用观察器的单canvas假设需同步按本库/已提交组件/唯一G6实例适配，并等待真实初始化完成。候选仅静态准备，未复跑或改写FAIL。FINISHED、收尾完成、hold=false，原报告/结果/日志哈希保持。",
       "optimized": {
         "module": "知识中心/图谱与设置",
         "goal": "验证知识图谱的交互规则",
@@ -6590,7 +6666,21 @@
         "operations": "1.独立真实解析库进入图谱，按本库graph同ID节点/边与当前G6画布映射定位，不操作其它库或注入图谱。\n2.实际按钮核约5%比例，滚轮双向缩放；悬停前注册本图谱afterdraw观察，真实鼠标移动后核已提交悬停ID及非拖动状态、等待真实绘制，再独立按关联集合核节点/边opacity并保留类型fill和实际边stroke，确有未关联节点而不淡化应失败，缺样本才REVIEW。\n3.真实长按核对应节点详情，拖动节点核位置变化；drag按当前真实合同分别核当前/邻居/未关联节点fill、opacity及关联/非关联边stroke、opacity，不能复用hover透明度条件，也不能全节点opacity=1就通过。\n4.本轮缺未关联节点或关联邻居与未关联样式不可区分时保留REVIEW；保存拖动前/中完整样式和同ID关系后继续真实空白平移，核节点相对位置保持。\n5.全屏核画布扩大，真实节点点击退出并在右侧显示对应详情；完成其余可测步骤后汇总未覆盖分支。公共归属退出全屏，mouse.down及绘制观察器均finally释放。",
         "expected": "1.鼠标滚轮支持当大缩小知识图谱\n2.鼠标悬浮节点或长按显示节点关联关系，拖动节点可移动节点相对位置（选中状态关联节点和连线高亮、其他未关联置灰）\n鼠标拖动空白处可移动整体图谱位置\n放大/缩小：点击放大/缩小支持放大图谱，建议每次放大5%；\n全屏：全屏展示知识图谱，点击节点自动收起，右侧展示节点详情",
         "assertions": "真实悬停状态及绘制就绪与业务断言分离；真实按钮约5%及双向滚轮；同ID关联集合的hover节点/边opacity、类型fill和真实stroke；长按详情；真实拖动坐标变化及drag各类节点fill/opacity、关联与未关联边stroke/opacity；缺真实未关联或可区分样本REVIEW，存在样本但样式错误FAIL；空白整体平移及相对坐标、全屏扩大、节点点击退出和右侧详情、归属收尾。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "999ae657-a753-4721-8f58-162fc82e6a57",
+          "jobId": "74a19493-ff98-4296-bc7b-230ae6617492",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T23:14:58.133Z",
+          "endedAt": "2026-11-01T23:21:58.941Z",
+          "assertions": {
+            "passed": 10,
+            "total": 10
+          },
+          "report": "runs/1102-0714-知识图谱真实交互与详情-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 140,
@@ -6609,10 +6699,20 @@
         "总体预期结果": "引用开启后可被Agent智能体调用引用知识库内容（会话任务可被选择）"
       },
       "script": "scripts/run-client-case139.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01按原表顺序核对，依据123真实解析诊断document_parser_runtime_unavailable（0xc0000135）暂缓。启闭引用后可选择状态及自动模型真实工具引用随机事实尚未实机验收；不能预制Wiki/卡片/图谱或以配置保存代替真实业务。本轮未启动、不生成正式BLOCKED，缺环境先跳过后续集中确认。",
+      "coverage": "真实引用关闭/开启、重载持久、候选排除/包含同库，以及独立Session实际工具读取和隐藏事实答案均已验证。",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1102-0722-引用开关与真实Agent取数-第01次/执行报告.md",
+        "runs/1102-0722-引用开关与真实Agent取数-第01次/执行结果.json",
+        "runs/1102-0722-引用开关与真实Agent取数-第01次/执行日志.txt",
+        "tmp/knowledge-round9-20261102.json",
+        "tmp/knowledge-round9-final-20261102.json",
+        "tmp/knowledge-round9-original-hashes-20261102.json",
+        "tmp/knowledge-round9-archive-notes-20261102.json",
+        "runs/1102-0722-引用开关与真实Agent取数-第01次/trace.json",
+        "runs/1102-0722-引用开关与真实Agent取数-第01次/ses_e668d60c0ffeOCKF56sjaHjLpb-session-log.json"
+      ],
+      "notes": "22/22记录断言通过。先真实解析两源，关闭引用后已加载候选不含本库，重开并重载后同ID可选且初始未选。Session ses_e668d60c0ffeOCKF56sjaHjLpb的完成工具输出包含本库随机代号和50552预算；最终答案正确给出负责人林澈、权限待复核及尚未批准上线。已审日志/Trace及现场记录，原源哈希保持；FINISHED、收尾完成、hold=false。全组最终active/queued/holds=0，客户端自动/default/空草稿及无选择。",
       "optimized": {
         "module": "知识中心/图谱与设置",
         "goal": "验证启用知识库和关闭知识库后是否可在知识库引用列表引用",
@@ -6620,7 +6720,21 @@
         "operations": "1.独立UI新库、随机代号与预算两源，真实解析，不在问题中提供这些随机事实。\n2.真实设置关闭引用，经openSettings(...,{reload:true})/reloadOwnedModule处理真实认证和引擎确认，分别核同ID API open_ref=false和真实UI开关false。\n3.按登记归属同页返回本任务，打开本地引用面板，等待当前committed Yyn的本地picker-list真实查询success且fetch idle；空搜索下完整同ID/name候选须与实际DOM行对应，或成功空数组与确切空态同时成立。错误/仍加载/缺行本身不能作为不可选通过。\n4.关闭后的完整候选必须无本库ID且UI无对应行；重新开启后再次真实重载核同ID API/UI保留，再返回任务取得成功加载的完整候选，核同ID/name/referenceEnabled=true后登记并选择本任务引用。\n5.沿用默认自动模型发送仅含库名及问题的独立Session，核本Session最终随机事实、预算和待验风险，以及实际completed工具输出的隐藏事实；不强制固定工具路线，不以模型自述完成。\n6.正常/异常/强停按既有归属先结束本Session，再取消本轮引用并移除本轮注册，保留原源与证据。",
         "expected": "引用开启后可被Agent智能体调用引用知识库内容（会话任务可被选择）",
         "assertions": "关闭与开启分别跨真实重载的同ID API/UI持久；本地引用查询success且fetch idle，空搜索完整候选与DOM同ID/name对应，或成功空数组与确切空态对应；关闭库不在完整候选，开启后同ID可选择；本Session默认自动模型真实随机事实/预算/风险及completed工具取数；不以加载中缺行、错误空文案或模型自述代替；原源保护与Session结束后归属收尾。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "999ae657-a753-4721-8f58-162fc82e6a57",
+          "jobId": "c671cfb3-40fc-4eb8-8136-dbc5b4aaf071",
+          "result": "PASS",
+          "startedAt": "2026-11-01T23:22:02.590Z",
+          "endedAt": "2026-11-01T23:30:48.483Z",
+          "assertions": {
+            "passed": 22,
+            "total": 22
+          },
+          "report": "runs/1102-0722-引用开关与真实Agent取数-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 141,

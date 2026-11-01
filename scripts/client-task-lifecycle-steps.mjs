@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {connectClientBrowser} from '../local-console/client-connection.mjs';
 import {unzipSync,strFromU8} from 'fflate';
 import {finalAssistantText} from './client-case-runner.mjs';
 import {attachmentRow} from './mobilework-composer-resources.mjs';
@@ -22,7 +23,7 @@ async function docxText(file){
 }
 
 export async function runTaskLifecycleSteps(context){
- const {number,definition,page,config,control,dir,resources,remaining,outputs,assert,capture,log,send,waitBusy,checkpointResources,getData,getSessionId,saveTrace}=context;
+ const {number,definition,page,config,control,dir,resources,remaining,outputs,assert,capture,captureBrowser,log,send,waitBusy,checkpointResources,getData,getSessionId,saveTrace}=context;
  const finish=step=>remaining.delete(step);
  const wait=async predicate=>{
   const deadline=Date.now()+45000;
@@ -195,7 +196,19 @@ export async function runTaskLifecycleSteps(context){
    assert('两项不同原文摘录可在本次真实浏览输出核对',facts.length>=2&&middle.includes('baidu.com'));
    assert('DOCX来源部分保留至少两项不同原文及来源URL',facts.filter(text=>documentText.includes(text)).length>=2&&reportText.includes('baidu.com'));
    finish('本轮网页访问与内容留存');
-   await ui(async()=>{await selectWorkbench(page,config,'浏览器',capture);const address=page.getByRole('textbox').filter({visible:true});const values=await address.evaluateAll(elements=>elements.map(element=>element.value));assert('浏览器工作台展示实际访问地址',values.some(value=>String(value).includes('baidu.com')));});finish('浏览器工作台真实页面');
+   await ui(async()=>{
+    await selectWorkbench(page,config,'浏览器',capture);
+    let hostBrowser;
+    try{
+     hostBrowser=await connectClientBrowser('http://127.0.0.1:'+config.cdpPort,{browserViewId:getSessionId(),timeout:15000});
+     const host=hostBrowser.contexts().flatMap(context=>context.pages())[0];host.setDefaultTimeout(15000);
+     const view=host.locator('webview').filter({visible:true});await view.waitFor();
+     const actual=await view.evaluate(element=>({url:element.getURL(),title:element.getTitle(),loading:element.isLoading()}));
+     await fs.writeFile(path.join(dir,'浏览器工作台实际地址.json'),JSON.stringify({sessionId:getSessionId(),...actual},null,2));
+     assert('浏览器工作台展示实际访问地址',/^https?:\/\/(?:[a-z0-9-]+\.)*baidu\.com(?:[/:?#]|$)/i.test(actual.url),actual);
+     await captureBrowser(host,'本Session浏览器工作台实际页面');
+    }finally{if(hostBrowser)await hostBrowser.close();}
+   });finish('浏览器工作台真实页面');
   }
   await ui(async()=>{await previewTaskFile(page,config,intermediate,capture,sales?['甲','乙']:['baidu.com']);await previewTaskFile(page,config,report,capture,sales?['200','150','350']:[]);await selectWorkbench(page,config,'待办',capture);});
   const todos=await control.get('/session/'+getSessionId()+'/todo');await fs.writeFile(path.join(dir,'执行后待办.json'),JSON.stringify(todos,null,2));

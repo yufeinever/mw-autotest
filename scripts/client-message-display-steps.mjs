@@ -4,9 +4,12 @@ import http from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {unzipSync,strFromU8} from 'fflate';
 import {uploadTaskAttachment} from './mobilework-attachment-ui.mjs';
+import {inspectPageHandoff} from './mobilework-isolation.mjs';
+import {waitForReloadedShell} from './mobilework-skill-resources.mjs';
 import {selectWorkbench,previewTaskFile,openArtifactMenu,closeArtifactMenu,matchToolDetailText} from './mobilework-task-ui.mjs';
 
 const review=message=>Object.assign(Error(message),{review:true});
+const blocked=message=>Object.assign(Error(message),{blocked:true});
 const messages=page=>page.locator('[data-session-messages="true"]:not([aria-hidden="true"])');
 const tools=data=>data.messages.flatMap(message=>(message.parts||[]).filter(part=>part.type==='tool').map(part=>({...part,messageId:message.info.id})));
 const normalize=text=>String(text).replace(/\s+/g,' ').trim();
@@ -97,7 +100,20 @@ export async function runMessageDisplaySteps(context){
    finish('消息顶部中部底部固定提示');
   });
   await send('继续同一任务，只用一句话说明为什么设备台账需要核实重要信息。',{continuing:true});
-  await ui(async()=>{await page.reload();await messages(page).waitFor();await checkFooter('历史会话重新加载');});finish('历史与多轮提示可见');
+  await ui(async()=>{
+   const expected=control.sessionUrl;
+   if(page.url()!==expected)throw blocked('历史重载前不是本轮登记会话，保留现场');
+   const before=await inspectPageHandoff(page);
+   if(!before.ready)throw blocked('历史重载前未就绪：'+before.reason);
+   await page.reload({waitUntil:'commit'});
+   await waitForReloadedShell(page,page.getByTestId('workspace-section-header'));
+   await fs.writeFile(path.join(dir,'历史会话重载核对.json'),JSON.stringify({sessionId:getSessionId(),expectedUrl:expected,actualUrl:page.url()},null,2));
+   if(page.url()!==expected)throw blocked('历史重载后未保留本轮登记会话，未接管其他页面');
+   const after=await inspectPageHandoff(page);
+   if(!after.ready)throw blocked('历史重载后未就绪：'+after.reason);
+   await control.focus(page);
+   await messages(page).waitFor();await checkFooter('历史会话重新加载');
+  });finish('历史与多轮提示可见');
   await fs.writeFile(path.join(dir,'固定提示位置核对.json'),JSON.stringify(observations,null,2));
  }else if(number===38){
   let thinking=false,autoTransition=false,lastGroups=[];
