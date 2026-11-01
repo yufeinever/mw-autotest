@@ -25,17 +25,54 @@ async function filesUnder(dir){
 export async function selectedFiles(){
  const selected=['README.md','AGENTS.md','需求文档.md','版本迭代说明.md','打包与迁移说明.md','启动测试平台.cmd','环境检查.cmd','package.json','package-lock.json','config/environment.json'];
  for(const name of await fs.readdir(path.join(root,'需求文档')))if(/^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.md$/.test(name))selected.push('需求文档/'+name);
+ for(const name of await fs.readdir(path.join(root,'操作指引/桌面工作台')))if(name.endsWith('.md'))selected.push('操作指引/桌面工作台/'+name);
  for(const item of await fs.readdir(path.join(root,'local-console'),{withFileTypes:true}))if(item.isFile()&&/\.(?:mjs|js|html|css|md)$/.test(item.name))selected.push('local-console/'+item.name);
  selected.push('local-console/fixtures/long-running.mjs','scripts/fixtures/case002-synthetic-meeting.mjs');
  selected.push(...clientCases.map(c=>c.entry));
  selected.push(...permissionCases.map(c=>c.entry));
  selected.push(...['permission-case-catalog.mjs','permission-case-runner.mjs','permission-fixtures.mjs','permission-observation.mjs','permission-workspace.mjs','permission-suite.test.mjs'].map(s=>'scripts/'+s));
  selected.push('scripts/mobilework-initialize.mjs','scripts/mobilework-initialize.test.mjs');
+ for(const name of await fs.readdir(path.join(root,'scripts/fixtures/client-upload-files')))selected.push('scripts/fixtures/client-upload-files/'+name);
+ selected.push('scripts/client-interaction-case-runner.mjs','scripts/mobilework-composer-resources.mjs','scripts/client-home-workspace-steps.mjs','scripts/client-home-model-steps.mjs');
+ selected.push('scripts/client-task-lifecycle-steps.mjs','scripts/mobilework-task-ui.mjs','scripts/mobilework-explorer-folder.py');
+ selected.push('scripts/client-message-display-steps.mjs','scripts/mobilework-attachment-ui.mjs');
+ selected.push('scripts/client-message-actions-steps.mjs','scripts/mobilework-message-clipboard.mjs','scripts/mobilework-message-queue.mjs');
+ selected.push('scripts/client-queue-workbench-steps.mjs');
+ selected.push('scripts/client-file-preview-steps.mjs');
+ selected.push('scripts/client-office-file-steps.mjs','scripts/fixtures/prepare-office-preview.py');
+ selected.push('scripts/client-browser-workspace-steps.mjs','scripts/mobilework-workspaces.mjs');
+ selected.push('scripts/client-workspace-management-steps.mjs','scripts/client-rpa-preconditions.mjs','scripts/mobilework-module-navigation.mjs','scripts/mobilework-module-handoff.mjs');
+ selected.push('scripts/client-staff-market-steps.mjs','scripts/mobilework-staff-market.mjs','scripts/client-gui-recording-steps.mjs');
+ selected.push('scripts/client-knowledge-management-steps.mjs','scripts/client-knowledge-list-steps.mjs','scripts/mobilework-knowledge-resources.mjs','scripts/mobilework-knowledge-guide.mjs');
+ selected.push("scripts/client-security-settings-steps.mjs","scripts/client-conversation-settings-steps.mjs","scripts/mobilework-conversation-settings.mjs","scripts/mobilework-prompt-observation.mjs","scripts/mobilework-conversation-settings.test.mjs");
+ selected.push("scripts/client-system-memory-steps.mjs","scripts/mobilework-window-close.mjs","scripts/mobilework-window-state.py","scripts/mobilework-storage-probe.mjs","scripts/mobilework-invalid-directory.ps1","scripts/mobilework-account-memory.mjs","scripts/mobilework-system-memory.test.mjs");
+ selected.push('scripts/client-system-settings-steps.mjs','scripts/mobilework-system-settings.mjs','scripts/mobilework-system-theme.ps1','scripts/mobilework-default-storage.mjs','scripts/mobilework-client-restart.mjs','scripts/mobilework-system-settings.test.mjs');
+ selected.push('scripts/client-account-profile-steps.mjs','scripts/mobilework-account-settings.mjs','scripts/mobilework-account-logout.mjs','scripts/mobilework-account-profile.test.mjs');
+ selected.push('scripts/client-account-navigation-steps.mjs','scripts/mobilework-account-network.mjs','scripts/mobilework-account-network.ps1','scripts/mobilework-account-external.mjs','scripts/mobilework-account-observation.mjs','scripts/mobilework-account-navigation.test.mjs');
+ selected.push('scripts/client-help-feedback-steps.mjs','scripts/mobilework-help-external.mjs');
+ selected.push('scripts/client-efficiency-steps.mjs','scripts/mobilework-efficiency.mjs','scripts/mobilework-disk-observation.ps1','scripts/fixtures/efficiency/disk-scan-reference.py','scripts/mobilework-account-menu.mjs','scripts/client-account-usage-steps.mjs','scripts/mobilework-efficiency-account.test.mjs');
+ selected.push('scripts/client-mail-workflow-steps.mjs','scripts/mobilework-mail-operations.mjs','scripts/client-weather-steps.mjs','scripts/mobilework-weather-baseline.mjs');
+ selected.push('scripts/client-kanban-task-steps.mjs','scripts/client-kanban-operations-steps.mjs','scripts/mobilework-kanban-operation-resources.mjs','scripts/client-mail-dashboard-steps.mjs','scripts/mobilework-mail-baseline.mjs');
+ selected.push('scripts/mobilework-knowledge-settings.mjs','scripts/client-knowledge-settings-steps.mjs','scripts/mobilework-kanban.mjs','scripts/client-kanban-steps.mjs');
+ selected.push('scripts/mobilework-knowledge-graph-settings.mjs','scripts/client-knowledge-graph-settings-steps.mjs');
+ selected.push('scripts/mobilework-knowledge-reading.mjs','scripts/client-knowledge-reading-steps.mjs');
+ selected.push('scripts/mobilework-knowledge-ingest.mjs','scripts/client-knowledge-ingest-steps.mjs');
+ selected.push('scripts/mobilework-knowledge-create.mjs','scripts/mobilework-knowledge-parse.mjs','scripts/mobilework-knowledge-source-ui.mjs','scripts/client-knowledge-source-steps.mjs');
+ selected.push('scripts/client-case-library-task-steps.mjs');
+ selected.push('scripts/client-case-library-steps.mjs','scripts/mobilework-case-library.mjs');
+ selected.push('scripts/client-automation-steps.mjs','scripts/mobilework-automation-resources.mjs');
+ selected.push('scripts/client-expert-module-steps.mjs','scripts/mobilework-module-resources.mjs');
+ selected.push('scripts/client-recording-workflow-steps.mjs','scripts/mobilework-recording-expert.mjs','scripts/client-skill-management-steps.mjs','scripts/mobilework-market-ui.mjs');
+ selected.push('scripts/client-mindmap-todo-steps.mjs','scripts/mobilework-todo-ui.mjs','scripts/mobilework-explorer.mjs','scripts/mobilework-xmind-installation.ps1');
+ for(const file of await filesUnder(path.join(root,'scripts/fixtures/mindmap')))selected.push(path.relative(root,file).replaceAll('\\','/'));
+ for(const file of await filesUnder(path.join(root,'scripts/fixtures/office-preview')))selected.push(path.relative(root,file).replaceAll('\\','/'));
+ selected.push('scripts/client-loading-usage-steps.mjs','scripts/mobilework-personalization.mjs','scripts/mobilework-message-observer.mjs','scripts/fixtures/loading-greetings.json');
+ selected.push('scripts/client-ui-case-runner.mjs','scripts/client-config-case-runner.mjs','scripts/mobilework-folder-picker.py','scripts/mobilework-native-folder.mjs','scripts/mobilework-knowledge-case.mjs','scripts/mobilework-knowledge-api.mjs','scripts/mobilework-expert-resources.mjs','scripts/mobilework-tool-resources.mjs','scripts/mobilework-skill-resources.mjs');
  selected.push('scripts/mobilework-permission-events.mjs','scripts/mobilework-permission-recovery.test.mjs');
  selected.push('scripts/mobilework-model-selection.test.mjs');
  selected.push('scripts/mobilework-task-control.mjs','scripts/mobilework-task-control.test.mjs','scripts/mobilework-question-no-send.test.mjs','scripts/mobilework-isolation.mjs','scripts/mobilework-standalone.mjs','scripts/mobilework-isolation.test.mjs','scripts/mobilework-full-access.test.mjs');
  selected.push(...['client-case-catalog.mjs','client-case-inputs.mjs','client-case-runner.mjs','client-case-checks.mjs','client-case-preview.mjs','client-cases.test.mjs','mobilework-run-policy.mjs','mobilework-run-policy.test.mjs','mobilework-composer.mjs','mobilework-evidence.mjs','mobilework-trace.mjs','case002-meeting-data.mjs','case002-meeting.test.mjs','build-console-app.mjs','node-runner.cmd','check-package.mjs','package-windows.mjs'].map(s=>'scripts/'+s));
- for(const name of await fs.readdir(path.join(root,'测试用例与脚本')))if(/\.(?:md|cmd)$/.test(name)||name===caseWorkbook)selected.push('测试用例与脚本/'+name);
+ for(const name of await fs.readdir(path.join(root,'测试用例与脚本')))if(/\.(?:md|cmd)$/.test(name)||name===caseWorkbook||name==='客户端多端兼容-覆盖清单.json')selected.push('测试用例与脚本/'+name);
  return [...new Set(selected)].sort();
 }
 export async function validateSources(files){
@@ -66,7 +103,7 @@ async function stageSources(target,files){
 async function seal(target,kind,baseline){
  const all=await filesUnder(target),records=[];
  for(const file of all){const data=await fs.readFile(file);records.push({path:path.relative(target,file).replaceAll('\\','/'),bytes:data.length,sha256:hash(data)});}
- const manifest={format:'mobilework-test-release',version:1,kind,createdAt:new Date().toISOString(),platform:'win32',architecture:'x64',node:process.version,playwright:'1.62.1',browser:kind==='portable'?'chromium-headless-shell revision 1234':null,caseCount:16,sheet:'测试案例（客户端-多端兼容）',containsHistoricalRuns:false,containsClientOrCredentials:false,baseline,files:records};
+ const manifest={format:'mobilework-test-release',version:1,kind,createdAt:new Date().toISOString(),platform:'win32',architecture:'x64',node:process.version,playwright:'1.62.1',browser:kind==='portable'?'chromium-headless-shell revision 1234':null,caseCount:clientCases.length,sheet:'测试案例（客户端-多端兼容）',containsHistoricalRuns:false,containsClientOrCredentials:false,baseline,files:records};
  await fs.writeFile(path.join(target,'发布清单.json'),JSON.stringify(manifest,null,2)+'\n');
  const manifestBytes=await fs.readFile(path.join(target,'发布清单.json'));
  await fs.writeFile(path.join(target,'SHA256SUMS.txt'),records.map(r=>r.sha256+'  '+r.path).join('\n')+'\n'+hash(manifestBytes)+'  发布清单.json\n');

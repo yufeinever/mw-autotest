@@ -1,4 +1,4 @@
-import {editorOf,snapshotDraft,clearOwnedDraft,selectionState,inspectPageHandoff} from './mobilework-isolation.mjs';
+import {editorOf,snapshotDraft,clearOwnedDraft,selectionState,inspectPageHandoff,modalDialogs} from './mobilework-isolation.mjs';
 import {readComposerState} from './mobilework-composer.mjs';
 import {waitStep,selectModel,modelTrigger} from './mobilework-run-policy.mjs';
 
@@ -18,7 +18,7 @@ async function ensureSidebar(page,config){
 export async function initializeTestPage(page,{stepInterval=0.5,model='',managedSession=false,log=()=>{}}={}){
  const config={stepInterval};
  const guard=async()=>{
-  if(await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())throw blocked('仍有弹窗，请先处理当前交互');
+  if(await modalDialogs(page).count())throw blocked('仍有弹窗，请先处理当前交互');
   for(const name of ['允许一次','跳过','立即终止并生效'])if(await button(page,name).count())throw blocked('仍有审批、提问或引擎重载确认');
   if(!managedSession&&await button(page,'停止').count())throw blocked('当前有未纳入调度的运行任务，不中断会话');
   const text=await page.locator('body').innerText();

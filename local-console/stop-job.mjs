@@ -1,11 +1,164 @@
 import {connectClient} from './client-connection.mjs';
-import {readEngineConnection} from './engine-client.mjs';
+import {readEngineConnection,engineRequest} from './engine-client.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {closeOwnedNativeFolder} from '../scripts/mobilework-native-folder.mjs';
+import {knowledgeClient,removeOwnedKnowledge,closeKnowledgeSettings} from '../scripts/mobilework-knowledge-api.mjs';
+import {releaseExpertResources} from '../scripts/mobilework-expert-resources.mjs';
+import {releaseToolResources} from '../scripts/mobilework-tool-resources.mjs';
+import {releaseSkillResources} from '../scripts/mobilework-skill-resources.mjs';
+import {inspectModuleHandoff} from '../scripts/mobilework-module-handoff.mjs';
+import {releaseComposerResources,queuedRow} from '../scripts/mobilework-composer-resources.mjs';
+import {releaseAccountLogout} from '../scripts/mobilework-account-logout.mjs';
+import {resumeClientRestart} from '../scripts/mobilework-client-restart.mjs';
+import {releaseSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
+import {snapshotDraft,clearOwnedDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
+import {adoptWorkspacePage} from '../scripts/mobilework-workspaces.mjs';
+import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession} from './task-recovery.mjs';
+import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
+import {settleOwnedAutomation} from '../scripts/mobilework-automation-resources.mjs';
+import {adoptCaseTaskDraft} from '../scripts/mobilework-case-library.mjs';
+import {identifyKanbanTask} from '../scripts/mobilework-kanban.mjs';
 const exec=promisify(execFile);
+export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>{}}={}){
+ if(!job.composerResources)return;
+ const reconnected=await resumeClientRestart(job.composerResources,job.config,{checkpoint});
+ const browser=reconnected?.browser||await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ try{
+  const page=uniqueClientPage(browser);
+  await releaseAccountLogout(page,job.composerResources,{checkpoint});
+  await releaseSettingsPanel(page,job.composerResources);
+  await adoptFailedWorkspaceSession(page,job,{allowAbort,checkpoint});
+  const workspace=job.composerResources.workspaceResources;
+  if(workspace?.existingTargetId){
+   if(job.submissionPending&&!job.sessionId){
+    if(!await adoptExistingWorkspaceSession(page,job))throw Error('本轮发送尚未确认Session归属，保留现场');
+   }
+   if(job.sessionId&&page.url()===job.sessionUrl&&new URL(page.url()).hash==='#/workspace/'+workspace.existingTargetId+'/session/'+job.sessionId){
+    job.composerResources.url=job.sessionUrl;await checkpoint();
+   }
+  }
+  if(job.composerResources.kanban?.task?.submitted){
+   const task=job.composerResources.kanban.task,link=await identifyKanbanTask(page,job.composerResources);
+   if(job.sessionId&&job.sessionId!==link.sessionId)throw Error('看板Session与调度登记不一致');
+   task.sessionId=link.sessionId;job.sessionId=link.sessionId;job.sessionUrl=link.sessionUrl;job.submissionPending=false;
+   job.composerResources.url=link.sessionUrl;delete job.composerResources.moduleNavigation;
+   if(page.url()!==link.sessionUrl){await page.evaluate(url=>{location.hash=new URL(url).hash;},link.sessionUrl);await page.waitForURL(link.sessionUrl);}
+   if(job.ownedDraft&&!job.ownedDraft.text&&!job.ownedDraft.skills.length&&!job.ownedDraft.selection.length)delete job.ownedDraft;
+  }
+  const automation=job.composerResources.automation;
+  if(automation){
+   const link=await settleOwnedAutomation(page,automation,{allowAbort});
+   if(link){
+    const current=new URL(automation.originUrl);current.hash='/workspace/'+link.workspaceId+'/session/'+link.sessionId;
+    if(!job.sessionId){job.sessionId=link.sessionId;job.sessionUrl=current.href;job.sessionSettled=true;}
+    if(page.url()===current.href){
+     delete job.composerResources.moduleNavigation;job.composerResources.url=current.href;
+     const draft=job.ownedDraft;
+     if(draft?.url===automation.originUrl&&!draft.text&&!draft.skills.length&&!draft.selection.length)delete job.ownedDraft;
+    }
+   }
+  }
+  const caseDraft=await adoptCaseTaskDraft(page,job.composerResources);
+  if(caseDraft){job.ownedDraft=caseDraft;job.composerResources.url=page.url();}
+  // Referenced libraries remain available until this session has stopped.
+  const deferredModule=Boolean(job.composerResources.knowledgeSelection||job.composerResources.kanban?.task?.submitted);
+  if(!deferredModule)await restoreModuleNavigation(page,job.composerResources,{cdpPort:job.config.cdpPort});
+  const adopted=await adoptWorkspacePage(page,job.composerResources);
+  if(adopted){job.ownedDraft=adopted;job.composerResources.url=page.url();await checkpoint();}
+  if(page.url()!==job.composerResources.url)throw Error('本轮输入区页面归属已变化，未清理');
+  for(const text of job.composerResources.queueTexts){
+   const row=queuedRow(page,text);
+   if(await row.count()>1)throw Error('排队消息不唯一，未清理');
+   if(await row.count())await row.getByRole('button',{name:'删除排队消息',exact:true}).click();
+  }
+  // The worker has exited. Settle its own session before restoring controls.
+  if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled){
+   if(!allowAbort)throw Error('本轮会话仍未结束，保留输入区资源并等待收尾');
+   const connection=await readEngineConnection(page);await stopSession(job,{connection});
+   const deadline=Date.now()+10000;
+   while((await engineRequest(connection,'/session/status'))[job.sessionId]?.type==='busy'){
+    if(Date.now()>=deadline)throw Error('本轮会话停止后仍忙碌，未恢复权限');
+    await new Promise(resolve=>setTimeout(resolve,200));
+   }
+   job.sessionSettled=true;
+  }
+  if(deferredModule)await restoreModuleNavigation(page,job.composerResources,{modelSettled:Boolean(job.modelCompleted||job.sessionSettled),cdpPort:job.config.cdpPort});
+  if(job.ownedDraft&&await composerFieldOf(page).count()===1){
+   const actual=await snapshotDraft(page);
+   if((actual.text||actual.skills.length||actual.selection.length)&&!await clearOwnedDraft(page,job.ownedDraft,job.config))throw Error('输入区收尾前草稿归属未确认');
+   delete job.ownedDraft;
+  }
+  await releaseComposerResources(page,job.composerResources,{...job.config,checkpoint,checkpointPage:async()=>{job.composerResources.url=page.url();await checkpoint();},modelSettled:Boolean(job.sessionId&&(job.modelCompleted||job.sessionSettled))});delete job.composerResources;
+ }finally{await browser.close();}
+}
+export async function releaseSkill(job){
+ if(!job.skillResources)return;
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ try{
+  const page=uniqueClientPage(browser);
+  if(await composerFieldOf(page).count()===1){
+   const draft=await snapshotDraft(page);
+   if((draft.text||draft.skills.length||draft.selection.length)&&!await clearOwnedDraft(page,job.ownedDraft,job.config))throw Error('技能资源收尾前草稿归属未确认');
+  }
+  await releaseSkillResources(page,job.skillResources);delete job.skillResources;
+ }finally{await browser.close();}
+}
+export async function releaseTool(job){
+ if(!job.toolResources)return;
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ try{
+  const page=uniqueClientPage(browser);
+  if(await composerFieldOf(page).count()===1){
+   const draft=await snapshotDraft(page);
+   if(draft.text||draft.skills.length||draft.selection.length)throw Error('工具资源收尾前出现未知草稿或选择，保留现场');
+  }
+  const modal=page.locator('div[data-composer-toolbar-retain].fixed.inset-0').filter({visible:true});
+  if(await modal.count()){
+   if(await modal.count()!==1||!(await modal.innerText()).includes(job.toolResources.name))throw Error('工具收尾遇到未知弹窗，未操作');
+   await modal.getByRole('button',{name:'取消',exact:true}).click();
+  }
+  await releaseToolResources(page,job.toolResources);
+  await page.reload();delete job.toolResources;
+ }finally{await browser.close();}
+}
+export async function releaseExpert(job){
+ if(!job.expertResources)return;
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ try{
+  const page=uniqueClientPage(browser);
+  const handoff=job.expertResources.summonTarget&&job.composerResources?await inspectModuleHandoff(page,job.composerResources):null;
+  if(handoff){
+   job.ownedDraft=handoff;job.composerResources.url=handoff.url;
+   delete job.composerResources.moduleNavigation;job.expertResources.summonTarget='';
+  }
+  if(!job.expertResources.summonTarget&&await composerFieldOf(page).count()===1){
+   const draft=await snapshotDraft(page);
+   if((draft.text||draft.skills.length||draft.selection.length)&&!await clearOwnedDraft(page,job.ownedDraft,job.config))throw Error('专家资源收尾前草稿归属未确认，未提前卸载');
+   if(handoff)job.ownedDraft=await snapshotDraft(page);
+  }
+  await releaseExpertResources(page,job.expertResources);delete job.expertResources;
+ }
+ finally{await browser.close();}
+}
+export async function releaseNativeFolder(job){
+ if(!job.nativeFolder)return;
+ await closeOwnedNativeFolder(job.nativeFolder);
+ delete job.nativeFolder;
+}
+export async function releaseKnowledge(job){
+ if(!job.knowledge)return;
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ try{
+  const page=uniqueClientPage(browser);
+  await closeKnowledgeSettings(page,job.knowledge);
+  await removeOwnedKnowledge(await knowledgeClient(page),job.knowledge);
+  delete job.knowledge;
+ }finally{await browser.close();}
+}
 async function bounded(promise,ms){
  let timer;
  try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('客户端停止接口响应超时')),ms);})]);}

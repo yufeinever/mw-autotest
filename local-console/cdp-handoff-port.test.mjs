@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {createConsole} from './server.mjs';
+import {verifyClientRestartPort} from '../scripts/mobilework-client-restart.mjs';
+import {testEnvironment} from './environment.mjs';
+
+test('重启后跨端口恢复保留原记录，未完成交接时不放行',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-cdp-handoff-')),id='held-job';
+ const originUrl='mobilework-shell://app/index.html#/workspace/ws_fixture/session';
+ const restart={owner:'f6f3900d-61ad-4607-8da3-e81cee75601b',oldPid:123,executable:testEnvironment.clientExecutable,originUrl,stage:'launched'};
+ const result={result:'BLOCKED',error:'原业务结果',checks:[]};
+ await fs.mkdir(path.join(dir,'jobs',id),{recursive:true});
+ await fs.writeFile(path.join(dir,'jobs',id,'job.json'),JSON.stringify({id,name:'原任务',status:'BLOCKED',isolationVersion:2,config:{cdpPort:19223},schedulingHold:true,cleanupStage:'收尾待处理',cleanupErrors:[],startedAt:new Date().toISOString(),result,composerResources:{clientRestart:restart}}));
+ await fs.writeFile(path.join(dir,'jobs',id,'执行日志.txt'),'');
+ await fs.writeFile(path.join(dir,'settings.json'),JSON.stringify({config:{cdpPort:19223},scripts:[]}));
+ let pid=123,cleanupReady=false,closed=0;
+ const page={url:()=>originUrl},browser={contexts:()=>[{pages:()=>[page]}],close:async()=>{closed++;}};
+ const verify=(job,port)=>verifyClientRestartPort(job,port,{connect:async()=>browser,pidOf:async()=>pid,processInfo:async()=>({ExecutablePath:testEnvironment.clientExecutable})});
+ const app=await createConsole({port:0,dataDir:dir,clientProbe:async port=>({connected:port===9223}),discoverPort:async()=>({port:9223}),verifyRestartPort:verify,composerReleaser:async job=>{assert.equal(job.config.cdpPort,9223);if(!cleanupReady)throw Error('收尾尚未完成');delete job.composerResources;},recovery:async job=>({ready:job.config.cdpPort===9223,url:originUrl})});
+ t.after(async()=>{app.server.closeAllConnections();await new Promise(resolve=>app.server.close(resolve));await fs.rm(dir,{recursive:true,force:true});});
+ const read=async()=>await(await fetch(app.url+'/api/state')).json();
+ const token=(await read()).token;
+ const post=async body=>{const response=await fetch(app.url+'/api/cdp-check',{method:'POST',headers:{'content-type':'application/json','x-console-token':token},body:JSON.stringify(body)});return {status:response.status,data:await response.json()};};
+ let check=await post({port:9223,resume:false});
+ assert.equal(check.data.connected,true);assert.equal(check.data.paused,true);assert.equal(check.data.handoffPending,1);
+ check=await post({port:9223,resume:true});assert.equal(check.status,400);
+ assert.equal((await read()).config.cdpPort,19223);
+ pid=456;check=await post({port:9223,resume:true});assert.equal(check.data.paused,true);
+ let state=await read(),held=state.jobs.find(job=>job.id===id);
+ assert.equal(held.schedulingHold,true);assert.equal(held.config.cdpPort,19223);assert.equal(state.config.cdpPort,19223);
+ cleanupReady=true;check=await post({port:9223,resume:true});assert.equal(check.data.paused,false);assert.equal(check.data.autoSwitched,true);
+ state=await read();held=state.jobs.find(job=>job.id===id);
+ assert.equal(state.config.cdpPort,9223);assert.equal(held.config.cdpPort,19223);assert.equal(held.status,'BLOCKED');assert.deepEqual(held.result,result);
+ assert.equal(held.schedulingHold,false);assert.equal(held.cleanupStage,'收尾完成');assert.equal(held.recoveryConnection.newPid,456);assert.ok(closed>=3);
+});

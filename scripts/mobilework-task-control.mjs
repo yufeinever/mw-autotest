@@ -42,8 +42,9 @@ export class TaskControl {
   }
  }
  async assertNoDraft(page){
-  const drafts=composerFieldOf(page);
-  for(let i=0;i<await drafts.count();i++)if((await drafts.nth(i).innerText()).trim())throw blocked('当前有未发送草稿，保留草稿，不切换页面');
+  // A permission card can replace the composer between a count and innerText.
+  const texts=await composerFieldOf(page).evaluateAll(editors=>editors.map(editor=>editor.innerText.trim()));
+  if(texts.some(Boolean))throw blocked('当前有未发送草稿，保留草稿，不切换页面');
  }
  async checkpointDraft(owned){
   const {editor,...draft}=owned;await this.call('checkpoint',{draft});
@@ -94,11 +95,14 @@ export class TaskControl {
    await page.waitForURL(this.sessionUrl,{timeout:10000});
   }
   const data=await this.readLog(),user=data.messages.find(m=>m.info?.role==='user');
-  const text=(user?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n').trim();
+  const text=(user?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n')
+   .replace(/<mobilework-attachment-policy>[\s\S]*?<\/mobilework-attachment-policy>/g,'')
+   .replace(/^\[附件文件:[^\r\n]*\]\s*$/gm,'').trim();
   if(!text)throw blocked('本会话没有可核对的用户消息，不处理界面');
   // Do not treat a changed hash alone as proof that the new session rendered.
   // Skill chips are expanded to an English "Load [skill ...]" instruction in
   // Session messages, while the UI displays the original Chinese prompt.
+  // Attachment paths and their engine-only policy are likewise absent in the UI.
   const signature=text.split(/\r?\n/).map(s=>s.trim()).find(s=>/[\u3400-\u9fff]/.test(s)&&s.length>=8)||text;
   await page.waitForFunction(expected=>{
    const normalized=s=>s.replace(/\s+/g,' ').trim();
@@ -136,7 +140,7 @@ export class TaskControl {
   result.permissionApiUnavailable=permissionApiUnavailable;
   return result;
  }
- async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000,interactionHandler,onQuestion=()=>{},afterMessageId}={}){
+ async wait(page,config,{timeoutMs,capture,log=this.log,interactionTimeoutMs=15000,permissionRecoveryMs=15000,interactionHandler,onQuestion=()=>{},observe,afterMessageId}={}){
   if(this.connection&&this.directory&&!this.permissionEvents){
    this.permissionEvents=new PermissionEvents({connection:this.connection,directory:this.directory,sessionId:this.sessionId});
    const ready=await this.permissionEvents.start();
@@ -151,6 +155,7 @@ export class TaskControl {
   while(Date.now()<deadline){
    try{
    const [states,pending]=await Promise.all([this.get('/session/status'),this.pendingInteractions(page)]);
+   if(observe)await observe({states,pending});
    if(pending.permissionApiUnavailable&&!this.permissionFallbackLogged){log('审批列表400，使用本会话实时审批事件','已核对有效基线与连续连接；仍按真实请求ID和原DOM审批');this.permissionFallbackLogged=true;}
    reconcile(pending);
    if(pending.length){
@@ -196,8 +201,9 @@ export class TaskControl {
     const boundary=afterMessageId?data.messages.findIndex(m=>m.info?.id===afterMessageId):-1;
     const newTurn=!afterMessageId||boundary>=0&&data.messages.slice(boundary+1).some(m=>m.info?.role==='user');
     if(newTurn&&last?.info?.error){await this.call('completed');throw Error('引擎会话错误：'+JSON.stringify(last.info.error));}
-    const text=(last?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
-    if(newTurn&&last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool')&&text.trim()){await this.call('completed');return data;}
+    // Engine completion and business success are separate. A terminal empty
+    // reply must reach the case's assertions, not wait until the case timeout.
+    if(newTurn&&last?.info?.role==='assistant'&&last.info.time?.completed&&last.info.finish!=='tool-calls'&&!(last.parts||[]).some(p=>p.type==='tool'&&!['completed','error'].includes(p.state?.status))){await this.call('completed');return data;}
    }
    if(this.permissionFallbackLogged&&!pending.permissionApiUnavailable){log('审批接口已恢复','已重新核对本会话交互状态');this.permissionFallbackLogged=false;}
    permissionErrorSince=null;

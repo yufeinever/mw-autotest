@@ -1,7 +1,11 @@
 import {connectClient} from './client-connection.mjs';
 import {isClientPageUrl} from './client-page.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
-import {inspectPageHandoff} from '../scripts/mobilework-isolation.mjs';
+import path from 'node:path';
+import {inspectPageHandoff,snapshotDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
+import {normalizeComposerText} from '../scripts/mobilework-composer.mjs';
+import {workspaces,workspaceSessions} from '../scripts/mobilework-workspaces.mjs';
+import {readEngineConnection,engineRequest} from './engine-client.mjs';
 import {waitStep} from '../scripts/mobilework-run-policy.mjs';
 
 // Only the runner's explicit pre-session failure is evidence that submission
@@ -32,6 +36,54 @@ export async function adoptOwnedSession(page,job){
  if(!normalize(body).includes(normalize(job.ownedDraft.text)))return false;
  job.sessionId=current.id;job.sessionUrl=page.url();job.submissionPending=false;
  return true;
+}
+
+export async function adoptExistingWorkspaceSession(page,job){
+ const workspace=job.composerResources?.workspaceResources;
+ if(job.sessionId||!job.submissionPending||!workspace?.existingTargetId||!Array.isArray(workspace.beforeSessionIds)||!job.ownedDraft?.text)return false;
+ const current=page.url().match(/\/workspace\/([^/]+)\/session\/(ses_[A-Za-z0-9]+)$/);
+ if(!current||current[1]!==workspace.existingTargetId||workspace.beforeSessionIds.includes(current[2]))return false;
+ const space=(await workspaces(page)).items.find(item=>item.id===workspace.existingTargetId);
+ const session=(await workspaceSessions(page,workspace.existingTargetId)).find(item=>item.id===current[2]);
+ if(!space||!session?.directory||!Number.isFinite(session.time?.created)||!Number.isFinite(Date.parse(job.startedAt))||session.time.created<Date.parse(job.startedAt))return false;
+ const relative=path.relative(space.path,session.directory);
+ if(!relative||relative.startsWith('..')||path.isAbsolute(relative))return false;
+ const connection=await readEngineConnection(page);
+ const messages=await engineRequest(connection,'/session/'+session.id+'/message?directory='+encodeURIComponent(session.directory));
+ const text=messages.filter(message=>message.info?.role==='user').flatMap(message=>(message.parts||[]).filter(part=>part.type==='text').map(part=>part.text||'')).join('\n');
+ if(!normalizeComposerText(text).includes(normalizeComposerText(job.ownedDraft.text)))return false;
+ return adoptOwnedSession(page,job);
+}
+
+// A failed send can leave a newly created Session behind the progress panel.
+// Its normal "enter task" action proves the link, even when no user message
+// reached the engine. Restrict this recovery to this job's isolated workspace.
+export async function adoptFailedWorkspaceSession(page,job,{allowAbort=false,checkpoint=async()=>{}}={}){
+ const owned=job.ownedDraft,workspace=job.composerResources?.workspaceResources;
+ if(!allowAbort||job.sessionId||!job.submissionPending||!owned?.text||!workspace?.target||page.url()!==owned.url)return false;
+ const failed=page.getByRole('alert').filter({visible:true,hasText:'消息未能发送'});
+ const enter=failed.getByRole('button',{name:'进入任务',exact:true});
+ if(await failed.count()!==1||await enter.count()!==1)return false;
+ const actual=await snapshotDraft(page,composerFieldOf(page));
+ if(normalizeComposerText(actual.text)!==normalizeComposerText(owned.text)||JSON.stringify(actual.skills)!==JSON.stringify(owned.skills)||JSON.stringify(actual.selection)!==JSON.stringify(owned.selection))return false;
+ const matches=(await workspaces(page)).items.filter(item=>!workspace.beforeIds.includes(item.id)&&item.name===workspace.target.name);
+ if(matches.length!==1||!page.url().endsWith('/workspace/'+matches[0].id+'/session'))return false;
+ const completed=new Set((job.completedSessions||[]).map(s=>s.id));
+ const sessions=(await workspaceSessions(page,matches[0].id)).filter(s=>!completed.has(s.id)&&s.time?.created>=Date.parse(job.startedAt));
+ if(sessions.length!==1)return false;
+ const session=sessions[0],relative=path.relative(matches[0].path,session.directory);
+ if(!relative||relative.startsWith('..')||path.isAbsolute(relative))return false;
+ const connection=await readEngineConnection(page),messages=await engineRequest(connection,'/session/'+session.id+'/message?directory='+encodeURIComponent(session.directory));
+ if(messages.length){
+  const text=messages.filter(m=>m.info.role==='user').flatMap(m=>m.parts.filter(p=>p.type==='text').map(p=>p.text)).join('\n');
+  if(normalizeComposerText(text)!==normalizeComposerText(owned.text))return false;
+ }
+ const target=owned.url+'/'+session.id;
+ await enter.click();await page.waitForURL(target,{waitUntil:'commit'});
+ job.sessionId=session.id;job.sessionUrl=target;job.submissionPending=false;
+ job.composerResources.url=target;delete job.ownedDraft;
+ job.recoveryAction='发送失败面板进入本轮独立空间的新任务，已核对Session、目录及消息归属；未重复发送';
+ await checkpoint();return true;
 }
 
 export async function settleSession(page,job,connection,{allowAbort=false}={}){

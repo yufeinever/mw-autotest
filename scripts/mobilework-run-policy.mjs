@@ -31,7 +31,7 @@ export async function modelTrigger(page){
 }
 // Read one DOM version per sample. Holding the actual element (not nth(i))
 // prevents async model refreshes from making one option look like two models.
-async function modelSnapshot(page,name){
+async function modelSnapshot(page,name,timeoutMs){
  const menu=page.getByRole('listbox').filter({visible:true});
  return menu.evaluateHandle((root,name)=>{
   const elements=[...root.querySelectorAll('[role="option"]')].filter(e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden');
@@ -43,13 +43,13 @@ async function modelSnapshot(page,name){
   }));
   const matches=models.flatMap((m,i)=>m.name===name?[i]:[]);
   return {models,element:matches.length===1?elements[matches[0]]:null};
- },name,{timeout:1000});
+ },name,{timeout:timeoutMs});
 }
 async function stableModelSnapshot(page,name,{timeoutMs=10000,stableMs=1000}={}){
  const deadline=Date.now()+timeoutMs;
  let signature='',since=Date.now(),last=[];
  while(Date.now()<deadline){
-  const snapshot=await modelSnapshot(page,name);
+  const snapshot=await modelSnapshot(page,name,Math.max(1,deadline-Date.now()));
   let keep=false;
   try{
    last=await snapshot.evaluate(s=>s.models);
@@ -113,6 +113,17 @@ export async function selectModel(page,name,{stepInterval=0.5}={}){
  const matches=verify.models.filter(m=>m.name===name);
  if(matches.length!==1||!matches[0].selected||(selectedValue!==null&&matches[0].value!==selectedValue))throw Error('模型切换未生效或目标已变化：'+name);
  return name;
+}
+
+export async function restoreHomeModel(page,owned,config={}){
+ const menu=page.getByRole('listbox').filter({visible:true});
+ if(await menu.count()===1)await page.keyboard.press('Escape');
+ const before=await readModelOptions(page,config);
+ const matches=before.models.filter(model=>model.name===owned.restore);
+ if(matches.length!==1||matches[0].value!==owned.value)throw Error('原模型身份已变化，未选择其他模型');
+ if(!matches[0].selected)await selectModel(page,owned.restore,config);
+ const after=await readModelOptions(page,config);
+ if(!after.models.some(model=>model.name===owned.restore&&model.value===owned.value&&model.selected))throw Error('原模型恢复未确认');
 }
 // The current renderer concatenates the numbered badge and label in textContent
 // ("1下周…"), while older builds put whitespace/newlines between them. Match

@@ -1,12 +1,29 @@
 import {waitStep} from './mobilework-run-policy.mjs';
 import {readComposerState,normalizeComposerText,clearComposerText} from './mobilework-composer.mjs';
+import {inspectClientNativeFolders} from './mobilework-native-folder.mjs';
 
 export const editorOf=page=>page.locator('[contenteditable="true"]').filter({visible:true});
 // Read-only inspection must also see a composer disabled by model availability.
 export const composerFieldOf=page=>page.locator('[data-lexical-editor="true"],[contenteditable="true"]').filter({visible:true});
+export const modalDialogs=page=>page.locator('[role="dialog"],[role="alertdialog"],div[data-composer-toolbar-retain].fixed.inset-0').filter({visible:true});
 export const selectionState=page=>page.locator('[data-composer-toolbar-item]').filter({visible:true}).locator('[role="button"][aria-label^="退出"]').evaluateAll(es=>es.map(e=>({item:e.closest('[data-composer-toolbar-item]').getAttribute('data-composer-toolbar-item'),exit:e.getAttribute('aria-label')})));
 export async function snapshotDraft(page,editor=editorOf(page)){
- return {url:page.url(),...await readComposerState(editor),selection:await selectionState(page),previousSelection:[]};
+ const state=await readComposerState(editor),selection=await selectionState(page);
+ return {url:page.url(),...state,selection,previousSelection:[]};
+}
+export async function readComposerPermission(page){
+ const trigger=page.locator('button[aria-label="权限"]').filter({visible:true});
+ if(await trigger.count()!==1)throw Error('无法唯一核对本任务权限选择器');
+ const opened=await trigger.getAttribute('aria-expanded')!=='true';
+ if(opened)await trigger.click();
+ try{
+  const defaultOption=page.getByRole('button',{name:'默认权限',exact:true}).filter({visible:true});
+  const fullOption=page.getByRole('button',{name:'完全访问权限',exact:true}).filter({visible:true});
+  await defaultOption.waitFor();await fullOption.waitFor();
+  if(await defaultOption.getAttribute('aria-pressed')==='true')return 'default';
+  if(await fullOption.getAttribute('aria-pressed')==='true')return 'full';
+  throw Error('权限菜单未返回可核对的选中状态');
+ }finally{if(opened)await page.keyboard.press('Escape');}
 }
 export async function resetComposerPermission(page,{stepInterval=0.5}={}){
  // Approval policy is applied to this task's prompts, not inherited from a
@@ -15,19 +32,18 @@ export async function resetComposerPermission(page,{stepInterval=0.5}={}){
  if(await editor.count()!==1)throw Error('新任务输入框不唯一');
  const state=await readComposerState(editor);
  if(state.text||state.skills.length)throw Error('新任务输入框不是空白，未修改权限');
+ if(await readComposerPermission(page)==='default')return;
  const trigger=page.locator('button[aria-label="权限"]').filter({visible:true});
- if(await trigger.count()!==1)throw Error('无法唯一核对本任务权限选择器');
- if((await trigger.innerText()).includes('完全访问权限')){
-  await waitStep(page,{stepInterval});await trigger.click();
-  const option=page.getByRole('button',{name:'默认权限',exact:true}).filter({visible:true});
-  await waitStep(page,{stepInterval});await option.click({timeout:3000});
- }
- if(!(await trigger.innerText()).includes('默认权限'))throw Error('本任务默认权限未生效，未继承上一任务完全访问设置');
+ await waitStep(page,{stepInterval});await trigger.click();
+ const option=page.getByRole('button',{name:'默认权限',exact:true}).filter({visible:true});
+ await waitStep(page,{stepInterval});await option.click({timeout:3000});
+ await option.waitFor({state:'hidden'});
+ if(await readComposerPermission(page)!=='default')throw Error('本任务默认权限未生效，未继承上一任务完全访问设置');
 }
 export async function draftOwnership(page,owned){
  if(!owned)return {matches:false,reason:'缺少本次草稿归属记录'};
  if(page.url()!==owned.url)return {matches:false,reason:'页面地址与本次草稿不一致'};
- if(await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())return {matches:false,reason:'客户端仍有弹窗'};
+ if(await modalDialogs(page).count())return {matches:false,reason:'客户端仍有弹窗'};
  const editor=editorOf(page);if(await editor.count()!==1)return {matches:false,reason:'可见输入框不唯一'};
  const actual=await readComposerState(editor);
  if(normalizeComposerText(actual.text)!==normalizeComposerText(owned.text))return {matches:false,reason:'草稿文字与登记内容不一致'};
@@ -46,13 +62,15 @@ export async function clearOwnedDraft(page,owned,{stepInterval=0.5}={}){
   if(await control.count()!==1)return false;
   await waitStep(page,{stepInterval});await control.hover();await waitStep(page,{stepInterval});await control.getByRole('button',{name:selected.exit,exact:true}).click();
   await waitStep(page,{stepInterval});
-  if(await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())return false;
+  if(await modalDialogs(page).count())return false;
  }
  await clearComposerText(editor,{stepInterval});
  return true;
 }
 export async function inspectPageHandoff(page,{owned,allowRunning=false,allowedSelection=[],stepInterval=0.5}={}){
- const dialogs=page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true});
+ const native=await inspectClientNativeFolders(page);
+ if(native.dialogs.length)return {ready:false,reason:'客户端仍有原生文件夹弹框，未交接下一条'};
+ const dialogs=modalDialogs(page);
  if(await dialogs.count())return {ready:false,reason:'客户端仍有弹窗，未操作未知弹窗'};
  const editor=composerFieldOf(page);
  if(await editor.count()>1)return {ready:false,reason:'输入框不唯一'};

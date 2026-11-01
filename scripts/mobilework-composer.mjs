@@ -15,7 +15,7 @@ export async function readComposerState(editor){
   const walk=node=>{
    if(node.nodeType===3)return node.textContent;
    if(node.nodeType!==1)return '';
-   if(node.matches('[data-skill-chip-icon],button,svg,img'))return '';
+   if(node.matches('[data-skill-chip-icon],[data-skill-chip-label],button,svg,img'))return '';
    if(node.tagName==='BR')return '\n';
    const text=[...node.childNodes].map(walk).join('');
    return /^(P|DIV|LI)$/.test(node.tagName)?text+'\n':text;
@@ -38,7 +38,7 @@ export async function appendComposerText(editor,text,{onDraft=async()=>{},stepIn
   const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
  });
  await waitStep(page,{stepInterval});
- await page.keyboard.insertText('\n\n'+text);
+ await page.keyboard.insertText((before.text?'\n\n':'')+text);
  if(page.url()!==url)throw Error('补充材料期间页面发生切换，未点击发送');
  const after=await readComposerState(editor);
  if(!containsComposerText(after.text,text))throw Error('输入框没有保留完整补充材料，未点击发送');

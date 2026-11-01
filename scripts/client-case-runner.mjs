@@ -47,6 +47,11 @@ export async function waitCreatedSession(page,sourceUrl,{timeoutMs=180000,log=()
   if(id)return id;
   if(url!==sourceUrl)throw blocked('任务准备期间页面切换，停止等待，未重发任务');
   const body=await page.locator('body').innerText();
+  const sendFailure=page.getByRole('alert').filter({visible:true,hasText:'消息未能发送'});
+  if(await sendFailure.count()===1){
+   const detail=(await sendFailure.innerText()).split(/第\s*\d+\s*步|重试|返回编辑/)[0].trim();
+   throw blocked('客户端发送失败：'+detail.slice(0,700)+'；Session归属交由统一收尾核对，未重复发送');
+  }
   if(/工作区准备失败|Workspace model runtime is unreachable/.test(body)){
    const detail=body.match(/工作区准备失败\s*([\s\S]*?)(?:第\s*\d+\s*步|重试|返回编辑|$)/)?.[1]?.trim()||body.match(/Workspace model runtime[^\n]*/)?.[0]||'请查看客户端准备步骤';
    throw blocked('客户端工作区准备失败：'+detail.slice(0,700)+'；未创建Session');
@@ -156,7 +161,7 @@ export async function runScenarioCase(number,inputConfig){
  const resumeId=args.find(a=>a.startsWith('--resume='))?.slice(9),checkOnly=args.includes('--check'),fillOnly=args.includes('--fill-check');
  if(invalid||[Boolean(resumeId),checkOnly,fillOnly].filter(Boolean).length>1)throw Error('参数无效或互斥，请使用 --help');
  const config=normalizeConfig(inputConfig||{cdpPort:process.env.MW_CDP_PORT||9223}),safeConfig=structuredClone(config);delete safeConfig.provider.key;
- if(await dispatchStandalone({number,args,config}))return;
+ if(await dispatchStandalone({number,args,config:inputConfig}))return;
  const started=new Date(),dir=await createRunDirectory(path.join(projectRoot,'runs'),definition.label+(checkOnly?'预检':fillOnly?'填充检查':''),started);
  const checks=[],events=[],outputs=[];let browser,page,sessionId=resumeId,result='BLOCKED',errorText='',owned,submitted=false,environment;
  const log=(step,detail='')=>{const now=new Date();events.push({time:now.toISOString(),step,detail});console.log('['+beijingLogTime(now)+'] '+step+' '+detail);};

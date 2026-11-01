@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
+import {createConsole} from './server.mjs';
+
+test('阶段交接保留不可替换空间基线，未完成会话和未恢复模块仍禁止交接',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-workspace-protocol-'));
+ const app=await createConsole({port:0,dataDir:path.join(dir,'data'),clientProbe:async()=>({connected:true}),cooperativeDetector:()=>true,recovery:async()=>({ready:true})});
+ t.after(()=>new Promise(resolve=>app.server.close(resolve)));
+ const state=await fetch(app.url+'/api/state').then(response=>response.json());
+ const post=async(route,body)=>{const response=await fetch(app.url+route,{method:'POST',headers:{'content-type':'application/json','x-console-token':state.token},body:JSON.stringify(body)});const data=await response.json();assert.ok(response.ok,JSON.stringify(data));return data;};
+ const fixture=path.join(dir,'protocol.mjs'),report=path.join(dir,'执行报告.md');
+ await fs.writeFile(fixture,`// MW_TEST_CONFIG_JSON - isolated scheduler protocol, never connects to MobileWork.
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const call=async(action,body={})=>{const r=await fetch(process.env.MW_TASK_CONTROL_URL+'/'+action,{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify(body)});return {ok:r.ok,data:await r.json()};};
+const ok=async(action,body)=>{const r=await call(action,body);assert.equal(r.ok,true,JSON.stringify(r.data));};
+const origin='mobilework-shell://app/index.html#/workspace/ws_fixture/session';
+const baseline={beforeIds:['ws_original'],previousId:'ws_original',storage:{},sidebar:[],sectionExpanded:true,target:{name:'MW-PROTOCOL'}};
+const resources={url:origin,attachments:[],queueTexts:[],restorePermission:false,workspaceResources:baseline};
+await ok('acquire',{phase:'PREPARING'});await ok('checkpoint',{protocol:2});
+await ok('checkpoint',{draft:{url:origin,text:'',skills:[],selection:[]}});
+await ok('checkpoint',{composerResources:resources});
+await ok('checkpoint',{sessionId:'ses_phase1',sessionUrl:origin+'/ses_phase1'});
+assert.equal((await call('checkpoint',{nextSession:true})).ok,false);
+await ok('completed');await ok('checkpoint',{nextSession:true});
+assert.equal((await call('checkpoint',{composerResources:{...resources,workspaceResources:{...baseline,previousId:'ws_other'}}})).ok,false);
+await ok('checkpoint',{draft:{url:origin,text:'',skills:[],selection:[]}});
+await ok('checkpoint',{composerResources:{...resources,moduleNavigation:{originUrl:origin,targetHash:'#/experts/staff'}}});
+await ok('checkpoint',{sessionId:'ses_phase2',sessionUrl:origin+'/ses_phase2'});await ok('completed');
+assert.equal((await call('checkpoint',{nextSession:true})).ok,false);
+await ok('checkpoint',{composerResources:null});await ok('checkpoint',{nextSession:true});
+await ok('release',{url:origin,phase:'VERIFYING'});
+await fs.writeFile(${JSON.stringify(path.join(dir,'执行结果.json'))},JSON.stringify({result:'PASS',checks:[{name:'仅调度协议模拟，非产品验收',pass:true}]}));
+await fs.writeFile(${JSON.stringify(report)},'# 调度协议模拟');console.log('报告：'+${JSON.stringify(report)});
+`);
+ const entry=await post('/api/scripts',{name:'空间阶段协议模拟',path:fixture});
+ const run=await post('/api/run',{scriptId:entry.id,config:{recording:{enabled:false}}});
+ let job;const deadline=Date.now()+12000;
+ do{job=await fetch(app.url+'/api/jobs/'+run.id).then(response=>response.json());if(job.phase==='FINISHED')break;await delay(100);}while(Date.now()<deadline);
+ assert.equal(job.status,'PASS',job.log);assert.equal(Boolean(job.schedulingHold),false);
+});

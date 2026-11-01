@@ -1,4 +1,17 @@
+import {validateSystemSettings} from '../scripts/mobilework-system-settings.mjs';
+import {validateSystemStorage} from '../scripts/mobilework-default-storage.mjs';
+import {validateWindowClose} from '../scripts/mobilework-window-close.mjs';
+import {validateInvalidDirectory} from '../scripts/mobilework-storage-probe.mjs';
+import {validateAccountMemory} from '../scripts/mobilework-account-memory.mjs';
+import {validateConversationSettings} from '../scripts/mobilework-conversation-settings.mjs';
+import {validateClientRestart,verifyClientRestartPort} from '../scripts/mobilework-client-restart.mjs';
+import {validateModuleHandoff} from '../scripts/mobilework-module-handoff.mjs';
 import {connectClient} from './client-connection.mjs';
+import {validateKanbanOwnership} from '../scripts/mobilework-kanban.mjs';
+import {validateAccountNetwork} from '../scripts/mobilework-account-network.mjs';
+import {validateAccountExternal} from '../scripts/mobilework-account-external.mjs';
+import {validateAccountLogout} from '../scripts/mobilework-account-logout.mjs';
+import {validateSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
 import {isClientPageUrl} from './client-page.mjs';
 import http from 'node:http';
 import fs from 'node:fs/promises';
@@ -15,11 +28,13 @@ import {saveClientModel} from './model-config.mjs';
 import {readSessionLogFromPage} from './session-log.mjs';
 import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
-import {killScript,stopSession,releaseOwnedLock} from './stop-job.mjs';
+import {discoverClientCdpPort} from './cdp-port.mjs';
+import {killScript,stopSession,releaseOwnedLock,releaseNativeFolder,releaseKnowledge,releaseExpert,releaseTool,releaseSkill,releaseComposer} from './stop-job.mjs';
 import {canStopJob} from './stop-all.mjs';
 import {startRecording} from './recording.mjs';
 import {recordingLocation,recordingLocations,openWindowsFolder} from './recording-storage.mjs';
 import {withClientCases} from './case-registry.mjs';
+import {clientCases} from '../scripts/client-case-catalog.mjs';
 import {scriptSuite,scriptsInSuite,suiteLabels} from './script-groups.mjs';
 import {permissionCases} from '../scripts/permission-case-catalog.mjs';
 import {loadJobTrace,jobSessionId} from './trace-store.mjs';
@@ -41,7 +56,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath,clientProbe=probeCdp}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath,clientProbe=probeCdp,discoverPort=discoverClientCdpPort,verifyRestartPort=verifyClientRestartPort,composerReleaser=releaseComposer}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -72,14 +87,25 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    const content=await fs.readFile(real,'utf8');
    const permission=permissionCases.some(c=>real===path.join(projectRoot,c.entry));
    const integrated=!item.unavailable&&(permission||real===path.join(projectRoot,'scripts','run-client-case001.mjs')||/MW_TEST_CONFIG_JSON|mobilework-run-policy/.test(content));
-   const cooperative=cooperativeDetector?cooperativeDetector(real):permission||real.startsWith(path.join(projectRoot,'scripts')+path.sep)&&/^run-client-case(?:00[1-9]|01[0-6])\.mjs$/.test(path.basename(real));
+   const cooperative=cooperativeDetector?cooperativeDetector(real):permission||clientCases.some(item=>path.resolve(projectRoot,item.entry)===real);
    return {...item,exists:true,integrated,cooperative};
   }catch(e){return {...item,exists:false,integrated:false,error:e.message};}
  };
  const jobWrites=new Map();
  const writeJob=job=>{
   const contents=JSON.stringify(job,null,2),file=path.join(dataDir,'jobs',job.id,'job.json');
-  const write=(jobWrites.get(job.id)||Promise.resolve()).catch(()=>{}).then(async()=>{const temp=file+'.tmp';await fs.writeFile(temp,contents);await fs.rename(temp,file);});
+  const write=(jobWrites.get(job.id)||Promise.resolve()).catch(()=>{}).then(async()=>{
+   const temp=file+'.tmp';await fs.writeFile(temp,contents);
+   for(let attempt=0;;attempt++){
+    try{await fs.rename(temp,file);return;}
+    catch(error){
+     // Windows can briefly deny replacing a file held by a reader. Preserve
+     // the complete temporary record; persistent failures still reach caller.
+     if(process.platform!=='win32'||!['EPERM','EBUSY'].includes(error.code)||attempt===2)throw error;
+     await new Promise(resolve=>setTimeout(resolve,50*(attempt+1)));
+    }
+   }
+  });
   jobWrites.set(job.id,write);return write;
  };
  const recordings=new Map(),recordingFinishes=new Map(),workers=new Map(),finalizations=new Map();
@@ -118,13 +144,15 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  const recovering=new Map();
  const updateQueueHolds=()=>{
   for(const job of jobs.filter(j=>j.status==='QUEUED')){
-   const holders=[...scheduler.renderer(job.config.cdpPort).unresolved].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
+   const holders=[...scheduler.unresolved()].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
    if(holders.length)job.queueHold=holders.map(j=>`${j.name}：${j.handoff?.reason||'客户端交接待恢复'}`).join('；');
    else if(scheduler.renderer(job.config.cdpPort).preparationError)job.queueHold='客户端准备失败，等待处理后重试：'+scheduler.renderer(job.config.cdpPort).preparationError;
    else if(scheduler.renderer(job.config.cdpPort).connectionError)job.queueHold='连接不可用，等待重新连接：'+scheduler.renderer(job.config.cdpPort).connectionError;
    else delete job.queueHold;
   }
  };
+ const resourceCleanupNames=['关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
+ const canRecoverCleanup=job=>!(job.cleanupErrors||[]).some(error=>!resourceCleanupNames.some(name=>error.startsWith(name+'：')));
  const reconcileHandoff=async(job,{allowAbort=false}={})=>{
   if(unlocking)return false;
   if(recovering.has(job.id)){
@@ -134,7 +162,16 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   if(!scheduler.reserveRecovery(job)){job.handoff={ready:false,reason:'等待其他任务交还页面，尚未检查交接'};job.schedulingHold=true;return false;}
   const pending=(async()=>{
   try{
-   job.handoff=await recovery(job,{connection:taskRuntimes.get(job.id),allowAbort,jobs});
+   if(job.recoveryConnection)await verifyRestartPort(job,job.recoveryConnection.port);
+   const target=job.recoveryConnection?new Proxy(job,{get:(object,key)=>key==='config'?{...object.config,cdpPort:object.recoveryConnection.port}:object[key]}):job;
+   await releaseNativeFolder(target);
+   await releaseKnowledge(target);
+   await releaseExpert(target);
+   await releaseTool(target);
+   await releaseSkill(target);
+   await composerReleaser(target,{allowAbort,checkpoint:()=>writeJob(job)});
+   job.cleanupErrors=(job.cleanupErrors||[]).filter(error=>!resourceCleanupNames.some(name=>error.startsWith(name+'：')));
+   job.handoff=await recovery(target,{connection:taskRuntimes.get(job.id),allowAbort,jobs});
    if(job.handoff.ready&&job.handoff.url)scheduler.renderer(job.config.cdpPort).expectedUrl=job.handoff.url;
    job.schedulingHold=!job.handoff.ready;
    if(job.schedulingHold)job.error=(job.result?.error||job.error?.split('；页面交接：')[0]||'')+'；页面交接：'+job.handoff.reason;
@@ -157,9 +194,11 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   recovering.set(job.id,pending);return pending;
  };
  // Rebuild holds after a restart without resuming or rewriting historical runs.
- for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
+ for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.status==='INTERRUPTED'&&(j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
-  for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&!j.cleanupErrors?.length)){
+  if(editingCdp)return;
+  for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&canRecoverCleanup(j))){
+   if(editingCdp)break;
    if(await reconcileHandoff(job,{allowAbort:false})&&!job.finalizing&&!job.stopRequested){taskRuntimes.delete(job.id);scheduler.finish(job.id);}
   }
   updateQueueHolds();
@@ -219,6 +258,12 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }
      job.sessionId??=jobSessionId(job);
     });
+    await step('关闭本轮原生文件夹窗口',()=>releaseNativeFolder(job));
+    await step('核对并移除本轮知识库注册',()=>releaseKnowledge(job));
+    await step('恢复本轮专家资源与历史',()=>releaseExpert(job));
+    await step('恢复本轮工具配置',()=>releaseTool(job));
+    await step('移除本轮新增技能',()=>releaseSkill(job));
+    await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
     await step('保存录像并断开录制连接',()=>finishRecording(job,job.stopRequested?'stopped':'completed'));
     if(job.stopRequested)confirmed=await stopClient();
     else{
@@ -309,14 +354,156 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       job.preparationError=body.preparationError;scheduler.pausePreparation(job,body.preparationError);updateQueueHolds();
      }
      if(body.continuing===true){job.modelCompleted=false;job.sessionSettled=false;}
-     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
+     if(Object.hasOwn(body,'composerResources')){
+      const owned=body.composerResources;
+      if(owned===null)delete job.composerResources;
+      else{
+       if(typeof owned.url!=='string'||!isClientPageUrl(owned.url)||!Array.isArray(owned.attachments)||!Array.isArray(owned.queueTexts)||typeof owned.restorePermission!=='boolean'||[...owned.attachments,...owned.queueTexts].some(value=>typeof value!=='string'||!value))throw Error('输入区资源归属格式无效');
+       if(owned.url!==job.sessionUrl&&owned.url!==job.ownedDraft?.url&&owned.url!==scheduler.renderer(job.config.cdpPort).expectedUrl&&owned.url!==job.composerResources?.url)throw Error('输入区资源页面归属不匹配');
+       if(owned.taskPin){
+        const pin=owned.taskPin;
+        if(typeof pin.title!=='string'||!pin.title||typeof pin.baseline!=='boolean')throw Error('本轮置顶恢复归属无效');
+        if(pin.workspaceId!==undefined){
+         if(typeof pin.workspaceId!=='string'||!owned.workspaceResources?.target||owned.workspaceResources.beforeIds.includes(pin.workspaceId)||typeof pin.sessionId!=='string'||!/^ses_[A-Za-z0-9]+$/.test(pin.sessionId)||!pin.title.endsWith('-'+pin.workspaceId)||new URL(owned.url).hash!=='#/workspace/'+pin.workspaceId+'/session')throw Error('空间置顶任务缺本轮空间及Session归属');
+        }else if(!job.sessionId)throw Error('本轮置顶恢复归属无效');
+        if(job.composerResources?.taskPin&&JSON.stringify(job.composerResources.taskPin)!==JSON.stringify(pin))throw Error('不能替换本轮置顶恢复归属');
+       }
+       if(owned.personalization){
+        if(typeof owned.personalization.showLoadingTips!=='boolean'||!['concise','rigorous','friendly'].includes(owned.personalization.agentTone))throw Error('个性化恢复基线无效');
+        if(job.composerResources?.personalization&&JSON.stringify(job.composerResources.personalization)!==JSON.stringify(owned.personalization))throw Error('不能替换本轮个性化恢复基线');
+       }
+       if(owned.accountMenuToken&&(typeof owned.accountMenuToken!=='string'||!/^[\da-f-]{36}$/.test(owned.accountMenuToken)))throw Error('账户菜单归属无效');
+       if(owned.accountObservation){if(typeof owned.accountObservation!=='string'||!/^[\da-f-]{36}$/.test(owned.accountObservation)||!owned.accountMenuToken)throw Error('账户余额观察归属无效');if(job.composerResources?.accountObservation&&job.composerResources.accountObservation!==owned.accountObservation)throw Error('不能替换本轮余额观察身份');}
+       if(owned.accountNetwork)validateAccountNetwork(owned.accountNetwork,job.composerResources?.accountNetwork);
+       if(owned.accountExternal)validateAccountExternal(owned.accountExternal,job.composerResources?.accountExternal);
+       if(owned.systemSettings)validateSystemSettings(owned.systemSettings,job.composerResources?.systemSettings);
+       if(owned.windowClose){if(owned.windowClose.originUrl!==owned.url)throw Error('关闭窗口恢复页面归属不匹配');validateWindowClose(owned.windowClose,job.composerResources?.windowClose);}
+       if(owned.invalidDirectory){validateInvalidDirectory(owned.invalidDirectory,job.composerResources?.invalidDirectory);const relative=path.relative(path.join(projectRoot,'runs'),owned.invalidDirectory.path);if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('拒写目录必须位于测试证据目录');}
+       if(owned.accountMemory){validateAccountMemory(owned.accountMemory,job.composerResources?.accountMemory);const ids=new Set([job.sessionId,...(job.completedSessions||[]).map(item=>item.id)]);if(owned.accountMemory.sourceSessions.some(id=>!ids.has(id)))throw Error('记忆来源必须是本用例登记的阶段会话');}
+       if(owned.systemStorage){if(!owned.workspaceResources)throw Error('存储恢复缺本轮空间归属');validateSystemStorage(owned.systemStorage,job.composerResources?.systemStorage);}
+       if(owned.conversationSettings)validateConversationSettings(owned.conversationSettings,job.composerResources?.conversationSettings);
+       if(owned.clientRestart){if(owned.clientRestart.originUrl!==owned.url||!(owned.systemSettings?.kind==='theme'||['maf','instruction'].includes(owned.conversationSettings?.kind)))throw Error('重启缺原页面或对应设置恢复归属');validateClientRestart(owned.clientRestart,job.composerResources?.clientRestart);}
+       if(owned.accountLogout){if(owned.accountLogout.originUrl!==owned.url)throw Error('本轮登出恢复页面归属不匹配');validateAccountLogout(owned.accountLogout,job.composerResources?.accountLogout);}
+       if(owned.settingsPanel){if(owned.settingsPanel.originUrl!==owned.url)throw Error('本轮设置页面归属不匹配');validateSettingsPanel(owned.settingsPanel,job.composerResources?.settingsPanel);}
+       if(owned.messageObservation&&(typeof owned.messageObservation!=='string'||!/^[\da-f-]{36}$/.test(owned.messageObservation)))throw Error('消息观察归属无效');
+       if(owned.clipboardOwner&&(typeof owned.clipboardOwner!=='string'||!/^[\da-f-]{36}$/.test(owned.clipboardOwner)))throw Error('剪贴板恢复归属无效');
+       if(owned.todoObservation&&(typeof owned.todoObservation!=='string'||!/^[\da-f-]{36}$/.test(owned.todoObservation)))throw Error('待办观察归属无效');
+       if(owned.workbenchFilter&&!['全部','待办','进行中','已完成'].includes(owned.workbenchFilter.baseline))throw Error('待办筛选恢复基线无效');
+       if(owned.explorerWindow&&(!Number.isInteger(owned.explorerWindow.hwnd)||owned.explorerWindow.hwnd<=0||typeof owned.explorerWindow.path!=='string'||!path.isAbsolute(owned.explorerWindow.path)||owned.explorerWindow.reveal!==undefined&&typeof owned.explorerWindow.reveal!=='boolean'))throw Error('Explorer窗口归属无效');
+       if(owned.previewFullscreen&&typeof owned.previewFullscreen.file!=='string')throw Error('全屏预览文件归属无效');
+       if(owned.workbenchLayout&&(typeof owned.workbenchLayout.file!=='string'||typeof owned.workbenchLayout.expanded!=='boolean'))throw Error('侧栏布局恢复基线无效');
+       if(owned.previewZoom&&(typeof owned.previewZoom.file!=='string'||!Number.isFinite(owned.previewZoom.value)||typeof owned.previewZoom.iframe!=='boolean'))throw Error('预览缩放恢复基线无效');
+       if(owned.moduleNavigation){const value=owned.moduleNavigation;if(value.originUrl!==owned.url||!isClientPageUrl(value.originUrl)||!['#/experts/staff','#/experts','#/experts/experts','#/experts/connectors','#/automation','#/explore','#/knowledge','#/kanban'].includes(value.targetHash))throw Error('模块页面恢复归属无效');validateModuleHandoff(value);if(job.composerResources?.moduleNavigation&&JSON.stringify(job.composerResources.moduleNavigation)!==JSON.stringify(value))throw Error('不能替换本轮模块入口归属');}
+       if(owned.kanban){if(owned.moduleNavigation?.targetHash!=='#/kanban'&&!(owned.kanban.task?.sessionId&&owned.url.endsWith('/session/'+owned.kanban.task.sessionId)))throw Error('看板资源缺模块或真实Session归属');validateKanbanOwnership(owned.kanban,job.composerResources?.kanban);}
+       if(owned.caseReplay){const value=owned.caseReplay,previous=job.composerResources?.caseReplay;if(owned.moduleNavigation?.targetHash!=='#/explore'||typeof value.title!=='string'||!value.title||typeof value.assetId!=='string'||!value.assetId||typeof value.opening!=='boolean'||value.observation!==undefined&&!/^__mwAutotestReplay_[\da-f-]{36}$/.test(value.observation)||Object.keys(value).some(key=>!['title','assetId','opening','observation'].includes(key)))throw Error('案例只读回放归属无效');if(previous&&(previous.title!==value.title||previous.assetId!==value.assetId||previous.observation&&previous.observation!==value.observation))throw Error('不能替换本轮案例回放归属');}
+       if(owned.caseTask){
+        const value=owned.caseTask,previous=job.composerResources?.caseTask;
+        if(!isClientPageUrl(value.originUrl)||typeof value.workspaceId!=='string'||!value.workspaceId||new URL(value.originUrl).hash!=='#/workspace/'+value.workspaceId+'/session'||typeof value.title!=='string'||!value.title||typeof value.assetId!=='string'||!value.assetId||typeof value.prompt!=='string'||!value.prompt.trim()||value.editedPrompt!==null&&typeof value.editedPrompt!=='string'||Object.keys(value).some(key=>!['originUrl','workspaceId','title','assetId','prompt','editedPrompt'].includes(key)))throw Error('做同款预填交接归属无效');
+        if(!previous&&(!owned.caseReplay||owned.caseReplay.assetId!==value.assetId||owned.caseReplay.title!==value.title||owned.moduleNavigation?.originUrl!==value.originUrl))throw Error('做同款交接必须来自本轮登记案例');
+        if(previous&&(['originUrl','workspaceId','title','assetId','prompt'].some(key=>value[key]!==previous[key])||previous.editedPrompt&&previous.editedPrompt!==value.editedPrompt))throw Error('不能替换本轮做同款提示及页面归属');
+       }
+       for(const resourceKey of ['knowledgeCreation','knowledgeSecondaryCreation'])if(owned[resourceKey]){
+        const value=owned[resourceKey],previous=job.composerResources?.[resourceKey];
+        if(owned.moduleNavigation?.targetHash!=='#/knowledge'&&!owned.knowledgeSelection||typeof value.name!=='string'||!/^MW-Autotest-KB-(114|115|116|117|118|119|120|122|123|124|125|126|127|128|129|130|131|132|133|134|135|136|137|138|139|140|141|142|143|144)-[a-f0-9]{8}$/.test(value.name)||!Array.isArray(value.beforeIds)||value.beforeIds.some(id=>typeof id!=='string')||typeof value.storageDir!=='string'||!path.isAbsolute(value.storageDir)||value.sourceDir!==null&&(typeof value.sourceDir!=='string'||!path.isAbsolute(value.sourceDir))||typeof value.submitted!=='boolean'||value.renamedName!==undefined&&value.renamedName!==value.name+'-改名'||value.id!==undefined&&value.id!==null&&(typeof value.id!=='string'||value.beforeIds.includes(value.id))||value.removing!==undefined&&typeof value.removing!=='boolean'||value.previewTitle!==undefined&&(typeof value.previewTitle!=='string'||!value.previewTitle.trim())||value.dialogToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.dialogToken)||value.removing&&!value.id||Object.keys(value).some(key=>!['name','beforeIds','storageDir','sourceDir','submitted','renamedName','id','removing','dialogToken','previewTitle','graphToken','scheduleTime','storageMove','modelMenuToken'].includes(key)))throw Error('知识库创建前归属无效');
+        if(value.modelMenuToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.modelMenuToken))throw Error('解析模型菜单归属无效');
+        if(value.graphToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.graphToken)||value.scheduleTime!==undefined&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(value.scheduleTime))throw Error('本轮图谱或更新计划归属无效');
+        if(previous?.graphToken&&value.graphToken&&previous.graphToken!==value.graphToken||previous?.scheduleTime&&value.scheduleTime&&previous.scheduleTime!==value.scheduleTime)throw Error('不能替换本轮图谱或计划归属');
+        if(value.storageMove){
+         const move=value.storageMove,old=previous?.storageMove,relative=typeof move.to==='string'?path.relative(value.storageDir,move.to):'';
+         if(!value.id||value.sourceDir!==null||!value.name.startsWith('MW-Autotest-KB-141-')||move.from!==value.storageDir||typeof move.to!=='string'||!path.isAbsolute(move.to)||!relative||!relative.startsWith('..')&&!path.isAbsolute(relative)||!['picking','submitted','completed','rejected'].includes(move.state)||Object.keys(move).some(key=>!['from','to','state'].includes(key)))throw Error('本轮存储迁移归属无效');
+         if(old&&(old.from!==move.from||old.to!==move.to||old.state!=='picking'&&move.state==='picking'||['completed','rejected'].includes(old.state)&&old.state!==move.state))throw Error('不能替换本轮存储迁移目标或撤回终态');
+        }else if(previous?.storageMove)throw Error('不能丢弃本轮存储迁移归属');
+        if(previous&&['name','beforeIds','storageDir','sourceDir','renamedName'].some(key=>JSON.stringify(previous[key])!==JSON.stringify(value[key])))throw Error('不能替换本轮知识库创建基线');
+        if(previous?.id&&previous.id!==value.id||previous?.removing&&!value.removing)throw Error('不能替换本轮知识库ID或撤回移除归属');
+       }
+       if(owned.knowledgeSelection){
+        const value=owned.knowledgeSelection,previous=job.composerResources?.knowledgeSelection;
+        const libraries=[owned.knowledgeCreation,owned.knowledgeSecondaryCreation].filter(Boolean);
+        if(!Array.isArray(value.items)||value.items.length<1||value.items.length>2||new Set(value.items.map(item=>item.id)).size!==value.items.length||value.items.some(item=>!libraries.some(lib=>lib.id===item.id&&lib.name===item.name))||Object.keys(value).some(key=>key!=='items'))throw Error('本轮知识库引用归属无效');
+        if(previous&&JSON.stringify(previous)!==JSON.stringify(value))throw Error('不能替换本轮知识库引用归属');
+       }
+       if(owned.caseFavorites){
+        const value=owned.caseFavorites,previous=job.composerResources?.caseFavorites;
+        if(typeof value.accountId!=='string'||!value.accountId||!Array.isArray(value.targets)||value.targets.length!==5||new Set(value.targets.map(item=>item.id)).size!==5||value.targets.some(item=>typeof item.id!=='string'||!item.id||typeof item.title!=='string'||!item.title||typeof item.category!=='string'||!item.category)||!value.beforeHashes||Object.values(value.beforeHashes).some(hash=>!/^[a-f0-9]{64}$/.test(hash))||value.targets.some(item=>Object.hasOwn(value.beforeHashes,item.id))||Object.keys(value).some(key=>!['accountId','targets','beforeHashes'].includes(key)))throw Error('本轮五项案例收藏归属无效');
+        if(previous&&JSON.stringify(previous)!==JSON.stringify(value))throw Error('不能替换本轮收藏基线');
+       }
+       if(owned.automation){
+        const value=owned.automation,previous=job.composerResources?.automation;
+        if(typeof value.accountId!=='string'||!Array.isArray(value.beforeIds)||value.beforeIds.some(id=>typeof id!=='string')||!Array.isArray(value.hashes)||value.hashes.some(item=>typeof item.id!=='string'||!/^[a-f0-9]{64}$/.test(item.hash))||!Array.isArray(value.names)||value.names.length!==2||value.names.some(name=>!/^MW-AUTOTEST-(098|099|100|101|102|103)-[a-f0-9]{8}(-改名)?$/.test(name))||!isClientPageUrl(value.originUrl)||value.id!==null&&typeof value.id!=='string'||typeof value.creating!=='boolean'||typeof value.runPending!=='boolean'||!Array.isArray(value.beforeSessions)||value.beforeSessions.some(id=>!/^ses_[A-Za-z0-9]+$/.test(id))||!Number.isFinite(value.runStartedAt)||Object.keys(value).some(key=>!['accountId','beforeIds','hashes','names','originUrl','id','creating','runPending','beforeSessions','runStartedAt'].includes(key)))throw Error('自动化计划恢复归属无效');
+        if(previous&&(['accountId','beforeIds','hashes','names','originUrl'].some(key=>JSON.stringify(value[key])!==JSON.stringify(previous[key]))||previous.id&&previous.id!==value.id||previous.runStartedAt&&previous.runStartedAt!==value.runStartedAt))throw Error('不能替换本轮自动化基线或运行归属');
+       }
+       if(owned.managedSkills){const value=owned.managedSkills;if(typeof value.projectDir!=='string'||!path.isAbsolute(value.projectDir)||!Array.isArray(value.installedBefore)||!Array.isArray(value.ids)||value.ids.length!==2||value.ids.some(id=>typeof id!=='string'||!/^mw-autotest-(?:import|created)-[a-z0-9-]+$/.test(id))||typeof value.marker!=='string'||!/^MW-AUTOTEST-093-[a-z0-9-]+$/.test(value.marker)||typeof value.pending!=='boolean'||!['import','create'].includes(value.pendingKind))throw Error('本轮合成技能归属无效');const before=job.composerResources?.managedSkills;if(before&&(before.projectDir!==value.projectDir||before.marker!==value.marker||JSON.stringify(before.installedBefore)!==JSON.stringify(value.installedBefore)||JSON.stringify(before.ids)!==JSON.stringify(value.ids)))throw Error('不能替换本轮合成技能基线');}
+       if(owned.customTool){const value=owned.customTool;if(typeof value.projectDir!=='string'||!path.isAbsolute(value.projectDir)||typeof value.workspaceId!=='string'||!value.workspaceId||typeof value.accountId!=='string'||!/^MW-AUTOTEST-095-[a-z0-9-]+$/.test(value.name)||value.renamed!==value.name+'-改名'||value.url!=='http://127.0.0.1:9/mw-autotest'||value.id!==null&&typeof value.id!=='string'||!value.accountHashes||!value.globalHashes||[...Object.values(value.accountHashes),...Object.values(value.globalHashes)].some(hash=>!/^[a-f0-9]{64}$/.test(hash)))throw Error('本轮自定义工具归属无效');const before=job.composerResources?.customTool;if(before&&(before.name!==value.name||before.workspaceId!==value.workspaceId||before.accountId!==value.accountId||JSON.stringify(before.accountHashes)!==JSON.stringify(value.accountHashes)||JSON.stringify(before.globalHashes)!==JSON.stringify(value.globalHashes)))throw Error('不能替换本轮自定义工具基线');}
+       if(owned.toolSelection&&(owned.toolSelection.name!=='腾讯文档'||typeof owned.toolSelection.baseline!=='boolean'||job.composerResources?.toolSelection&&job.composerResources.toolSelection.baseline!==owned.toolSelection.baseline))throw Error('工具任务选择恢复基线无效');
+       if(owned.workspaceResources){const value=owned.workspaceResources;if(!Array.isArray(value.beforeIds)||typeof value.previousId!=='string'||!Array.isArray(value.sidebar)||typeof value.sectionExpanded!=='boolean'||!value.storage||Object.keys(value.storage).some(key=>!['openwork.react.workspaceOrder','openwork.react.activeWorkspace','openwork.react.newTaskDraftWorkspace','openwork.react.newTaskHomepageWorkspace'].includes(key))||value.target&&(typeof value.target.name!=='string'||!value.target.name||value.target.path&&!path.isAbsolute(value.target.path))||value.existingTargetId&&(!value.beforeIds.includes(value.existingTargetId)||value.target)||value.beforeSessionIds&&(!value.existingTargetId||!Array.isArray(value.beforeSessionIds)||value.beforeSessionIds.some(id=>typeof id!=='string'||!/^ses_[A-Za-z0-9]+$/.test(id))))throw Error('工作空间恢复归属无效');if(job.composerResources?.workspaceResources&&JSON.stringify(job.composerResources.workspaceResources)!==JSON.stringify(value))throw Error('不能替换本轮空间恢复基线');}
+       if(owned.homeModel&&(typeof owned.homeModel.restore!=='string'||!owned.homeModel.restore||owned.homeModel.restore.length>256||owned.homeModel.value!==null&&(typeof owned.homeModel.value!=='string'||owned.homeModel.value.length>2048)||job.composerResources?.homeModel&&JSON.stringify(job.composerResources.homeModel)!==JSON.stringify(owned.homeModel)))throw Error('首页模型恢复归属无效');
+       job.composerResources={url:owned.url,attachments:owned.attachments,queueTexts:owned.queueTexts,restorePermission:owned.restorePermission,...Object.fromEntries(['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','accountMemory','conversationSettings','clientRestart','homeModel','taskPin','personalization','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','workspaceResources','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].filter(key=>owned[key]).map(key=>[key,owned[key]]))};
+      }
+     }
+     if(Object.hasOwn(body,'nativeFolder')){
+      const native=body.nativeFolder;
+      if(native===null)delete job.nativeFolder;
+      else{
+       if(!Number.isInteger(native.pid)||native.pid<=0||!Number.isInteger(native.hwnd)||native.hwnd<=0||typeof native.path!=='string'||!path.isAbsolute(native.path))throw Error('原生窗口归属格式无效');
+       if(job.nativeFolder)throw Error('本任务已有未收尾的原生窗口');
+       job.nativeFolder={pid:native.pid,hwnd:native.hwnd,path:native.path};
+      }
+     }
+     if(Object.hasOwn(body,'knowledge')){
+      const knowledge=body.knowledge;
+      if(knowledge===null)delete job.knowledge;
+      else{
+       if(typeof knowledge.id!=='string'||!knowledge.id||typeof knowledge.name!=='string'||!knowledge.name.startsWith('MW-Autotest-KB-')||typeof knowledge.storageDir!=='string'||!path.isAbsolute(knowledge.storageDir))throw Error('知识库归属格式无效');
+       if(job.knowledge)throw Error('本任务已有未收尾的知识库');
+       job.knowledge={id:knowledge.id,name:knowledge.name,storageDir:knowledge.storageDir};
+      }
+     }
+     if(Object.hasOwn(body,'skillResources')){
+      const owned=body.skillResources;
+      if(owned===null)delete job.skillResources;
+      else{
+       if(!['office办公助手','Office办公助手','数据分析'].includes(owned.targetName)||!Array.isArray(owned.installedBefore)||typeof owned.projectDir!=='string'||!path.isAbsolute(owned.projectDir)||typeof owned.pending!=='boolean'||owned.id!==null&&typeof owned.id!=='string')throw Error('技能安装归属格式无效');
+       if(job.skillResources&&(job.skillResources.targetName!==owned.targetName||job.skillResources.projectDir!==owned.projectDir||JSON.stringify(job.skillResources.installedBefore)!==JSON.stringify(owned.installedBefore)))throw Error('不能替换技能安装基线');
+       job.skillResources={targetName:owned.targetName,installedBefore:owned.installedBefore,projectDir:owned.projectDir,id:owned.id,pending:owned.pending};
+      }
+     }
+     if(Object.hasOwn(body,'toolResources')){
+      const owned=body.toolResources;
+      if(owned===null)delete job.toolResources;
+      else{
+       if(!['百度地图','TradingAgents 投研'].includes(owned.name)||owned.sample!==(owned.name==='百度地图'?'1234':'123456')||typeof owned.workspaceId!=='string'||!owned.workspaceId||typeof owned.projectDir!=='string'||!path.isAbsolute(owned.projectDir)||typeof owned.accountId!=='string'||!Array.isArray(owned.baselineIds)||!Array.isArray(owned.disabledBefore)||typeof owned.connecting!=='boolean')throw Error('工具资源归属格式无效');
+       if(job.toolResources&&(job.toolResources.name!==owned.name||job.toolResources.globalCustomHash!==owned.globalCustomHash||JSON.stringify(job.toolResources.accountBefore)!==JSON.stringify(owned.accountBefore)))throw Error('不能替换工具配置基线');
+       if(!Array.isArray(owned.globalCustomKeys)||owned.accountBefore&&(Object.keys(owned.accountBefore).some(key=>!['keys','customHash','customKeys','connected','lifecycleState'].includes(key))||owned.accountBefore.keys.some(key=>!['custom','connected','lifecycleState'].includes(key))))throw Error('工具基线不能登记密钥或完整配置');
+       job.toolResources={name:owned.name,sample:owned.sample,workspaceId:owned.workspaceId,projectDir:owned.projectDir,accountId:owned.accountId,id:owned.id,baselineIds:owned.baselineIds,disabledBefore:owned.disabledBefore,hadGlobal:owned.hadGlobal,globalCustomHash:owned.globalCustomHash,globalCustomKeys:owned.globalCustomKeys,accountBefore:owned.accountBefore,connecting:owned.connecting};
+      }
+     }
+     if(Object.hasOwn(body,'expertResources')){
+      const owned=body.expertResources;
+      if(owned===null)delete job.expertResources;
+      else{
+       if(!Array.isArray(owned.installedBefore)||!Array.isArray(owned.touchedNames)||owned.touchedNames.some(name=>!['AIPPT专家','文档生成专家','流程录制专家'].includes(name))||(owned.recentBefore!==null&&typeof owned.recentBefore!=='string')||!['','AIPPT专家','文档生成专家','流程录制专家'].includes(owned.installTarget)||typeof owned.installPending!=='boolean')throw Error('专家资源归属格式无效');
+       if(typeof owned.workspaceId!=='string'||!owned.workspaceId||!['','AIPPT专家','文档生成专家','流程录制专家'].includes(owned.summonTarget))throw Error('专家召唤归属格式无效');
+       if(job.expertResources&&(job.expertResources.recentBefore!==owned.recentBefore||JSON.stringify(job.expertResources.installedBefore)!==JSON.stringify(owned.installedBefore)))throw Error('不能替换专家资源基线');
+       job.expertResources=owned;
+      }
+     }
+     if(body.draft===null)delete job.ownedDraft;
+     else if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
      if(body.submitting)job.submissionPending=true;
+     if(body.nextSession===true){
+      // The immutable workspace baseline belongs to the whole case; completed
+      // stage Sessions can share its isolated workspace until final cleanup.
+      if(!job.sessionId||!job.modelCompleted||job.submissionPending||job.ownedDraft||job.composerResources?.attachments.length||job.composerResources?.queueTexts.length||job.composerResources?.restorePermission||['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','clientRestart','homeModel','taskPin','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].some(key=>job.composerResources?.[key]))throw Error('上一阶段会话或输入区资源未完成，不能新建阶段会话');
+      (job.completedSessions||=[]).push({id:job.sessionId,url:job.sessionUrl,completedAt:new Date().toISOString()});
+      delete job.sessionId;delete job.sessionUrl;delete job.submittedSelection;
+      job.modelCompleted=false;job.sessionSettled=false;taskRuntimes.delete(job.id);
+     }
      if(body.sessionId){if(!/^ses_[A-Za-z0-9]+$/.test(body.sessionId)||!body.sessionUrl?.endsWith('/session/'+body.sessionId)||job.sessionId&&job.sessionId!==body.sessionId)throw Error('会话登记不一致');job.sessionId=body.sessionId;job.sessionUrl=body.sessionUrl;job.submissionPending=false;if(job.ownedDraft)job.submittedSelection=job.ownedDraft.selection;delete job.ownedDraft;}
      await writeJob(job);return send(200,{ok:true});
     }
     return send(200,{managed:jobs.some(j=>j.sessionUrl===body.url&&j.config.cdpPort===job.config.cdpPort)});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
    if(recordingFolder&&((req.method==='GET'&&recordingFolder[2]==='locations')||(req.method==='POST'&&recordingFolder[2]==='folder'))){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -343,7 +530,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    }
    if(req.method==='POST'&&url.pathname==='/api/locks/release'){
     if(body.confirm!==true||!Array.isArray(body.jobIds)||!body.jobIds.length)return send(400,{error:'请先确认占锁任务和解除影响'});
-    if(unlocking||recovering.size||batchStarting.size||readingModels||editingCdp||jobs.some(j=>j.status==='RUNNING'||j.stopRequested)||[...active].some(id=>jobs.find(j=>j.id===id)?.status!=='QUEUED'))return send(409,{error:'仍有执行、停止或恢复操作，请先强制停止全部并等待结束，再解除锁定'});
+    if(unlocking||recovering.size||batchStarting.size||readingModels||editingCdp||jobs.some(j=>j.status==='RUNNING'||(j.stopRequested&&!['STOPPED','BLOCKED','FAIL','PASS','REVIEW','CHECKED','EXITED'].includes(j.status)))||[...active].some(id=>jobs.find(j=>j.id===id)?.status!=='QUEUED'))return send(409,{error:'仍有执行、停止或恢复操作，请先强制停止全部并等待结束，再解除锁定'});
     const holders=jobs.filter(j=>j.schedulingHold);
     if(holders.length!==body.jobIds.length||holders.some(j=>!body.jobIds.includes(j.id)))return send(409,{error:'占锁任务已变化，请刷新后重新确认'});
     for(const j of holders)if(Number.isInteger(j.pid)&&j.pid>0){
@@ -398,31 +585,53 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(safeError||count!==batch.scripts.length)batch.error=safeError||`仅启动 ${count}/${batch.scripts.length} 条，剩余未执行。`;
     await writeBatch(batch);return send(200,{id:batch.id});
    }
-   if(req.method==='POST'&&url.pathname==='/api/config'){state.config=normalizeConfig(body);await persist();return send(200,state.config);}
+   if(req.method==='POST'&&url.pathname==='/api/config'){if(editingCdp)return send(409,{error:'正在检查或重启客户端，请稍后保存配置'});state.config=normalizeConfig(body);await persist();return send(200,state.config);}
    if(req.method==='GET'&&url.pathname==='/api/cdp-config'){
     const port=state.config.cdpPort||9223,busy=editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING');
     const connection=busy?{...(connectionStates.get(port)||{connected:false,port}),busy:true}:await checkConnection(port,{cached:true});
     const renderer=scheduler.renderer(port);
-     return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,preparationError:renderer.preparationError,handoffPending:renderer.unresolved.size,paused:Boolean(renderer.connectionError||renderer.preparationError||renderer.unresolved.size),restarting:editingCdp});
+     return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,preparationError:renderer.preparationError,handoffPending:scheduler.unresolved().size,paused:Boolean(renderer.connectionError||renderer.preparationError||scheduler.unresolved().size),restarting:editingCdp});
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-check'){
     if(editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING'))return send(409,{error:'正在执行或收尾，请等待完成后检查连接。'});
-    const port=Number(body.port||state.config.cdpPort||9223),result=await checkConnection(port);
+    editingCdp=true;
+    try{
+    if(body.resume===true&&recovering.size)await Promise.all([...recovering.values()]);
+    let port=Number(body.port||state.config.cdpPort||9223),result=await checkConnection(port),autoSwitched=false;
+    if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
+    const idle=!active.size&&!batchStarting.size&&!recovering.size&&!scheduler.entries.length&&![...scheduler.renderers.values()].some(r=>r.owner||r.waiting.length);
+    if(!result.connected&&idle){
+     const discovered=await discoverPort();
+     if(discovered?.port&&discovered.port!==port){
+      const candidate=await checkConnection(discovered.port);
+      if(candidate.connected){port=discovered.port;result=candidate;if(!scheduler.unresolved().size){state.config.cdpPort=port;await persist();autoSwitched=true;}}
+     }
+    }
      if(result.connected&&body.resume===true){
-      for(const id of [...scheduler.renderer(port).unresolved]){
+      const holders=[...scheduler.unresolved()].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
+      if(holders.some(job=>job.config.cdpPort!==port)){
+       if(!idle||holders.length!==1)throw Error('仍有其他执行、排队或待交接任务，不能切换恢复端口');
+       const discovered=await discoverPort();
+       if(discovered?.port!==port)throw Error('新端口未确认属于唯一的 MobileWork 主进程');
+       const job=holders[0];job.recoveryConnection=await verifyRestartPort(job,port);await writeJob(job);
+      }
+      for(const id of [...scheduler.unresolved()]){
        const job=jobs.find(j=>j.id===id);
-       if(!job||job.finalizing||job.stopRequested||job.cleanupErrors?.length)continue;
+       if(!job||job.finalizing||job.stopRequested||!canRecoverCleanup(job))continue;
+       if(job.config.cdpPort!==port&&job.recoveryConnection?.port!==port)continue;
        if(await reconcileHandoff(job,{allowAbort:false})){taskRuntimes.delete(job.id);scheduler.finish(job.id);}
       }
+      if(!scheduler.unresolved().size&&port!==state.config.cdpPort){state.config.cdpPort=port;await persist();autoSwitched=true;}
       scheduler.resumeConnection(port);
      }
      const renderer=scheduler.renderer(port);
-     updateQueueHolds();return send(200,{...result,preparationError:renderer.preparationError,handoffPending:renderer.unresolved.size,paused:Boolean(renderer.connectionError||renderer.preparationError||renderer.unresolved.size)});
+     updateQueueHolds();return send(200,{...result,autoSwitched,preparationError:renderer.preparationError,handoffPending:scheduler.unresolved().size,paused:Boolean(renderer.connectionError||renderer.preparationError||scheduler.unresolved().size)});
+    }finally{editingCdp=false;}
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/restart'){
-    if(active.size||readingModels||editingCdp)return send(409,{error:'控制台正在执行操作，请结束后重试'});
+    if(active.size||readingModels||editingCdp||batchStarting.size||recovering.size||scheduler.entries.length||[...scheduler.renderers.values()].some(r=>r.owner||r.waiting.length||r.unresolved.size))return send(409,{error:'控制台仍有执行、排队或待交接任务，请处理完成后重试'});
     editingCdp=true;
-    try{const port=Number(body.port||state.config.cdpPort||9223);const result=await restartClient(path.join(dataDir,'cdp-backups'),port);state.config.cdpPort=port;await persist();return send(200,result);}finally{editingCdp=false;}
+    try{const port=Number(body.port||state.config.cdpPort||9223);const result=await restartClient(path.join(dataDir,'cdp-backups'),port);state.config.cdpPort=result.port;await persist();return send(200,result);}finally{editingCdp=false;}
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/enable'){
     if(active.size||readingModels||editingCdp)return send(409,{error:'控制台正在执行操作，请结束后重试'});
@@ -619,7 +828,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const target=await fs.realpath(path.resolve(base,decodeURIComponent(artifact[2])));
     const relative=path.relative(base,target);if(relative.startsWith('..')||path.isAbsolute(relative))return send(403,{error:'文件不在报告目录内'});
     const ext=path.extname(target).toLowerCase();
-    const downloads=['.pptx','.zip','.html','.svg','.mjs','.js','.yml','.yaml','.mmd'];
+    const downloads=['.pptx','.docx','.xlsx','.pdf','.csv','.doc','.xls','.ppt','.zip','.html','.svg','.mjs','.js','.yml','.yaml','.mmd','.markmap'];
     if(!['.md','.json','.png','.txt','.log',...downloads].includes(ext))throw Error('不支持的证据格式');
     if(downloads.includes(ext)){
      res.setHeader('Content-Type','application/octet-stream');

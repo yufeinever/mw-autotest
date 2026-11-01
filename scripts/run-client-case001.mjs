@@ -15,7 +15,7 @@ import {textChecks} from './client-case-checks.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
 import {createTaskControl} from './mobilework-task-control.mjs';
-const runConfig=readRunConfig()||normalizeConfig();
+const explicitRunConfig=readRunConfig(),runConfig=explicitRunConfig||normalizeConfig();
 const safeConfig=structuredClone(runConfig);delete safeConfig.provider.key;
 if(runConfig?.provider?.url||runConfig?.provider?.model)throw Error('新模型配置尚未接入客户端；请先在客户端配置模型后从控制台读取选择，避免静默使用旧模型');
 
@@ -26,7 +26,7 @@ if(args.some(a=>a!=='--check'&&!/^--resume=ses_[A-Za-z0-9]+$/.test(a)))throw Err
 const resumeId=args.find(a=>a.startsWith('--resume='))?.slice(9);
 if(resumeId&&args.includes('--check'))throw Error('续跑与只读预检不能同时使用');
 const checkOnly=args.includes('--check'), started=new Date();
-if(await dispatchStandalone({number:1,args,config:runConfig}))process.exit(process.exitCode||0);
+if(await dispatchStandalone({number:1,args,config:explicitRunConfig}))process.exit(process.exitCode||0);
 const parts=d=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));
 const prefix=d=>{const p=parts(d);return p.month+p.day+'-'+p.hour+p.minute;};
 await fs.mkdir(path.join(root,'runs'),{recursive:true});

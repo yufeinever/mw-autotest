@@ -1,0 +1,101 @@
+{
+  "synthetic": true,
+  "facts": {
+    "docx": [
+      "星桥文档核验",
+      "预算7319元",
+      "责任人沈岚",
+      "终验窗口：十一月六日；请核实。"
+    ],
+    "xlsx": [
+      "销售甲",
+      "销售乙",
+      "星桥甲货",
+      "星桥乙货",
+      "340",
+      "690"
+    ],
+    "pptx": [
+      "星桥方案首页",
+      "方案中页：中文标点，清晰。",
+      "方案末页：验收由陆川负责"
+    ],
+    "pdf": [
+      "星桥会议信息",
+      "决议预算8427元",
+      "行动负责人唐夏"
+    ]
+  },
+  "files": [
+    {
+      "name": "legacy/中文产品方案.ppt",
+      "size": 675840,
+      "sha256": "f2f5116718f81b70e32302b82a4e53688a8cc952196e8fb8e4ce39351baaa762"
+    },
+    {
+      "name": "legacy/中文销售明细.xls",
+      "size": 6656,
+      "sha256": "15fc65c31a2d7a4072b513218b8bd1e3ec4f11d2a463e90ce8dd7f7cec8488b2"
+    },
+    {
+      "name": "legacy/中文项目说明.doc",
+      "size": 40960,
+      "sha256": "26ef0e39c86bbaa03ee4e9ffc87e7b8d6b2a42272d9596b75eb9e95e33f9807a"
+    },
+    {
+      "name": "中文产品方案.pptx",
+      "size": 48742,
+      "sha256": "26f23472ed3cea0284500b242581c90a9fa9752568192a7243d7de92c3dd8cdd"
+    },
+    {
+      "name": "中文会议资料.pdf",
+      "size": 32561,
+      "sha256": "ea92cb47d541187115856f838fa0c361b055f36d16653428bceba2b7624f1019"
+    },
+    {
+      "name": "中文流程图.png",
+      "size": 20989,
+      "sha256": "533095dfc94f218fff1bcf746c9416a1ac795bae4a08181fed5c3d0cbc8e3e37"
+    },
+    {
+      "name": "中文清单.csv",
+      "size": 50,
+      "sha256": "0b039bd3429e5d25cdb3f6fa8f8c2c69278b50d45663f4273060dfe3f080f09f"
+    },
+    {
+      "name": "中文说明.md",
+      "size": 91,
+      "sha256": "a7c100fbd200cb1a2c1a146cb0fc0413571b309c7b8ba69a2d2e451f00846aa2"
+    },
+    {
+      "name": "中文销售明细.xlsx",
+      "size": 5711,
+      "sha256": "78fc0634625ff8284dc96fbfb817f7b28b14a2e01f9094cfe25fe94f0b0a5c58"
+    },
+    {
+      "name": "中文页面.html",
+      "size": 207,
+      "sha256": "569f1e74107a4688203d58e3d5b8a8997ed13fe22b340d7abd9a89ac4f7a254e"
+    },
+    {
+      "name": "中文项目说明.docx",
+      "size": 55083,
+      "sha256": "da9ee6e1da6ffd38d660a345101db1df022b43f3b394816765baec7ef808e1e3"
+    },
+    {
+      "name": "大数据1500行.xlsx",
+      "size": 178819,
+      "sha256": "26dc3e704f89f078325d721606fd635de3043de7adf8edf5f7861d0bfeac6a60"
+    },
+    {
+      "name": "大文档60页.pdf",
+      "size": 69943,
+      "sha256": "f82466df6ca8a3daaed3f68f49c87c6eaf0762b55f2dae6d05be5d525470e2b8"
+    },
+    {
+      "name": "高清大图.png",
+      "size": 89701,
+      "sha256": "4d3da982b28275bf40784245169f9bad139b50365e92cf0b83b2847b869786e2"
+    }
+  ]
+}

@@ -8,14 +8,14 @@ import {meetingText,meetingAssertions,meetingSource} from './case002-meeting-dat
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 import {readRunConfig,selectModel,waitStep} from './mobilework-run-policy.mjs';
-import {finalAssistantText,waitScenario,waitSentInput} from './client-case-runner.mjs';
+import {finalAssistantText,waitScenario,waitSentInput,waitCreatedSession} from './client-case-runner.mjs';
 import {appendComposerText,containsComposerText} from './mobilework-composer.mjs';
 import {snapshotDraft,clearOwnedDraft,resetComposerPermission} from './mobilework-isolation.mjs';
 import {dispatchStandalone} from './mobilework-standalone.mjs';
 import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
 import {createTaskControl} from './mobilework-task-control.mjs';
-const runConfig=readRunConfig()||normalizeConfig();
+const explicitRunConfig=readRunConfig(),runConfig=explicitRunConfig||normalizeConfig();
 const safeConfig=structuredClone(runConfig);if(safeConfig.provider)delete safeConfig.provider.key;
 if(runConfig?.provider?.url||runConfig?.provider?.model)throw Error('新模型配置尚未接入客户端；请先在客户端配置模型后从控制台读取选择，避免静默使用旧模型');
 
@@ -26,7 +26,7 @@ if(args.some(a=>a!=='--check'&&!/^--resume=ses_[A-Za-z0-9]+$/.test(a)))throw Err
 const resumeId=args.find(a=>a.startsWith('--resume='))?.slice(9);
 if(resumeId&&args.includes('--check'))throw Error('续跑与只读预检不能同时使用');
 const checkOnly=args.includes('--check'), started=new Date();
-if(await dispatchStandalone({number:2,args,config:runConfig}))process.exit(process.exitCode||0);
+if(await dispatchStandalone({number:2,args,config:explicitRunConfig}))process.exit(process.exitCode||0);
 const parts=d=>Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));
 const prefix=d=>{const p=parts(d);return p.month+p.day+'-'+p.hour+p.minute;};
 await fs.mkdir(path.join(root,'runs'),{recursive:true});
@@ -107,9 +107,8 @@ try{
   await fs.writeFile(path.join(dir,'会议测试材料.txt'),meetingText);
   await fs.writeFile(path.join(dir,'会议材料来源.json'),JSON.stringify(meetingSource,null,2));
   await capture('补充会议测试材料');log('补充内嵌公开会议文字',meetingSource.title);
-  await taskControl?.markSubmitting();await waitStep(page,runConfig);await button('运行任务').click();submitted=true;
-  await page.waitForURL(/\/session\/ses_[^/?#]+/,{timeout:30000});
-  sessionId=page.url().match(/\/session\/(ses_[^/?#]+)/)?.[1];
+  const sourceUrl=page.url();await taskControl?.markSubmitting();await waitStep(page,runConfig);await button('运行任务').click();submitted=true;
+  sessionId=await waitCreatedSession(page,sourceUrl,{timeoutMs:Math.min(timeout,180000),log});
   await taskControl?.registerSession(page,sessionId);
   assert('新会话创建',Boolean(sessionId),sessionId);
   await capture('发送成功');log('任务已发送',sessionId);

@@ -7,6 +7,7 @@ import {zipSync,strToU8} from 'fflate';
 import {stringify} from 'yaml';
 import {chromium} from 'playwright-core';
 import {clientCases,getClientCase} from './client-case-catalog.mjs';
+import {permissionCases} from './permission-case-catalog.mjs';
 import {clientCaseInput} from './client-case-inputs.mjs';
 import {textChecks,algorithmChecks,workflowChecks,diagramChecks,pptChecks,skillArchiveChecks,zipTextFiles,readArtifact} from './client-case-checks.mjs';
 import {previewChecks} from './client-case-preview.mjs';
@@ -56,12 +57,12 @@ test('正文和表格不必附JSON，等价时间、图布局和节点ID有效',
  const diagram='graph TD\nA(浏览器) --> B[API网关] --> C[订单服务]\nC --> D[(PostgreSQL数据库)]\nC --> E[(Redis缓存)]\nC -->|消息| F[消息队列] --> G(通知服务)';
  assert.ok(all(diagramChecks(diagram)));assert.ok(!all(diagramChecks(diagram.replace('F[消息队列] --> G(通知服务)','G(通知服务) --> F[消息队列]'))));
 });
-test('前16条按原表映射，入口存在，补缺迁移保留旧ID和用户脚本',async()=>{
- assert.equal(clientCases.length,16);
- for(const c of clientCases){assert.equal(c.row,c.number+1);await fs.access(c.entry);if(c.number>=3)assert.ok(clientCaseInput(c.number,{outputDir:'D:/独立产物',asOfDate:'2026-10-18'}).length>100);}
+test('001～198按原表映射，入口存在，补缺迁移保留旧ID和用户脚本',async()=>{
+ assert.equal(clientCases.length,198);
+ for(const c of clientCases){assert.equal(c.row,c.number+1);await fs.access(c.entry);if(c.number>=3&&c.number<=16)assert.ok(clientCaseInput(c.number,{outputDir:'D:/独立产物',asOfDate:'2026-10-18'}).length>100);}
  const old=[{id:'old-2',name:'我的会议',path:path.resolve(getClientCase(2).entry)},{id:'custom',name:'其他',path:path.resolve('other.mjs')}];
  const migrated=withClientCases(old,projectRoot);
- assert.equal(migrated.length,17);assert.deepEqual(migrated.slice(0,2),old);assert.deepEqual(withClientCases(migrated,projectRoot),migrated);assert.deepEqual(old.map(x=>x.id),['old-2','custom']);
+ assert.equal(migrated.length,clientCases.length+permissionCases.length+1);assert.deepEqual(migrated.slice(0,2).map(({id,name,path})=>({id,name,path})),old.map(({id,name,path})=>({id,name,path})));assert.deepEqual(withClientCases(migrated,projectRoot),migrated);assert.deepEqual(old.map(x=>x.id),['old-2','custom']);
 });
 test('邮件和公文内容拒绝缺失、错误日期和仅索要材料',()=>{
  const email='主题：星桥项目评审时间调整；项目组同事：2026年11月3日由14:00调整为15:30，三楼A会议室。请2026年11月2日18:00前反馈。许晴';

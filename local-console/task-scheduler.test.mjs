@@ -35,8 +35,9 @@ test('停止后重新执行：未确认停止的会话保留页面保护，恢�
  assert.equal(b.status,'QUEUED');assert.equal(s.renderer(9223).expectedUrl,base+'ses_A');
  b.status='STOPPED';s.finish('B');
  const next=job('next');s.enqueue(next,{cooperative:true,start:()=>{}});assert.equal(next.status,'QUEUED');
- const other=job('other','serial',9224);s.enqueue(other,{cooperative:true,start:()=>{}});handoff(s,'other');
- s.finish('A');assert.equal(next.status,'QUEUED','另一客户端用例也须串行');s.finish('other');assert.equal(next.status,'RUNNING');assert.equal(s.acquire('next','PREPARING').expectedUrl,null);
+ const other=job('other','serial',9224);s.enqueue(other,{cooperative:true,start:()=>{}});assert.equal(other.status,'QUEUED','不同端口也须等待未完成交接');
+ s.finish('A');assert.equal(next.status,'RUNNING');assert.equal(s.acquire('next','PREPARING').expectedUrl,null);
+ s.finish('next');assert.equal(other.status,'RUNNING');handoff(s,'other');s.finish('other');
  assert.equal(s.renderer(9224).expectedUrl,null,'最后任务结束后清理本端口状态');
 });
 

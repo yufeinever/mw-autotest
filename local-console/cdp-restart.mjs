@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import {enableCdpConfig} from './cdp-config.mjs';
 import {testEnvironment} from './environment.mjs';
 import {probeCdp} from './cdp-readiness.mjs';
+import {discoverClientCdpPort,selectAvailableCdpPort} from './cdp-port.mjs';
 export {probeCdp} from './cdp-readiness.mjs';
 const exec=promisify(execFile);
 const executable=testEnvironment.clientExecutable;
@@ -55,17 +56,26 @@ export async function requestClientQuit(connected,connect){
   });
  }finally{await browser.close();}
 }
-export async function restartClient(backupDir,port=9223){
- await probeCdp(port);let ids=[];
+export async function restartClient(backupDir,requestedPort=9223){
+ if(!Number.isInteger(requestedPort)||requestedPort<1||requestedPort>65535)throw Error('CDP端口无效');
+ let ids=[],port=requestedPort;
  return restartFlow({
-  checkIdle:async()=>{ids=await processes();if(ids.length>1)throw Error('存在多个客户端主进程，无法安全重启');if(ids.length)await assertIdle(port);},
+  checkIdle:async()=>{
+   ids=await processes();if(ids.length>1)throw Error('存在多个客户端主进程，无法安全重启');
+   if(ids.length){
+    const current=await discoverClientCdpPort();
+    if(!current)throw Error('当前客户端没有可用的 CDP，无法自动正常退出。请右键系统托盘中的 MobileWork 图标选择“退出”，再点击“一键启用并重启”。');
+    port=current.port;
+    await assertIdle(port);
+   }
+  },
   enable:()=>enableCdpConfig(backupDir),
   close:async()=>{if(!ids.length)return;await assertIdle(port);
    const id=ids[0];await requestClientQuit((await probeCdp(port)).connected,()=>connectClient(`http://127.0.0.1:${port}`,{timeout:5000}));
    for(let i=0;i<40;i++){if(!(await processes()).includes(id))return;await new Promise(r=>setTimeout(r,500));}
    throw Error('已请求正常退出，但客户端仍在后台运行，请从托盘退出后重试；未强制终止进程');
   },
-  launch:()=>new Promise((resolve,reject)=>{const child=spawn(executable,[],{detached:true,stdio:'ignore',windowsHide:false,env:{...process.env,OPENWORK_ELECTRON_REMOTE_DEBUG_PORT:String(port)}});child.once('error',()=>reject(Error('无法启动 MobileWork，请检查安装路径')));child.once('spawn',()=>{child.unref();resolve();});}),
+  launch:async()=>{port=await selectAvailableCdpPort(port);return new Promise((resolve,reject)=>{const child=spawn(executable,[],{detached:true,stdio:'ignore',windowsHide:false,env:{...process.env,OPENWORK_ELECTRON_REMOTE_DEBUG_PORT:String(port)}});child.once('error',()=>reject(Error('无法启动 MobileWork，请检查安装路径')));child.once('spawn',()=>{child.unref();resolve();});});},
   probe:()=>probeCdp(port)
  });
 }

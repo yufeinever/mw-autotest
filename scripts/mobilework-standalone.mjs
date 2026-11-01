@@ -18,7 +18,8 @@ export async function dispatchStandalone({number,args=[],config}){
  if(s.capabilities?.serialOnly!==1)throw Error('控制台需在空闲后重启加载串行调度，未向旧服务提交任务');
  const script=s.scripts.find(x=>path.resolve(x.path)===path.join(root,'scripts',`run-client-case${String(number).padStart(3,'0')}.mjs`));
  if(!script)throw Error('控制台缺少本条脚本入口');
- const response=await fetch(base+'/api/run',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:JSON.stringify({scriptId:script.id,args,config})});
+ const selectedConfig=config??{...s.config,...(process.env.MW_CDP_PORT?{cdpPort:Number(process.env.MW_CDP_PORT)}:{})};
+ const response=await fetch(base+'/api/run',{method:'POST',headers:{'content-type':'application/json','x-console-token':s.token},body:JSON.stringify({scriptId:script.id,args,config:selectedConfig})});
  const created=await response.json();if(!response.ok)throw Error(created.error);
  console.log('已通过统一调度执行：'+base+'/reports/'+created.id);
  let previous='';

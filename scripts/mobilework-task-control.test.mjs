@@ -91,7 +91,7 @@ test('只有补丁审批序列化错误允许重试，错误正文不进入日�
  }finally{await new Promise(r=>server.close(r));}
 });
 
-test('两个模型任务串行等待；真实DOM独立回答和审批；外部切换不误操作',async()=>{
+test('串行任务独立交互，附件正文可核对，空正文终态返回且外部切换不误操作',async()=>{
  const jobs=['A','B'].map(id=>({id,status:'QUEUED',config:normalizeConfig({executionStrategy:'parallel',maxParallel:2})}));
  const scheduler=new TaskScheduler(),sessions=new Map(),actions=[],turns=[];
  const user=id=>'本次独立测试任务 '+id+'，保留这条完整消息用于回读核验。';
@@ -138,8 +138,11 @@ test('两个模型任务串行等待；真实DOM独立回答和审批；外部�
   if(route.pathname==='/permission')return send([...sessions].filter(([,s])=>s.pending==='permission').map(([id])=>({id:'per_'+id,sessionID:'ses_'+id})));
   const log=route.pathname.match(/^\/session\/ses_([AB])(\/message|\/children)?$/);
   if(log){const id=log[1];if(log[2]==='/children')return send([]);if(!log[2])return send(session(id));
-   const messages=[{info:{id:'msg_'+id,sessionID:'ses_'+id,role:'user'},parts:[{type:'text',text:'Load [skill mock-skill] and follow its instructions.\n'+user(id)}]}];
-   if(sessions.get(id).done)messages.push({info:{sessionID:'ses_'+id,role:'assistant',time:{completed:Date.now()},finish:'stop'},parts:[{type:'text',text:'最终助手回复 '+id}]});
+   const messages=[{info:{id:'msg_'+id,sessionID:'ses_'+id,role:'user'},parts:[
+    {type:'text',text:'[附件文件:.mobilework/inbox/ses_'+id+'/测试材料.md]\n<mobilework-attachment-policy>\n本条消息附带了用户上传的文件，必须使用工具读取。\n</mobilework-attachment-policy>\n'},
+    {type:'text',text:'Load [skill mock-skill] and follow its instructions.\n'+user(id)}
+   ]}];
+   if(sessions.get(id).done)messages.push({info:{sessionID:'ses_'+id,role:'assistant',time:{completed:Date.now()},finish:'stop'},parts:id==='B'?[]:[{type:'text',text:'最终助手回复 '+id}]});
    return send(messages);
   }
   res.statusCode=404;send({error:'fixture route not found'});
@@ -162,6 +165,7 @@ test('两个模型任务串行等待；真实DOM独立回答和审批；外部�
   logs.push(await controls[1].wait(page,normalizeConfig({question:'first',approval:'session'}),{timeoutMs:20000,capture:async()=>assert.ok(page.url().endsWith('/ses_B')),log:()=>{}}));
   assert.deepEqual(actions,[{id:'A',action:'选项1'},{id:'B',action:'在会话期间允许'}]);
   assert.deepEqual(logs.map(d=>d.sessionId),['ses_A','ses_B']);assert.ok(jobs.every(j=>j.modelCompleted));
+  assert.deepEqual(logs[1].messages.at(-1).parts,[],'空正文的真实引擎终态应交给业务断言，不能等待超时');
   assert.deepEqual(turns.filter(t=>t.phase==='INTERACTING').map(t=>t.id),['A','B']);
   assert.ok(!JSON.stringify(logs).includes('isolated-engine-secret'));
   await page.evaluate(()=>location.hash='/workspace/demo/session/ses_foreign');await page.waitForURL(/ses_foreign$/);

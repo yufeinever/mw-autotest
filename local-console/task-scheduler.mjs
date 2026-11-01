@@ -4,13 +4,14 @@ import {isClientPageUrl} from './client-page.mjs';
 export class TaskScheduler {
  constructor({changed=()=>{}}={}){this.entries=[];this.renderers=new Map();this.locations=new Map();this.changed=changed;this.pumping=false;}
  renderer(port){if(!this.renderers.has(port))this.renderers.set(port,{owner:null,waiting:[],expectedUrl:null,unresolved:new Set()});return this.renderers.get(port);}
+ unresolved(){return new Set([...this.renderers.values()].flatMap(r=>[...r.unresolved]));}
  enqueue(job,{cooperative=false,start}){this.locations.set(job.id,job.config.cdpPort);this.entries.push({job,cooperative,start,running:false,preparing:true});if(this.renderer(job.config.cdpPort).preparationError){job.phase='WAITING_CLIENT';this.changed(job);}this.pump();}
  pump(){
   if(this.pumping)return;this.pumping=true;
   try{for(const entry of this.entries){
    if(entry.running||entry.job.status!=='QUEUED')continue;
    const {job}=entry,port=job.config.cdpPort;
-   if(this.renderer(port).unresolved.size||this.renderer(port).connectionError||this.renderer(port).preparationError)continue;
+   if(this.unresolved().size||this.renderer(port).connectionError||this.renderer(port).preparationError)continue;
    const earlier=this.entries.find(e=>!e.running&&e.job.status==='QUEUED'&&e.job.config.cdpPort===port);
    if(earlier!==entry)continue;
    if(this.entries.some(e=>e.running))continue;
@@ -47,13 +48,14 @@ export class TaskScheduler {
  reserveRecovery(job){
   this.locations.set(job.id,job.config.cdpPort);
   const r=this.renderer(job.config.cdpPort);
+  if(this.entries.some(e=>e.running&&e.job.id!==job.id)||[...this.renderers.values()].some(item=>item.owner&&item.owner!==job.id))return false;
   if(r.owner&&r.owner!==job.id)return false;
   r.owner=job.id;return true;
  }
  releaseRecovery(job){const r=this.renderer(job.config.cdpPort);if(r.owner===job.id)r.owner=null;}
  acquire(id,phase){
   const {job}=this.entry(id),r=this.renderer(job.config.cdpPort);
-  if(!['PREPARING','INTERACTING','EVIDENCE'].includes(phase))throw Error('页面操作阶段无效');
+  if(!['PREPARING','INTERACTING','EVIDENCE','VERIFYING'].includes(phase))throw Error('页面操作阶段无效');
   if(r.owner===id)return {granted:true,expectedUrl:r.expectedUrl};
   if(!r.waiting.includes(id))r.waiting.push(id);
   if(r.owner||r.waiting[0]!==id)return {granted:false};

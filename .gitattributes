@@ -7,3 +7,10 @@
 *.css text eol=lf
 *.cmd text eol=crlf
 *.xlsx binary
+*.xls binary
+*.docx binary
+*.doc binary
+*.pptx binary
+*.ppt binary
+*.pdf binary
+*.png binary

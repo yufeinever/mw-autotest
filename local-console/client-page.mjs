@@ -3,6 +3,7 @@ export function isClientPageUrl(value){
  if(typeof value!=='string')return false;
  try{
   const url=new URL(value);
+  if(url.hash.startsWith('#/widget-pin/'))return false;
   if(url.protocol==='mobilework-shell:')return url.hostname==='app'&&!url.port&&!url.username&&!url.password&&url.pathname==='/index.html';
   return url.protocol==='file:'&&url.hostname===''&&/\/MobileWork\/resources\/app-dist\/index\.html$/i.test(decodeURIComponent(url.pathname));
  }catch{return false;}

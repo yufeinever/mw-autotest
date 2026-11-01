@@ -19,8 +19,9 @@ export async function createRunDirectory(root,label,started=new Date()){
 }
 export function createEvidenceRecorder(dir,log=()=>{}){
  let sequence=0;const evidence=[];
+ const nextStem=step=>beijingPrefix()+'-'+String(++sequence).padStart(2,'0')+'-'+step.replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,50);
  async function capture(page,step){
-  const stamp=beijingPrefix(),stem=stamp+'-'+String(++sequence).padStart(2,'0')+'-'+step.replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,50);
+  const stem=nextStem(step);
   const snapshot=()=>page.evaluate(()=>({url:location.href,text:(document.querySelector('main')||document.body).innerText,dialogs:[...document.querySelectorAll('[role="dialog"],[role="alertdialog"]')].map(e=>e.innerText),editors:[...document.querySelectorAll('[contenteditable="true"]')].map(e=>e.innerText)}));
   const before=await snapshot();let state=stem+'.json';
   await fs.writeFile(path.join(dir,state),JSON.stringify({time:new Date().toISOString(),...before},null,2));
@@ -44,5 +45,11 @@ export function createEvidenceRecorder(dir,log=()=>{}){
   }
   const item={time:new Date().toISOString(),step,screenshot:stem+'.png',state};evidence.push(item);return item;
  }
- return {capture,evidence};
+ async function captureElement(element,step){
+  const stem=nextStem(step),state=stem+'.json';
+  await fs.writeFile(path.join(dir,state),JSON.stringify({time:new Date().toISOString(),text:await element.innerText()},null,2));
+  await element.screenshot({path:path.join(dir,stem+'.png'),timeout:15000});
+  const item={time:new Date().toISOString(),step,screenshot:stem+'.png',state};evidence.push(item);return item;
+ }
+ return {capture,captureElement,evidence};
 }

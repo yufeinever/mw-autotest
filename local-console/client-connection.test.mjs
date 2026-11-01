@@ -8,7 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright-core';
 import bundle from 'playwright-core/lib/utilsBundle';
-import {connectClient} from './client-connection.mjs';
+import {connectClient,connectClientWidgetPin} from './client-connection.mjs';
 import {uniqueClientPage} from './client-page.mjs';
 import {PageRecorder} from './recording.mjs';
 import {createConsole} from './server.mjs';
@@ -64,6 +64,17 @@ async function fixture(t){
  t.after(async()=>{for(const s of sockets)s.terminate();await new Promise(r=>relay.close(r));server.closeAllConnections();await new Promise(r=>server.close(r));await context.close();await fs.rm(dir,{recursive:true,force:true});});
  return {dir,context,main,auxiliary,url:'http://127.0.0.1:'+server.address().port,port:server.address().port,state,sockets,commands};
 }
+
+test('桌面组件定向连接只附加本轮窗口，主页面和其他组件保留',async t=>{
+ const f=await fixture(t),own=await f.context.newPage(),other=await f.context.newPage();
+ const identity={canvasId:'canvas_own',widgetId:'widget_own'};
+ await own.goto(f.main.url()+'#/widget-pin/canvas_own/widget_own');await other.goto(f.main.url()+'#/widget-pin/canvas_other/widget_other');
+ const main=await connectClient(f.url,{timeout:5000});assert.equal(uniqueClientPage(main).url(),f.main.url());await main.close();
+ const browser=await connectClientWidgetPin(f.url,{timeout:5000,widgetPin:identity});
+ try{const pages=browser.contexts().flatMap(c=>c.pages());assert.equal(pages.length,1);assert.equal(pages[0].url(),own.url());await pages[0].getByRole('heading').waitFor();}finally{await browser.close();}
+ assert.equal(own.isClosed(),false);assert.equal(other.isClosed(),false);assert.equal(f.main.isClosed(),false);await until(()=>f.sockets.size===0);
+ await assert.rejects(connectClientWidgetPin(f.url,{timeout:500,widgetPin:{canvasId:'canvas_other',widgetId:'widget_own'}}),/唯一.*附属页面|CDP 连接超时/);assert.equal(other.isClosed(),false);
+});
 
 test('target-scoped connection skips a stalled host, retains frames and recording, and releases resources',async t=>{
  const f=await fixture(t);let browser,recorder;
