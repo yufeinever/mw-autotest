@@ -19,7 +19,7 @@ import {releaseSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
 import {snapshotDraft,clearOwnedDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
 import {adoptWorkspacePage,workspaces,workspaceSessions} from '../scripts/mobilework-workspaces.mjs';
 import {normalizeComposerText} from '../scripts/mobilework-composer.mjs';
-import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,adoptMissingSessionHome,confirmFailedBeforeSession,restoreFailedSubmissionPage,settleSession} from './task-recovery.mjs';
+import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,adoptMissingSessionHome,confirmFailedBeforeSession,restoreFailedSubmissionPage,recoverJobPage,settleSession} from './task-recovery.mjs';
 import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
 import {settleOwnedAutomation} from '../scripts/mobilework-automation-resources.mjs';
 import {adoptCaseTaskDraft} from '../scripts/mobilework-case-library.mjs';
@@ -54,6 +54,8 @@ export async function releaseSopRecording(job,{allowAbort=false,checkpoint=async
   const submittedSession=job.sessionId?{id:job.sessionId,url:job.sessionUrl}:null;
   const settled=await settleRecordingResources(page,job.recordingResources,{allowAbort,checkpoint,submittedSession,submissionPending:Boolean(job.submissionPending||job.pendingSubmission)});
   if(!settled?.ready||!job.recordingResources.cleanupComplete)throw Error('本轮SOP录制、续轮或回放资源尚未完成收尾');
+  const session=[job.recordingResources.sourceSession,job.recordingResources.replaySession].find(session=>session?.id===job.sessionId);
+  if(session?.sessionSettled){job.sessionSettled=true;if(session.abortAcknowledged)job.abortAcknowledged=true;}
   delete job.recordingResources;await checkpoint();
  }finally{await browser.close();}
 }
@@ -115,6 +117,14 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
    const settled=await settleSession(page,job,undefined,{allowAbort});
    await checkpoint();
    if(!settled)throw Error('本轮会话仍未结束，保留输入区资源并等待收尾');
+  }
+  // An acknowledged abort can leave its stale permission card in place of
+  // the composer. Use the existing owned-session handoff before reading it.
+  if(job.abortAcknowledged&&job.sessionSettled&&page.url()===job.sessionUrl&&await composerFieldOf(page).count()===0){
+   const target=new URL(job.sessionUrl);target.hash=target.hash.replace(/\/session\/ses_[A-Za-z0-9]+$/,'/session');
+   const handoff=await recoverJobPage(page,job);
+   if(!handoff.ready||page.url()!==target.href)throw Error('停止后的审批页面尚未回到原空间空任务，保留输入区资源');
+   job.composerResources.url=page.url();delete job.ownedDraft;await checkpoint();
   }
   for(const text of job.composerResources.queueTexts){
    const row=queuedRow(page,text);

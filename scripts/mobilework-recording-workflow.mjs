@@ -139,7 +139,7 @@ export async function prepareRecordingResources(page,{jobId,workspaceId,projectD
  return validateRecordingResources(owned);
 }
 
-export async function refreshRecordingBinding(page,owned,{checkpoint=async()=>{}}={}){
+export async function refreshRecordingBinding(page,owned,{checkpoint=async()=>{},recoverInterruptedStart=false}={}){
  const connection=await readEngineConnection(page),data=await sourceLog(connection,owned);
  const candidates=(await database(owned,'discover',{workspaceId:owned.workspaceId,sessionId:owned.sourceSession.id})).filter(row=>!owned.baselineRecordingIds.includes(row.recordingId));
  requireValue(candidates.length<=1,'本Session产生多条新录制，不能猜测本轮归属');
@@ -154,22 +154,34 @@ export async function refreshRecordingBinding(page,owned,{checkpoint=async()=>{}
   requireValue(owned.recording.recordingId===binding.recordingId&&owned.recording.sopId===binding.sopId&&(!owned.recording.stepInfoFilePath||sameOptionalPath(owned.recording.stepInfoFilePath,binding.stepInfoFilePath)),'已登记录制绑定发生变化');
   if(!owned.recording.stepInfoFilePath&&binding.stepInfoFilePath)owned.recording.stepInfoFilePath=binding.stepInfoFilePath;
  }
- const start=starts[0];
- if(start.state?.status==='completed'){
-  requireValue(absolute(binding.stepInfoFilePath),'启录工具已完成但产品步骤路径尚未持久化');
-  owned.startOutcome='started';
+ if(binding.stopMessageId){
+  const stop=recordingTool(data,'recording_stop').find(tool=>tool.messageId===binding.stopMessageId);
+  requireValue(stop,'产品stop claim未对应本Session真实recording_stop工具');
+  owned.hostStopMessageId=binding.stopMessageId;
+ }
+ const start=starts[0],interruptedStart=recoverInterruptedStart&&start.state?.status==='error'&&['active','completed'].includes(binding.status)&&!binding.terminalCauseCode;
+ if(start.state?.status==='completed'||interruptedStart){
+  requireValue(absolute(binding.stepInfoFilePath),'本轮产品步骤路径尚未持久化');
   if(binding.status==='active'&&!owned.recording.recorder){
    const actual=await processInfo(owned,'Recorder'),manifest=JSON.parse(await fs.readFile(path.join(actual.packageRoot,'manifest.json'),'utf8'));
    const api=await fs.readFile(path.join(actual.packageRoot,'recorder-api.md'));
    requireValue(manifest.platform==='win32'&&manifest.arch==='x64','实际录制包平台不匹配');
    Object.assign(owned.recording,{recorder:actual.recorder,packageRoot:actual.packageRoot,packageVersion:manifest.packageVersion,apiSha256:sha(api)});
   }
+  if(interruptedStart&&binding.status==='completed'){
+   const settlement=await observeRecordingSettlement(owned);
+   requireValue(settlement.artifactSettled&&settlement.continuationSettled,'中断启录后的实际产物或finish交付尚未完成，保留归属');
+   requireValue(!(await processInfo(owned,'Probe')).recorder,'中断启录材料已完成但录制器仍活动，保留现场');
+  }else if(interruptedStart){
+   requireValue(owned.recording.recorder&&Date.parse(owned.recording.recorder.created)>=owned.recording.createdAt,'晚到录制器未对应本轮绑定创建边界');
+   await processInfo(owned,'Recorder');
+   const actual=await recorderRequest(owned,'/record_status');
+   requireValue(['readyRecord','recording','pause','finishing','processing','completed'].includes(actual.status),'工具中断后的实际录制器尚未确认启录');
+  }
+  // Actual recorder state can outlive an errored tool wait. This does not
+  // change that tool's status or make the recording business assertion pass.
+  owned.startOutcome='started';
   if(owned.stage==='starting')owned.stage=binding.status==='completed'?'processing':'recording';
- }
- if(binding.stopMessageId){
-  const stop=recordingTool(data,'recording_stop').find(tool=>tool.messageId===binding.stopMessageId);
-  requireValue(stop,'产品stop claim未对应本Session真实recording_stop工具');
-  owned.hostStopMessageId=binding.stopMessageId;
  }
  await checkpoint();return {data,binding};
 }
@@ -186,12 +198,14 @@ async function recorderRequest(owned,route,body){
  requireValue(data.status!=='idle','活动绑定却返回idle，不能当作本轮停止成功');
  requireValue(data.recordingId===recording.recordingId&&data.sopId===recording.sopId&&samePath(data.stepInfoFilePath,recording.stepInfoFilePath),'录制器接口返回了其他录制绑定');return data;
 }
-export async function requestRecordingStop(page,owned,{checkpoint=async()=>{}}={}){
- requireValue(owned.startOutcome==='started'&&owned.recording,'没有真实成功启录证据，未调用本地stop');
+export async function requestRecordingStop(page,owned,{checkpoint=async()=>{},allowInterruptedStart=false}={}){
+ requireValue(owned.startOutcome==='started'&&owned.recording,'没有本轮真实启录实态证据，未调用本地stop');
  const data=await sourceLog(await readEngineConnection(page),owned),binding=await readBinding(owned);
- requireValue(recordingTool(data,'recording_start').some(tool=>tool.messageId===owned.sourceContextMessageId&&tool.state?.status==='completed'),'真实启录工具未完成');
+ const starts=recordingTool(data,'recording_start').filter(tool=>tool.messageId===owned.sourceContextMessageId);
+ requireValue(starts.length===1&&(starts[0].state?.status==='completed'||allowInterruptedStart&&starts[0].state?.status==='error'),'真实启录工具未完成，且不属于已核实晚到启录的收尾');
  if(binding.status==='completed')return {status:'completed',recordingId:binding.recordingId};
  requireValue(binding.status==='active'&&!binding.terminalCauseCode,'本轮录制已进入其他终态');
+ if(starts[0].state?.status!=='completed')requireValue(owned.recording.recorder&&Date.parse(owned.recording.recorder.created)>=owned.recording.createdAt,'中断启录缺少本轮真实录制器身份');
  await processInfo(owned,'Recorder');
  const before=await recorderRequest(owned,'/record_status');
  if(['finishing','processing','completed'].includes(before.status))return before;
@@ -333,7 +347,7 @@ async function settleOwnedSessions(page,owned,connection,{allowAbort,checkpoint}
  for(const session of [...roots,...owned.childSessions]){
   // A startup abort may precede a late finish continuation. Re-read actual
   // state even when this identity had been idle in an earlier cycle.
-  const job={sessionId:session.id,directory:session.directory};
+  const job={sessionId:session.id,directory:session.directory,abortAcknowledged:session.abortAcknowledged};
   const ready=await settleSession(page,job,connection,{allowAbort});
   for(const key of ['abortAcknowledged','sessionSettled','sessionMissing','recoveryAbortAttempted'])if(job[key]!==undefined)session[key]=job[key];
   await checkpoint();requireValue(ready,'SOP所属Session或真实子任务仍在运行/等待交互：'+session.id);
@@ -371,7 +385,7 @@ export async function settleRecordingResources(page,owned,{allowAbort=false,chec
   if(owned.calculator){requireValue(!owned.calculator.hwnd&&!owned.calculator.openPending&&!owned.calculator.additionalWindows.length,'尚未提交但原生计算器已启动，保留本轮窗口归属');owned.calculator.closed=true;}
   owned.startOutcome='not-started';owned.stage='settled';owned.cleanupComplete=true;await checkpoint();return {ready:true};
  }
- const {data,binding}=await refreshRecordingBinding(page,owned,{checkpoint});
+ const {data,binding}=await refreshRecordingBinding(page,owned,{checkpoint,recoverInterruptedStart:true});
  if(owned.startOutcome!=='started'){
   const starts=recordingTool(data,'recording_start'),running=starts.some(tool=>!['completed','error'].includes(tool.state?.status));
   if(allowAbort&&running){
@@ -390,14 +404,14 @@ export async function settleRecordingResources(page,owned,{allowAbort=false,chec
   // A terminal source turn plus no binding/process is the negative proof;
   // an empty list while the model is still running is not.
   await settleOwnedSessions(page,owned,connection,{allowAbort,checkpoint});
-  const after=await refreshRecordingBinding(page,owned,{checkpoint});
+  const after=await refreshRecordingBinding(page,owned,{checkpoint,recoverInterruptedStart:true});
   requireValue(owned.startOutcome!=='started'&&(!after.binding||['aborted','expired'].includes(after.binding.status))&&!recordingTool(after.data,'recording_start').some(tool=>!['error'].includes(tool.state?.status)),'启动收尾期间出现晚到录制，继续按真实绑定处理');
   for(const start of recordingTool(after.data,'recording_start'))requireValue(Number.isFinite(start.state?.time?.end)&&Date.now()>=start.state.time.end+recordingStartTimeoutMs,'启动收尾期间出现刚结束的启录调用，继续观察产品75秒取消边界');
   requireValue(!(await processInfo(owned,'Probe')).recorder,'启动收尾期间出现晚到录制进程，保留归属');
   owned.startOutcome='not-started';
  }else{
   requireValue(binding&&!binding.terminalCauseCode&&['active','completed'].includes(binding.status),'已启录但产品终态异常，不能伪装处理完成');
-  if(binding.status==='active')await requestRecordingStop(page,owned,{checkpoint});
+  if(binding.status==='active')await requestRecordingStop(page,owned,{checkpoint,allowInterruptedStart:true});
   const settlement=await observeRecordingSettlement(owned);await checkpoint();
   requireValue(settlement.artifactSettled&&settlement.continuationSettled,'SOP材料或真实finish续轮尚未收尾，保留归属');
   await settleOwnedSessions(page,owned,connection,{allowAbort,checkpoint});

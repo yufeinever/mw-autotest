@@ -82,23 +82,26 @@ export async function runCalculatorRecordingSteps(context){
   await checkpoint();
   await inspectCalculator(owned,{action:'Baseline',checkpoint});
   await send('开始录制我的操作。本轮测试标识：'+jobId+'。',{wait:false});
-  owned.sourceSession={id:control.sessionId,directory:control.directory};await checkpoint();
-  const observe=async()=>{
+  await control.withUI(page,'VERIFYING',async()=>{
+   owned.sourceSession={id:control.sessionId,directory:control.directory};await checkpoint();
+  });
+  const observe=()=>control.withUI(page,'VERIFYING',async()=>{
    const {binding}=await refreshRecordingBinding(page,owned,{checkpoint});
    if(binding&&owned.startOutcome==='started'){
     await observeRecordingSettlement(owned);await checkpoint();
    }
-  };
+  });
   await control.wait(page,config,{timeoutMs:context.definition.timeoutMs,capture,observe});
+  await control.acquire(page,'PREPARING');
   await refreshRecordingBinding(page,owned,{checkpoint});
   assert('本Session真实录制启动工具成功且绑定已登记',owned.startOutcome==='started'&&owned.stage==='recording'&&Boolean(owned.recording?.recorder));
-  await control.acquire(page,'PREPARING');
   await inspectCalculator(owned,{action:'Open',checkpoint});
   const calculation=await inspectCalculator(owned,{action:'CalculateKeys',checkpoint});
   await save('录制阶段计算器控件结果.json',calculation);
   assert('录制阶段实际计算器结果为123456788',displayValue(calculation.display)==='123456788');
   await capture('录制演示后客户端状态');
   await send('请结束当前录制并等待真实步骤处理结束。先不要生成、安装、覆盖或回放Skill；我要先核对本轮真实录制步骤是否完整。不得创建任何技能目录。',{continuing:true,waitOptions:{observe}});
+  await control.acquire(page,'VERIFYING');
   await refreshRecordingBinding(page,owned,{checkpoint});
   const settlement=await observeRecordingSettlement(owned);await checkpoint();
   assert('录制产物及本Session续轮均真实完成',settlement.artifactSettled&&settlement.continuationSettled);
@@ -111,6 +114,7 @@ export async function runCalculatorRecordingSteps(context){
   else remaining.delete('独立桌面录制材料及来源');
   await prepareSkillGeneration(owned,{id,skillsRoot,archiveDirectory:path.join(dir,'本轮生成Skill'),checkpoint});
   await send('本轮真实录制步骤已核对。现在请按这些步骤生成并安装计算器技能，机器ID为'+id+'。保持键盘逐位输入1至9、减1、等号的业务顺序及实际最终状态验证。经mobilework-skill-creator生成、校验并安装读回，再用result_file登记SKILL.md及去敏台账。本源会话不执行回放；我会在独立新会话复用已生成技能。仅使用可丢弃的计算器窗口，不操作其他应用或用户资料。',{continuing:true,waitOptions:{observe}});
+  await control.acquire(page,'VERIFYING');
   const source=await control.readLog(true),tools=toolParts(source);
   if(source.collection?.truncated||source.traceErrors?.length)sourceReview='源Session及子任务证据采集不完整';
   const deliveries=tools.filter(tool=>tool.tool==='result_file'&&tool.state?.status==='completed').flatMap(tool=>{
@@ -130,7 +134,6 @@ export async function runCalculatorRecordingSteps(context){
   if(!runtimeInvoked)sourceReview+=(sourceReview?'；':'')+'录制专家运行时独立Skill调用证据不足';
   if(number===87)remaining.delete('实际生成Skill及来源');
   else remaining.delete('真实已安装技能前置');
-  await control.acquire(page,'PREPARING');
   const reset=await inspectCalculator(owned,{action:'Reset',checkpoint});
   assert('回放前真实计算器已清零，避免旧结果假阳性',displayValue(reset.display)==='0');
   const beforeReplay=await inspectCalculator(owned,{action:'Inventory'});
@@ -138,17 +141,20 @@ export async function runCalculatorRecordingSteps(context){
   await newSession();
   if(number===90)await selectGeneratedSkill(context,id);
   await send((number===87?'请读取并调用已安装Skill的完整路径 '+path.join(owned.generatedSkill.path,'SKILL.md')+'。':'请调用已选中的录制Skill。')+'现在明确授权一次完整回放：Windows计算器，逐位输入123456789，减1并按等号，最后读取本次实际显示。请按技能主路径实际执行，桌面操作使用cmjt-desktop-auto；不重新录制、生成或创建其他任务。只操作当前可丢弃计算器窗口；实际工具不可用时如实停止。',{wait:false});
-  owned.replaySession={id:control.sessionId,directory:control.directory};owned.stage='replaying';await checkpoint();
+  await control.withUI(page,'VERIFYING',async()=>{
+   owned.replaySession={id:control.sessionId,directory:control.directory};owned.stage='replaying';await checkpoint();
+  });
   let replayWindow=owned.calculator.hwnd;
-  const observeReplayWindows=async()=>{
+  const observeReplayWindows=()=>control.withUI(page,'VERIFYING',async()=>{
    const inventory=await inspectCalculator(owned,{action:'Inventory'});
    if(inventory.unowned.length>1)throw review('回放产生多个尚未唯一交接的计算器，保留窗口归属等待核对');
    if(inventory.unowned.length){
     const adopted=await inspectCalculator(owned,{action:'Adopt',window:inventory.unowned[0],checkpoint});
     replayWindow=adopted.hwnd;
    }
-  };
+  });
   await control.wait(page,config,{timeoutMs:context.definition.timeoutMs,capture,observe:observeReplayWindows});
+  await control.acquire(page,'VERIFYING');
   await observeReplayWindows();
   const replay=await control.readLog(true);
   if(replay.collection?.truncated||replay.traceErrors?.length)throw review('回放真实子任务证据采集不完整，不能判定全部Skill调用');

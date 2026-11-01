@@ -145,7 +145,8 @@ async function runSkill(page,config,checks,capture,log,control,dir){
  if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('管理技能跳转前已离开本轮空草稿');
  const moduleResources={url:origin,attachments:[],queueTexts:[],restorePermission:false,moduleNavigation:{originUrl:origin,targetHash:'#/experts/skills'}};
  const checkpointModule=()=>control.call('checkpoint',{composerResources:moduleResources});
- await checkpointModule();
+ // Bind the already-verified empty source draft and module resources together.
+ await control.call('checkpoint',{draft:emptyDraft,composerResources:moduleResources});
  let resources,failure;
  try{
   await openPanel(page,'技能');
@@ -189,7 +190,8 @@ async function runSkill(page,config,checks,capture,log,control,dir){
     await control.call('checkpoint',{skillResources:null});resources=null;
    }
    await restoreModuleNavigation(page,moduleResources);
-   await control.call('checkpoint',{composerResources:null});
+   if(!(await draftOwnership(page,emptyDraft)).matches)throw blocked('管理技能收尾未回到本轮原空间空草稿，保留归属');
+   await control.call('checkpoint',{draft:null,composerResources:null});
   }catch(error){log('技能市场收尾未完成',error.message);if(failure)failure.message+='；收尾：'+error.message;else failure=error;}
   if(failure)throw failure;
  }
