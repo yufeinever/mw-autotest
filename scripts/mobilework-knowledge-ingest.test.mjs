@@ -20,8 +20,14 @@ test('知识解析材料包含真实legacy二进制且各格式raw名称互不�
 });
 const sample=(at,stage,message,extras={})=>({at,progress:{isActive:true,stage,message,currentFile:'本轮.docx',completedCount:0,totalCount:8},ui:{visible:true,message,completed:0,total:8,percent:10,animationName:'mw-read-shimmer'},...extras});
 test('知识生成进度只以真实同阶段时长及UI一致记录判定中长等待覆盖',()=>{
- const result=assessKnowledgeProgress([sample(1000,'parse_source','解析开始'),sample(7000,'parse_source','解析进行中'),sample(33000,'parse_source','复杂文件仍在处理'),sample(34000,'read_source','读取正文')]);
+ const result=assessKnowledgeProgress([sample(1000,'read_source','正在读取内容'),sample(7000,'read_source','正在加载目标资料'),sample(33000,'read_source','文档内容比较多，正在逐页梳理结构'),sample(34000,'build_summary','摘要数据构建中')]);
  assert.deepEqual(result.missing,[]);assert.equal(result.matched,4);assert.equal(result.medium,true);assert.equal(result.long,true);assert.equal(result.animated,true);assert.deepEqual(result.invalid,[]);
+ const rotationOnly=assessKnowledgeProgress([sample(1000,'read_source','正在读取内容'),sample(7000,'read_source','正在加载目标资料'),sample(33000,'read_source','正在加载目标资料')]);
+ assert.equal(rotationOnly.medium,true);assert.equal(rotationOnly.long,false);
+ const arbitrary=assessKnowledgeProgress([sample(1000,'parse_source','解析开始'),sample(33000,'parse_source','复杂文件仍在处理')]);
+ assert.equal(arbitrary.medium,false);assert.equal(arbitrary.long,false);
+ const cooldown=assessKnowledgeProgress([sample(1000,'read_source','正在读取内容'),sample(7000,'read_source','命中限流，等待 20 秒后继续'),sample(33000,'read_source','命中限流，等待 1 秒后继续')]);
+ assert.equal(cooldown.medium,false);assert.equal(cooldown.long,false);
 });
 test('快速完成未捕获时长分支不能用阶段文案替代完整覆盖',()=>{
  const result=assessKnowledgeProgress([sample(1000,'parse_source','开始'),sample(1500,'read_source','正文')]);

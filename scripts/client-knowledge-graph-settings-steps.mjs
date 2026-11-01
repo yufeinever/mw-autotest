@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {openSources,refreshSources} from './client-knowledge-source-steps.mjs';
+import {openSources,refreshSources,returnToReferenceTask} from './client-knowledge-source-steps.mjs';
 import {parseOwnedKnowledge,completedKnowledgeParse} from './mobilework-knowledge-parse.mjs';
 import {prepareKnowledgeReading,knowledgeFingerprint} from './mobilework-knowledge-reading.mjs';
 import {openKnowledgeReference,knowledgeReferenceRow,hasKnowledgeBudget,flattenKnowledgeFiles} from './mobilework-knowledge-source-ui.mjs';
@@ -131,12 +131,12 @@ async function interactions(context,call,created){
 
 async function reference(context,call,created,fixture){
  let settings=await openSettings(context,created);await setSwitch(context,created,'引用',false);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
- const origin=context.resources.moduleNavigation.originUrl;await context.page.goto(origin);let panel=await openKnowledgeReference(context.page),row=knowledgeReferenceRow(panel,created.name);
+ await returnToReferenceTask(context.page,context.resources);let panel=await openKnowledgeReference(context.page),row=knowledgeReferenceRow(panel,created.name);
  const off=await call('/knowledge/'+created.id),switches=row.getByRole('switch');
  context.assert('关闭引用真实持久且任务列表不可选择该库',off.open_ref===false&&(await row.count()===0||await switches.count()===0||await switches.isDisabled()));await context.capture('关闭后引用列表不可选');await button(context.page,'知识库').click();
  settings=await openSettings(context,created);await setSwitch(context,created,'引用',true);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
- await context.page.reload();settings=await openSettings(context,created);context.assert('重载后引用开关真实保留',await settings.getByRole('switch',{name:'引用',exact:true}).getAttribute('aria-checked')==='true'&&(await call('/knowledge/'+created.id)).open_ref===true);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
- context.remaining.delete('引用关闭不可选及开启持久');await context.page.goto(origin);panel=await openKnowledgeReference(context.page);row=knowledgeReferenceRow(panel,created.name);await row.getByRole('switch').waitFor();
+ settings=await openSettings(context,created,{reload:true});context.assert('重载后引用开关真实保留',await settings.getByRole('switch',{name:'引用',exact:true}).getAttribute('aria-checked')==='true'&&(await call('/knowledge/'+created.id)).open_ref===true);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
+ context.remaining.delete('引用关闭不可选及开启持久');await returnToReferenceTask(context.page,context.resources);panel=await openKnowledgeReference(context.page);row=knowledgeReferenceRow(panel,created.name);await row.getByRole('switch').waitFor();
  context.resources.knowledgeSelection={items:[{id:created.id,name:created.name}]};delete context.resources.moduleNavigation;await context.checkpointResources();
  context.assert('开启后本任务可选且初始未选择',await row.getByRole('switch').getAttribute('aria-checked')==='false');await row.getByRole('switch').click();await button(context.page,'知识库').click();
  await context.send('请仅依据选中的知识库“'+created.name+'”，列出晴川项目代号、负责人、预算和未完成的验收事项。');
@@ -152,7 +152,7 @@ async function automaticUpdate(context,call,created,fixture){
  resources.knowledgeCreation.dialogToken=randomUUID();await dialog.evaluate((node,token)=>node.setAttribute('data-mw-knowledge-owner',token),resources.knowledgeCreation.dialogToken);await context.checkpointResources();
  await dialog.locator('input[type="time"]').fill(schedule.time);await saveSetting(context,created,()=>button(dialog,'确定').click(),'更新时间');await dialog.waitFor({state:'hidden'});delete resources.knowledgeCreation.dialogToken;
  resources.knowledgeCreation.scheduleTime=schedule.time;await context.checkpointResources();await setSwitch(context,created,'自动更新',true);await closeKnowledgeSettings(page,{storageDir:created.storage_dir});
- await page.reload();settings=await openSettings(context,created);const current=await call('/knowledge/'+created.id);assert('每日时刻和自动更新真实保存并重载保留',current.open_update===true&&current.update_time===schedule.time&&(await settings.innerText()).replaceAll('：',':').includes(schedule.time));
+ settings=await openSettings(context,created,{reload:true});const current=await call('/knowledge/'+created.id);assert('每日时刻和自动更新真实保存并重载保留',current.open_update===true&&current.update_time===schedule.time&&(await settings.innerText()).replaceAll('：',':').includes(schedule.time));
  await context.capture('真实每日自动更新时间');remaining.delete('默认02:00及每日时刻修改持久');await closeKnowledgeSettings(page,{storageDir:created.storage_dir});
  const baseline=await call('/knowledge/'+created.id+'/progress');await save(context,'真实定时基线',{schedule,baseline});
  if(Date.now()>=new Date(schedule.at).getTime()||baseline.isActive)throw review('定时基线未在到点前取得，不能将正在执行或旧终态冒充本轮定时触发');

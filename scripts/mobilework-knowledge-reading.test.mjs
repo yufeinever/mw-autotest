@@ -33,17 +33,17 @@ test('Wiki完整正文与全树判断不能由首屏截断、重复名称或上�
 
 test('知识卡片元数据与关联全集独立判定，摘要不能冒充完整正文',()=>{
  const detail={title:'预算审核',updated_at:'2026-11-01',tags:['concept'],summary:'双人复核预算。',content:'双人复核预算。\n\n权限尚未验收，不能上线。',related_cards:[{id:'entity:林澈',title:'林澈'}],related_wikis:[{id:'source:项目报告',title:'项目报告'}]};
- const observed={title:detail.title,body:detail.title+'\n2026-11-01\n'+detail.summary,tags:['概念'],relatedCards:['林澈'],relatedWikis:['项目报告']};
+ const observed={title:detail.title,body:detail.title+'\n2026-11-01\n'+detail.summary,contentArea:{text:detail.summary,width:400,height:44,clientWidth:400,clientHeight:44,scrollWidth:400,scrollHeight:44,overflowX:'hidden',overflowY:'hidden'},tags:['概念'],relatedCards:['林澈'],relatedWikis:['项目报告']};
  const result=assessKnowledgeCard(detail,observed);assert.equal(result.summary,true);assert.equal(result.fullContent,false);assert.equal(result.relatedCards,true);assert.equal(result.relatedWikis,true);
- assert.equal(assessKnowledgeCard(detail,{...observed,body:observed.body+'\n'+detail.content}).fullContent,true);
+ assert.equal(assessKnowledgeCard(detail,{...observed,body:observed.body+'\n'+detail.content,contentArea:{...observed.contentArea,text:detail.content,height:120,clientHeight:120,scrollHeight:120}}).fullContent,true);
+ assert.equal(assessKnowledgeCard(detail,{...observed,body:observed.body+'\n'+detail.content,contentArea:{...observed.contentArea,text:detail.content,scrollHeight:120}}).fullContent,false);
  const bad=assessKnowledgeCard(detail,{...observed,relatedCards:['林澈','林澈'],relatedWikis:[],tags:['实体']});
  assert.equal(bad.relatedCards,false);assert.equal(bad.relatedWikis,false);assert.equal(bad.tags,false);
 });
 
-test('知识Wiki预览收尾仅关闭登记标题，未打开及未知窗口保持不动',async()=>{
- const actions=[];let actual='本轮项目Wiki';
- const page={getByRole:(role,{name})=>({filter:()=>({count:async()=>name===actual?1:0,press:async key=>actions.push([name,key]),waitFor:async state=>actions.push(state)})})};
- const owned={previewTitle:'本轮项目Wiki'};await dismissOwnedKnowledgeDialog(page,owned);
- assert.equal(owned.previewTitle,undefined);assert.deepEqual(actions,[['本轮项目Wiki','Escape'],{state:'hidden'}]);
- actions.length=0;actual='用户正在查看的Wiki';await dismissOwnedKnowledgeDialog(page,{previewTitle:'本轮项目Wiki'});assert.deepEqual(actions,[]);
+test('旧Wiki预览只有标题时保留归属，不以同名窗口认领',async()=>{
+ const owned={previewTitle:'本轮项目Wiki'},actions=[];
+ const page={getByRole:()=>{actions.push('role lookup');throw Error('不应按标题定位');},locator:()=>{actions.push('DOM lookup');throw Error('旧标题缺少真实ID，不应操作DOM');}};
+ await assert.rejects(dismissOwnedKnowledgeDialog(page,owned),error=>error.blocked&&/只有标题/.test(error.message));
+ assert.deepEqual(owned,{previewTitle:'本轮项目Wiki'});assert.deepEqual(actions,[]);
 });

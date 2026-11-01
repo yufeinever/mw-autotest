@@ -36,10 +36,13 @@ export function assessWikiDocument({source,documentText,left,right}){
 }
 
 export function assessKnowledgeCard(detail,observed){
- const body=readableKnowledgeText(observed.body),summary=readableKnowledgeText(detail.summary),content=readableKnowledgeText(detail.content);
- return {title:observed.title===detail.title,date:observed.body.includes(detail.updated_at),
+ const body=readableKnowledgeText(observed.body),summary=readableKnowledgeText(detail.summary),content=readableKnowledgeText(detail.content),area=observed.contentArea;
+ const clippedX=['hidden','clip'].includes(area.overflowX)&&area.scrollWidth>area.clientWidth+1;
+ const clippedY=['hidden','clip'].includes(area.overflowY)&&area.scrollHeight>area.clientHeight+1;
+ const contentReadable=area.width>0&&area.height>0&&!clippedX&&!clippedY;
+ return {title:observed.title===detail.title,date:observed.body.includes(detail.updated_at),contentReadable,
   tags:detail.tags.every(tag=>observed.tags.includes(tag==='concept'?'概念':'实体')),
-  summary:summary.length>0&&body.includes(summary),fullContent:content.length>0&&body.includes(content),
+  summary:summary.length>0&&body.includes(summary),fullContent:content.length>0&&contentReadable&&readableKnowledgeText(area.text).includes(content),
   relatedCards:knowledgeMultiset(detail.related_cards.map(card=>card.title))===knowledgeMultiset(observed.relatedCards),
   relatedWikis:knowledgeMultiset(detail.related_wikis.map(wiki=>wiki.title))===knowledgeMultiset(observed.relatedWikis)};
 }

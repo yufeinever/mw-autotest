@@ -319,6 +319,7 @@
 
 !/scripts/run-client-case13[2-6].mjs
 !/scripts/mobilework-knowledge-reading.mjs
+!/scripts/mobilework-knowledge-preview.mjs
 !/scripts/mobilework-knowledge-reading.test.mjs
 !/scripts/client-knowledge-reading-steps.mjs
 

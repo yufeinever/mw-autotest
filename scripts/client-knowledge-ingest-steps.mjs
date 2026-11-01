@@ -103,7 +103,7 @@ async function parseFormats(context,call,created){
  await openSources(page,created,context);await refreshSources(page,call,created);await observeKnowledgeSourceRows(page,flattenKnowledgeFiles(await call('/knowledge/'+created.id+'/source',{})));
  await capture('全量解析八份真实格式源文件');remaining.delete('八份真实格式独立源材料');
  const samples=[],capturedStages=new Set();
- const parsed=await parseOwnedKnowledge({...context,call,created,owned:resources.knowledgeCreation,timeoutMs:540000,onProgress:number===131?async progress=>{
+ const parsed=await parseOwnedKnowledge({...context,call,created,owned:resources.knowledgeCreation,timeoutMs:context.definition.timeoutMs,onProgress:number===131?async progress=>{
   const ui=await progressSnapshot(page),sample={at:Date.now(),progress,ui};samples.push(sample);await save(dir,'实际解析进度与界面观察.json',samples);
   if(ui.visible&&!capturedStages.has(progress.stage)){capturedStages.add(progress.stage);await capture('真实解析进度阶段-'+progress.stage);}
  }:undefined});

@@ -13,7 +13,7 @@ const button=(scope,name)=>scope.getByRole('button',{name,exact:true}).filter({v
 const save=(dir,name,value)=>fs.writeFile(path.join(dir,name),JSON.stringify(value,null,2));
 const sourceRoute=created=>'/knowledge/'+created.id+'/source';
 
-async function returnToReferenceTask(page,resources){
+export async function returnToReferenceTask(page,resources){
  const owned=resources.moduleNavigation;
  if(!owned||new URL(page.url()).hash!==owned.targetHash)throw Error('返回引用面板前知识模块归属不匹配');
  await page.evaluate(url=>{location.hash=new URL(url).hash;},owned.originUrl);

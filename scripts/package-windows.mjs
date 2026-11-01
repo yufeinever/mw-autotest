@@ -56,7 +56,7 @@ export async function selectedFiles(){
  selected.push('scripts/client-kanban-task-steps.mjs','scripts/client-kanban-operations-steps.mjs','scripts/mobilework-kanban-operation-resources.mjs','scripts/client-mail-dashboard-steps.mjs','scripts/mobilework-mail-baseline.mjs');
  selected.push('scripts/mobilework-knowledge-settings.mjs','scripts/client-knowledge-settings-steps.mjs','scripts/mobilework-kanban.mjs','scripts/client-kanban-steps.mjs');
  selected.push('scripts/mobilework-knowledge-graph-settings.mjs','scripts/client-knowledge-graph-settings-steps.mjs');
- selected.push('scripts/mobilework-knowledge-reading.mjs','scripts/client-knowledge-reading-steps.mjs');
+ selected.push('scripts/mobilework-knowledge-reading.mjs','scripts/mobilework-knowledge-preview.mjs','scripts/client-knowledge-reading-steps.mjs');
  selected.push('scripts/mobilework-knowledge-ingest.mjs','scripts/client-knowledge-ingest-steps.mjs');
  selected.push('scripts/mobilework-knowledge-create.mjs','scripts/mobilework-knowledge-parse.mjs','scripts/mobilework-knowledge-source-ui.mjs','scripts/client-knowledge-source-steps.mjs');
  selected.push('scripts/client-case-library-task-steps.mjs');

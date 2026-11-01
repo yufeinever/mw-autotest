@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {dismissOwnedKnowledgePreview} from './mobilework-knowledge-preview.mjs';
 import {knowledgeClient,removeOwnedKnowledge,closeKnowledgeSettings} from './mobilework-knowledge-api.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -29,11 +30,8 @@ export async function dismissOwnedKnowledgeDialog(page,owned){
   if(await exit.count()===1){await exit.click();await root.getByRole('button',{name:'全屏显示',exact:true}).waitFor();}
   delete owned.graphToken;
  }
- if(owned.previewTitle){
-  const preview=page.getByRole('dialog',{name:owned.previewTitle,exact:true}).filter({visible:true});
-  if(await preview.count()===1){await preview.press('Escape');await preview.waitFor({state:'hidden'});}
-  delete owned.previewTitle;
- }
+ if(owned.previewWikiId||owned.previewToken)await dismissOwnedKnowledgePreview(page,owned);
+ else if(owned.previewTitle)throw blocked('旧Wiki预览归属只有标题，缺真实库ID/Wiki ID，保留现场待核');
  if(!owned.dialogToken)return;
  const dialog=page.locator('[data-mw-knowledge-owner="'+owned.dialogToken+'"]');
  if(await dialog.count()){

@@ -1,4 +1,6 @@
 import fs from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {observeOwnedKnowledgePreview,dismissOwnedKnowledgePreview} from './mobilework-knowledge-preview.mjs';
 import path from 'node:path';
 import {parseOwnedKnowledge} from './mobilework-knowledge-parse.mjs';
 import {openSources,refreshSources} from './client-knowledge-source-steps.mjs';
@@ -120,7 +122,11 @@ const relationSection=(page,title)=>page.locator('section').filter({has:page.get
 async function cardObservation(page,detail){
  const heading=page.getByRole('heading',{name:detail.title,exact:true});await heading.waitFor();const body=heading.locator('xpath=..');
  await page.waitForFunction(({title,date,summary})=>[...document.querySelectorAll('h2')].some(node=>node.textContent===title&&node.parentElement.textContent.includes(date)&&node.parentElement.textContent.replace(/[#*_`|>\s]/g,'').includes(summary)),{title:detail.title,date:detail.updated_at,summary:readableKnowledgeText(detail.summary)});
- return {title:await heading.innerText(),body:await body.innerText(),tags:await body.locator('span.text-primary').allTextContents(),
+ const contentArea=await body.locator('div.max-h-11').evaluate(node=>{
+  const style=getComputedStyle(node),rect=node.getBoundingClientRect();
+  return {text:node.innerText,width:rect.width,height:rect.height,clientWidth:node.clientWidth,clientHeight:node.clientHeight,scrollWidth:node.scrollWidth,scrollHeight:node.scrollHeight,overflowX:style.overflowX,overflowY:style.overflowY};
+ });
+ return {title:await heading.innerText(),body:await body.innerText(),contentArea,tags:await body.locator('span.text-primary').allTextContents(),
   relatedCards:await relationSection(page,'关联知识卡片').getByRole('button').allTextContents(),relatedWikis:await relationSection(page,'关联wiki').getByRole('button').allTextContents()};
 }
 async function openCard(context,call,created,item){
@@ -139,24 +145,34 @@ async function relatedNavigation(context,call,created,origin){
   await openCard(context,call,created,origin);
   const link=button(relationSection(page,'关联知识卡片'),item.title);
   if(await link.count()!==1)throw review('关联卡片显示同名，无法从本轮UI唯一确定目标：'+item.title);
-  await link.click();const detail=await call('/knowledge/'+created.id+'/cards/'+encodeURIComponent(item.id)),observed=await cardObservation(page,detail);
-  const assessment=assessKnowledgeCard(detail,observed);records.push({kind:'card',id:item.id,detail,observed,assessment});await save(dir,'实际关联逐项跳转.json',records);
-  assert('关联卡片打开对应ID的真实详情：'+item.title,assessment.title&&assessment.date&&assessment.summary&&assessment.tags);
+  const targetIndex=context.knowledgeCardItems.findIndex(card=>card.id===item.id);
+  if(targetIndex<0)throw review('关联目标ID不在本轮已核对侧栏列表，未用API自证界面归属：'+item.id);
+  await link.click();
+  const destination=cardRows(page).nth(targetIndex).and(page.locator('button[class*="--mw-knowledge-card-active-bg"]'));
+  await destination.waitFor();
+  const detail=await call('/knowledge/'+created.id+'/cards/'+encodeURIComponent(item.id)),observed=await cardObservation(page,detail);
+  const selected={id:item.id,index:targetIndex,className:await destination.getAttribute('class')};
+  const assessment=assessKnowledgeCard(detail,observed);records.push({kind:'card',id:item.id,selected,detail,observed,assessment});await save(dir,'实际关联逐项跳转.json',records);
+  assert('关联卡片打开对应ID的真实详情：'+item.title,detail.id===item.id&&selected.className.includes('--mw-knowledge-card-active-bg')&&assessment.title&&assessment.date&&assessment.summary&&assessment.tags);
   await capture('真实关联卡片-'+item.title);
  }
  for(const item of context.number===135?origin.related_wikis:[]){
   await openCard(context,call,created,origin);
   if(await page.getByRole('dialog').filter({visible:true}).count())throw blocked('打开关联Wiki前已有未知弹框，保留现场');
   const detail=await call('/knowledge/'+created.id+'/wiki/'+encodeURIComponent(item.id));
-  resources.knowledgeCreation.previewTitle=detail.title;await checkpointResources();
   const link=button(relationSection(page,'关联wiki'),item.title);
   if(await link.count()!==1)throw review('关联Wiki显示同名，无法唯一确定目标：'+item.title);
-  await link.click();const dialog=page.getByRole('dialog',{name:detail.title,exact:true});await dialog.waitFor();
+  const owned=resources.knowledgeCreation,preview={previewWikiId:item.id,previewToken:randomUUID(),previewTitle:detail.title};
+  if((await observeOwnedKnowledgePreview(page,{...owned,...preview})).status!=='closed')throw blocked('关联Wiki点击前本轮库预览尚未关闭，保留现场');
+  Object.assign(owned,preview);await checkpointResources();
+  await link.click();await observeOwnedKnowledgePreview(page,owned,{waitFor:'open',tag:true});
+  const dialog=page.locator('[data-mw-knowledge-preview-owner="'+owned.previewToken+'"]');
+  await dialog.getByRole('heading',{name:detail.title,exact:true}).waitFor();
+  await observeOwnedKnowledgePreview(page,owned,{waitFor:'open',tag:true});
   const text=await dialog.innerText(),complete=readableKnowledgeText(text).includes(readableKnowledgeText(detail.content));
   records.push({kind:'wiki',id:item.id,detail,text,complete});await save(dir,'实际关联逐项跳转.json',records);
   assert('关联Wiki实际完整正文与来源ID一致：'+item.title,detail.id===item.id&&detail.content.trim().length>0&&complete);
-  await capture('真实关联Wiki-'+item.title);await dialog.press('Escape');await dialog.waitFor({state:'hidden'});
-  delete resources.knowledgeCreation.previewTitle;await checkpointResources();
+  await capture('真实关联Wiki-'+item.title);await dismissOwnedKnowledgePreview(page,owned);await checkpointResources();
  }
 }
 
@@ -184,7 +200,7 @@ async function cards(context,call,created){
  await relatedNavigation(context,call,created,origin.detail);remaining.delete('关联卡片真实详情跳转');if(number===135)remaining.delete('关联Wiki真实来源正文预览');
  if(number===134){
   const incomplete=details.filter(item=>!item.assessment.fullContent).map(item=>item.detail.id);
-  if(incomplete.length)throw review('当前详情仅展示摘要，原表卡片内容与完整正文存在语义缺口，未降低为摘要通过；待复核ID：'+incomplete.join('、'));
+  if(incomplete.length)throw review('当前详情未完整可读（仅摘要或正文被裁切），原表卡片内容语义仍待复核，未降低为API正文存在通过；待复核ID：'+incomplete.join('、'));
   remaining.delete('卡片内容完整性与原表语义');
  }
 }
