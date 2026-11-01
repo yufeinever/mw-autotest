@@ -193,7 +193,7 @@ export async function runTaskLifecycleSteps(context){
    const facts=excerpts.filter(text=>observedText.includes(text));
    await fs.writeFile(path.join(dir,'网页摘录核对.json'),JSON.stringify({excerpts:excerpts.length,sourceMatched:facts.length,documentMatched:facts.filter(text=>documentText.includes(text)).length},null,2));
    assert('两项不同原文摘录可在本次真实浏览输出核对',facts.length>=2&&middle.includes('baidu.com'));
-   assert('DOCX来源部分保留可追溯摘录及URL',facts.slice(0,2).every(text=>documentText.includes(text))&&reportText.includes('baidu.com'));
+   assert('DOCX来源部分保留至少两项不同原文及来源URL',facts.filter(text=>documentText.includes(text)).length>=2&&reportText.includes('baidu.com'));
    finish('本轮网页访问与内容留存');
    await ui(async()=>{await selectWorkbench(page,config,'浏览器',capture);const address=page.getByRole('textbox').filter({visible:true});const values=await address.evaluateAll(elements=>elements.map(element=>element.value));assert('浏览器工作台展示实际访问地址',values.some(value=>String(value).includes('baidu.com')));});finish('浏览器工作台真实页面');
   }

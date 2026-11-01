@@ -77,6 +77,11 @@ export async function readTaskPreviewText(panel,name){
   const cells=panel.locator('table td input');await cells.first().waitFor();
   return (await cells.evaluateAll(elements=>elements.map(element=>element.value))).join('\n');
  }
+ if(/\.docx$/i.test(name)){
+  // The loading label disappears before the lazy docx renderer mounts its
+  // document. Wait for that real document, rather than reading the file header.
+  await panel.locator('.mw-docx-host section.docx').or(panel.locator('iframe').filter({visible:true})).first().waitFor({timeout:45000});
+ }
  let text=await panel.innerText();
  const frame=panel.locator('iframe').filter({visible:true});
  if(await frame.count()===1)text+='\n'+await frame.contentFrame().locator('body').innerText();
