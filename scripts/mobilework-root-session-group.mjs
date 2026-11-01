@@ -15,7 +15,8 @@ const localResources=resources=>{
  const {workspaceResources,homeModel,...local}=resources;
  return structuredClone(local);
 };
-const userText=message=>message.parts.filter(part=>part.type==='text').map(part=>part.text||'').join('\n');
+// Product draft parts are adjacent segments; their text already owns newlines.
+const userText=message=>message.parts.filter(part=>part.type==='text').map(part=>part.text||'').join('');
 
 // One coordinator, one awaited UI action at a time. Root controls share the
 // existing job owner/token, while connections and event caches stay separate.

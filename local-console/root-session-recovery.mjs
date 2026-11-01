@@ -11,7 +11,8 @@ import {caseDialog,closeOwnedCaseReplay,adoptCaseTaskDraft} from '../scripts/mob
 import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
 import {registerRootSession,rootJobView,commitRootView,updateRootSummary,isRootOwnedPage} from './root-sessions.mjs';
 
-const matchingText=(log,text)=>log.messages.find(message=>message.info?.role==='user'&&normalizeComposerText(message.parts.filter(part=>part.type==='text').map(part=>part.text||'').join('\n'))===normalizeComposerText(text));
+// Match the submitted draft without inventing separators between product parts.
+const matchingText=(log,text)=>log.messages.find(message=>message.info?.role==='user'&&normalizeComposerText(message.parts.filter(part=>part.type==='text').map(part=>part.text||'').join(''))===normalizeComposerText(text));
 
 async function navigateOwned(page,job,url){
  if(page.url()===url)return;

@@ -362,7 +362,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='POST'&&controlMatch){
     const id=controlMatch[1],action=controlMatch[2],job=jobs.find(j=>j.id===id);
     if(!job||job.stopRequested||job.finalizing||job.status!=='RUNNING')return send(409,{error:'任务已结束或正在收尾'});
-    if(action==='acquire')return send(200,scheduler.acquire(id,body.phase));
+    if(action==='acquire')return send(200,scheduler.acquire(id,body.phase,{rootKey:body.rootKey,currentUrl:body.currentUrl}));
     if(action==='release'){
      if(isRootSessionJob(job)&&body.runtime){
       const root=rootSession(job,body.rootKey);validateEngineConnection(body.runtime);rootRuntimes(job).set(root.key,body.runtime);
@@ -838,7 +838,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     res.setHeader('Content-Type','text/html; charset=utf-8');res.end(renderTrace(job,trace,error));return;
    }
    const reportMatch=url.pathname.match(/^\/reports\/([\w-]+)$/);
-   if(req.method==='GET'&&reportMatch){const job=jobs.find(j=>j.id===reportMatch[1]);if(!job)return send(404,{error:'运行记录不存在'});res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(renderReport({...job,sessionId:job.result?.sessionId||job.log?.match(/(?:任务已发送|续跑既有会话)\s+(ses_[A-Za-z0-9]+)/)?.[1]}));return;}
+   if(req.method==='GET'&&reportMatch){const job=jobs.find(j=>j.id===reportMatch[1]);if(!job)return send(404,{error:'运行记录不存在'});res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(renderReport({...job,sessionId:jobSessionId(job)}));return;}
    const sessionMatch=url.pathname.match(/^\/sessions\/([^/]+)\/(download)$/);
    if(req.method==='GET'&&sessionMatch){
     const sessionId=decodeURIComponent(sessionMatch[1]);

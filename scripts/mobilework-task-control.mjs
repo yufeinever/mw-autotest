@@ -19,7 +19,7 @@ export class TaskControl {
   if(this.faulted)throw blocked('页面已在调度之外变化，不再操作客户端');
   if(this.held)return;
   const deadline=Date.now()+300000;let result;
-  do{result=await this.call('acquire',{phase});if(result.granted)break;await delay(200);}while(Date.now()<deadline);
+  do{result=await this.call('acquire',{phase,currentUrl:page.url()});if(result.granted)break;await delay(200);}while(Date.now()<deadline);
   if(!result.granted)throw blocked('等待客户端页面操作超时；没有操作其他任务');
   this.held=true;
   if(result.expectedUrl&&page.url()!==result.expectedUrl){this.faulted=true;throw blocked('客户端页面在调度之外被切换，保留现场，停止本任务的界面操作');}

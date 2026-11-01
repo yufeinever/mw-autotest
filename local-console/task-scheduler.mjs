@@ -54,13 +54,21 @@ export class TaskScheduler {
   r.owner=job.id;return true;
  }
  releaseRecovery(job){const r=this.renderer(job.config.cdpPort);if(r.owner===job.id)r.owner=null;}
- acquire(id,phase){
+ acquire(id,phase,{rootKey,currentUrl}={}){
   const {job}=this.entry(id),r=this.renderer(job.config.cdpPort);
   if(!['PREPARING','INTERACTING','EVIDENCE','VERIFYING'].includes(phase))throw Error('页面操作阶段无效');
-  if(r.owner===id)return {granted:true,expectedUrl:r.expectedUrl};
-  if(!r.waiting.includes(id))r.waiting.push(id);
-  if(r.owner||r.waiting[0]!==id)return {granted:false};
-  r.waiting.shift();r.owner=id;job.phase=phase;this.changed(job);
+  if(r.owner!==id){
+   if(!r.waiting.includes(id))r.waiting.push(id);
+   if(r.owner||r.waiting[0]!==id)return {granted:false};
+   r.waiting.shift();r.owner=id;job.phase=phase;this.changed(job);
+  }
+  const pending=job.pendingSubmission;
+  // Submission may route after release. This only admits its first new
+  // Session for observation; user text and directory still gate registration.
+  if(isRootSessionJob(job)&&pending?.state==='SUBMITTING'&&pending.key===rootKey&&
+   job.pageTarget?.kind==='preparing'&&job.pageTarget.key===rootKey&&r.expectedUrl===pending.originUrl&&
+   typeof currentUrl==='string'&&/#\/workspace\/[^/]+\/session\/ses_[A-Za-z0-9]+$/.test(currentUrl)&&
+   !job.rootSessions.some(root=>root.url===currentUrl)&&isRootOwnedPage(job,currentUrl))r.expectedUrl=currentUrl;
   return {granted:true,expectedUrl:r.expectedUrl};
  }
  release(id,{url,sessionId,phase='WAITING_MODEL'}={}){
