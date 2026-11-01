@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
- workspaces,workspaceSessions,chooseWorkspace,createDefaultWorkspace,createLocalWorkspace,workspaceRow,workspaceExpand,
- readWorkspaceSidebar,prepareWorkspaceResources,
+ workspaces,workspaceSessions,chooseWorkspace,createDefaultWorkspace,createLocalWorkspace,workspaceRow,
+ readWorkspaceSidebar,prepareWorkspaceResources,waitForRecentWorkspaceSession,
 } from './mobilework-workspaces.mjs';
 
 const samePath=(left,right)=>path.resolve(left).toLowerCase()===path.resolve(right).toLowerCase();
@@ -35,22 +35,17 @@ export async function runHomeWorkspaceSteps(context){
   assert('新建任务仍选择默认空间',await selectedButton.count()===1);
   remaining.delete('侧栏新建任务');
   await send('你是谁？（测试标识：'+path.basename(dir)+'）');
-  const id=getSessionId(),relative=path.relative(selected.path,control.directory);
-  assert('真实Session目录属于默认空间',!relative.startsWith('..')&&!path.isAbsolute(relative),{id,directory:control.directory});
+  const id=getSessionId();
+  assert('真实Session使用默认空间下的独立任务目录',inside(selected.path,control.directory),{id,directory:control.directory});
   remaining.delete('发送并建立默认空间Session');
   await control.withUI(page,'VERIFYING',async()=>{
    const sessions=await workspaceSessions(page,selected.id),session=sessions.find(item=>item.id===id);
    assert('产品登记了本轮Session标题',Boolean(session?.title?.trim()),{id,title:session?.title});
-   const section=page.getByTestId('workspace-section-header').locator('button[aria-expanded]:not([aria-haspopup])');
-   if(await section.getAttribute('aria-expanded')!=='true')await section.click();
-   const row=workspaceRow(page,selected.id);
-   if(await row.count()&&await workspaceExpand(row).getAttribute('aria-expanded')!=='true')await workspaceExpand(row).click();
-   const displayed=await row.getByText(session.title,{exact:true}).filter({visible:true}).count();
-   const recent=page.locator('div.group\\/recent-task').filter({visible:true}).filter({has:page.getByText(session.title,{exact:true})});
-   await capture('默认空间任务标题');
-   if(!await row.count())throw Object.assign(Error('默认空间未在工作空间列表显示独立行；最近任务同名标题数：'+await recent.count()+'，需确认原表展示位置'),{review:true});
-   assert('本轮Session标题展示在默认工作空间下',displayed===1,{workspaceId:selected.id,sessionId:id,title:session.title,displayed});
-   remaining.delete('默认空间侧栏展示本轮标题');
+   const recent=await waitForRecentWorkspaceSession(page,{workspaceId:selected.id,sessionId:id,title:session.title});
+   await fs.writeFile(path.join(dir,'默认空间最近任务归属.json'),JSON.stringify(recent,null,2));
+   await capture('默认空间最近任务标题');
+   assert('最近任务显示本轮默认空间Session的产品标题',true,recent);
+   remaining.delete('最近任务展示本轮默认空间Session标题');
   });
   return;
  }

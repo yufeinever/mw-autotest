@@ -1,4 +1,4 @@
-import {snapshotDraft,clearOwnedDraft,composerFieldOf} from './mobilework-isolation.mjs';
+import {clearOwnedDraft,composerFieldOf} from './mobilework-isolation.mjs';
 import {marketCard} from './mobilework-market-ui.mjs';
 import {settleSkillReload} from './mobilework-skill-resources.mjs';
 
@@ -28,15 +28,15 @@ export async function waitForExpertInstall(page,owned){
  throw blocked('本轮专家安装、引擎校验或卡片刷新尚未完成，保留归属，不重复安装或提前卸载');
 }
 
-export async function releaseExpertResources(page,owned){
+export async function releaseExpertResources(page,owned,{draft,config,checkpoint=async()=>{}}={}){
  if(owned.summonTarget){
-  if(!page.url().includes('/workspace/'+owned.workspaceId+'/session')||await composerFieldOf(page).count()!==1)throw blocked('本轮专家仍在召唤，等待返回任务后收尾，未提前卸载安装包');
-  const draft=await snapshotDraft(page);
-  if(draft.selection.length!==1||draft.selection[0].exit!=='退出「'+owned.summonTarget+'」')throw blocked('本轮专家召唤结果尚未确认，未清理未知草稿或提前卸载');
-  if(!await clearOwnedDraft(page,draft))throw blocked('本轮召唤专家草稿清理未完成');
+  const hash=new URL(page.url()).hash;
+  if(!['#/session','#/workspace/'+owned.workspaceId+'/session'].includes(hash)||await page.evaluate(()=>localStorage.getItem('openwork.react.newTaskDraftWorkspace'))!==owned.workspaceId||await composerFieldOf(page).count()!==1)throw blocked('本轮专家仍在召唤，等待返回所属空间的新任务后收尾，未提前卸载安装包');
+  if(!draft||draft.selection.length!==1||draft.selection[0].exit!=='退出「'+owned.summonTarget+'」')throw blocked('本轮专家缺少预登记的完整召唤草稿，未清理未知输入或提前卸载');
+  if(!await clearOwnedDraft(page,draft,config))throw blocked('本轮召唤专家草稿与预登记内容不符，保留现场');
  }
  if(owned.installTarget){
-  if(owned.installPending)await waitForExpertInstall(page,owned);
+  if(owned.installPending){await waitForExpertInstall(page,owned);owned.installPending=false;await checkpoint();}
   const added=(await readExpertCatalog(page)).filter(e=>e.name===owned.installTarget&&!owned.installedBefore.includes(e.id));
   if(added.length>1)throw blocked('本轮目标专家有多个新增包，未卸载不确定的资源');
   if(!added.length&&owned.installPending)throw blocked('本轮专家安装尚未确认结束，保留归属并等待安装结果');

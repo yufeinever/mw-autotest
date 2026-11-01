@@ -59,6 +59,7 @@ export async function releaseSopRecording(job,{allowAbort=false,checkpoint=async
 }
 export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>{}}={}){
  if(job.recordingResources)throw Error('本轮SOP录制尚未完成收尾，保留输入区及空间资源');
+ if(job.expertResources)throw Error('本轮专家安装、召唤或历史尚未收尾，保留模块入口及输入区资源');
  if(!job.composerResources)return;
  const reconnected=await resumeClientRestart(job.composerResources,job.config,{checkpoint});
  const browser=reconnected?.browser||await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
@@ -159,7 +160,7 @@ export async function releaseTool(job){
   await page.reload();delete job.toolResources;
  }finally{await browser.close();}
 }
-export async function releaseExpert(job){
+export async function releaseExpert(job,{checkpoint=async()=>{}}={}){
  if(job.recordingResources)throw Error('本轮SOP录制尚未完成收尾，保留专家资源及历史');
  if(!job.expertResources)return;
  const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
@@ -169,13 +170,15 @@ export async function releaseExpert(job){
   if(handoff){
    job.ownedDraft=handoff;job.composerResources.url=handoff.url;
    delete job.composerResources.moduleNavigation;job.expertResources.summonTarget='';
+   await checkpoint();
   }
   if(!job.expertResources.summonTarget&&await composerFieldOf(page).count()===1){
    const draft=await snapshotDraft(page);
    if((draft.text||draft.skills.length||draft.selection.length)&&!await clearOwnedDraft(page,job.ownedDraft,job.config))throw Error('专家资源收尾前草稿归属未确认，未提前卸载');
    if(handoff)job.ownedDraft=await snapshotDraft(page);
   }
-  await releaseExpertResources(page,job.expertResources);delete job.expertResources;
+  await releaseExpertResources(page,job.expertResources,{draft:job.ownedDraft,config:job.config,checkpoint});delete job.expertResources;
+  await checkpoint();
  }
  finally{await browser.close();}
 }

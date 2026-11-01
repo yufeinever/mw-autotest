@@ -1,5 +1,54 @@
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 
+// Installed HAt picker: inspect committed props and actual keyed rows. This
+// never calls product handlers or changes React state. Caller disposes element.
+export async function waitForSkillPicker(page,{query='',targetId=null}={}){
+ const search=page.locator('input[placeholder="输入名称搜索..."]').filter({visible:true});
+ await search.waitFor();const input=await search.elementHandle();let snapshot;
+ try{
+  snapshot=await page.waitForFunction(({input,query,targetId})=>{
+   if(!input.isConnected||input.value!==query)return false;
+   const committedPath=node=>{
+    const host=node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))],pending=[host,host?.alternate].filter(Boolean).map(fiber=>[fiber]),seen=new Set();
+    while(pending.length){
+     const chain=pending.shift(),fiber=chain.at(-1);if(seen.has(fiber))continue;seen.add(fiber);
+     if(fiber.tag===3){if(fiber.stateNode.current===fiber)return chain;continue;}
+     for(const parent of [fiber.return,fiber.return?.alternate]){
+      if(!parent)continue;let child=parent.child;while(child&&child!==fiber)child=child.sibling;
+      if(child===fiber)pending.push([...chain,parent]);
+     }
+    }
+    return null;
+   };
+   const inputPath=committedPath(input),picker=inputPath?.find(fiber=>fiber.type?.name==='HAt');
+   if(!picker)return false;
+   const props=picker.memoizedProps,hostProps=input[Object.keys(input).find(key=>key.startsWith('__reactProps$'))];
+   if(!props.open||props.loading!==false||hostProps?.value!==query)return false;
+   const skills=props.skills.map(skill=>({id:skill.id,name:skill.name,displayName:skill.displayName,description:skill.description,source:skill.source,title:skill.displayName?.trim()||skill.name}));
+   const keyword=query.trim().toLocaleLowerCase(),expected=skills.filter(skill=>!keyword||[skill.name,skill.displayName].filter(Boolean).some(value=>value.toLocaleLowerCase().includes(keyword)));
+   const list=input.parentElement.nextElementSibling;
+   const elements=[...list.querySelectorAll('button')].filter(node=>node.querySelector('span.truncate')&&node.getClientRects().length&&getComputedStyle(node).visibility!=='hidden');
+   const items=elements.map(node=>{
+    const chain=committedPath(node),owner=chain?.indexOf(picker),key=owner>=0?chain.slice(0,owner).find(fiber=>expected.some(skill=>skill.id===fiber.key))?.key:null;
+    return {id:key,title:node.querySelector('span.truncate').textContent.trim(),role:node.getAttribute('role'),checked:node.getAttribute('aria-checked'),disabled:node.getAttribute('aria-disabled')==='true'};
+   });
+   if(items.length!==expected.length||new Set(items.map(item=>item.id)).size!==items.length)return false;
+   if(items.some((item,index)=>{
+    const skill=expected[index],command=skill.source==='command';
+    return item.id!==skill.id||item.title!==skill.title||item.role!==(command?null:'checkbox')||item.checked!==(command?null:String((props.selectedNames||[]).includes(skill.name)));
+   }))return false;
+   const empty=expected.length===0&&list.textContent.trim()==='未加载skills。';
+   if(!expected.length&&!empty)return false;
+   return {query,loading:false,skills,expectedIds:expected.map(skill=>skill.id),items,empty,element:targetId?elements[items.findIndex(item=>item.id===targetId)]||null:null};
+  },{input,query,targetId},{timeout:15000});
+  const state=await snapshot.evaluate(({element,...state})=>state);
+  if(!targetId)return {...state,element:null};
+  const handle=await snapshot.getProperty('element'),element=handle.asElement();
+  if(!element){await handle.dispose();throw blocked('完整技能候选已就绪，但未找到本轮目标ID：'+targetId);}
+  return {...state,element};
+ }finally{await snapshot?.dispose();await input.dispose();}
+}
+
 export async function settleSkillReload(page,{waitForPrompt=false}={}){
  const modal=page.getByRole('dialog').filter({visible:true}).filter({hasText:'配置已更新，需要重新加载引擎'});
  // Removing a skill returns before the renderer receives its reload notice.

@@ -40,7 +40,7 @@ const notes={
   26:'00:55正式执行FAIL（10/11）：原生目录创建链路通过，解析无Wiki产物；产品日志确认文档解析运行时无法启动（0xc0000135）。已补明确阻塞诊断、终态与产物区分及本轮运行时.env清理，尚未复测；解析、引用及强停待验收。'
 };
 const interfaceDefinitions=[
- {title:'工作空间01-选择默认工作空间',category:'工作空间',button:'选择默认工作空间',kind:'interaction-home-workspace',steps:['选择默认工作空间','侧栏新建任务','发送并建立默认空间Session','默认空间侧栏展示本轮标题'],note:'选择默认空间并从侧栏新建任务，真实发送原表问题；核对本轮Session目录和实际标题在默认空间侧栏展示，不改写标题制造结果。'},
+ {title:'工作空间01-选择默认工作空间',category:'工作空间',button:'选择默认工作空间',kind:'interaction-home-workspace',steps:['选择默认工作空间','侧栏新建任务','发送并建立默认空间Session','最近任务展示本轮默认空间Session标题'],note:'选择默认空间并从侧栏新建任务，真实发送原表问题，核对本轮Session目录及产品自动标题。当前版本默认空间不在工作空间区单列，其Session在最近任务展示；只读组件props绑定真实workspaceId/sessionId，再核对DOM可见标题，不仅按同名字符串定位、不改标题或组件状态。原表独立空间行位置按当前安装版契约优化，历史REVIEW保留。'},
  {title:'工作空间02-选择新建工作空间',category:'工作空间',button:'新建工作空间',kind:'interaction-home-workspace',steps:['默认存储空间真实创建','输入区与侧栏展示新空间'],note:'通过产品默认存储入口创建本轮唯一空间，核对真实注册、目录、输入区及侧栏名称；不发模型消息，结束后仅清理本轮注册。'},
  {title:'工作空间03-选择当前工作空间',category:'工作空间',button:'选择本地工作空间',kind:'interaction-home-workspace',steps:['原生文件夹选择及空间注册','输入区与侧栏展示本地空间'],note:'通过产品入口和同客户端PID的Win32控件选择本轮目录，核对注册路径、输入区及侧栏名称；不发模型消息。'},
  {title:'工作空间-引用工作空间',category:'工作空间',button:'引用工作空间',kind:'interaction-home-workspace',steps:['已有工作空间列表与选择','输入区与侧栏展示引用空间'],note:'通过工作空间选择器发现并选择已有空间，核对输入区及侧栏真实名称，收尾恢复原空间；不发送模型消息或删除已有空间。'},

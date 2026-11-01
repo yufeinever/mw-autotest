@@ -102,6 +102,25 @@ export async function readWorkspaceSidebar(page){
  }));
 }
 
+// The current client renders default-workspace sessions in Recent Tasks. Read
+// the row owner's props only to bind its visible title to the real identities;
+// never invoke component callbacks or write renderer state.
+export async function waitForRecentWorkspaceSession(page,{workspaceId,sessionId,title}){
+ const handle=await page.waitForFunction(expected=>{
+  const matches=[...document.querySelectorAll('div.group\\/recent-task')].flatMap(row=>{
+   if(!row.getClientRects().length||getComputedStyle(row).visibility==='hidden')return [];
+   const host=row[Object.keys(row).find(key=>key.startsWith('__reactFiber$'))];
+   const owner=host?.return,props=owner?.memoizedProps;
+   if(host?.type!=='div'||host.stateNode!==row||owner?.key!==expected.sessionId||props?.workspaceId!==expected.workspaceId||props.session?.id!==expected.sessionId)return [];
+   const visibleTitle=[...row.querySelectorAll('span')].find(span=>span.getClientRects().length&&getComputedStyle(span).visibility!=='hidden'&&span.textContent.trim()===expected.title);
+   return [{workspaceId:props.workspaceId,sessionId:props.session.id,apiTitle:expected.title,componentTitle:props.session.title,visibleTitle:visibleTitle?.textContent.trim()||null}];
+  });
+  return matches.length===1&&matches[0].visibleTitle===expected.title?matches[0]:null;
+ },{workspaceId,sessionId,title:title.trim()});
+ try{return await handle.jsonValue();}
+ finally{await handle.dispose();}
+}
+
 export async function prepareWorkspaceResources(page,{target=null,existingTargetId,beforeSessionIds}={}){
  const {items}=await workspaces(page),sidebar=await readWorkspaceSidebar(page);
  const storage=await page.evaluate(()=>Object.fromEntries(['openwork.react.workspaceOrder','openwork.react.activeWorkspace','openwork.react.newTaskDraftWorkspace','openwork.react.newTaskHomepageWorkspace'].map(key=>[key,localStorage.getItem(key)])));

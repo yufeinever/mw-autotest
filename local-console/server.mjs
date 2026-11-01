@@ -182,7 +182,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(isRootSessionJob(job))await settleRoots(target,allowAbort);
    await releaseNativeFolder(target);
    await releaseKnowledge(target);
-   await releaseExpert(target);
+   await releaseExpert(target,{checkpoint:()=>writeJob(job)});
    await releaseTool(target);
    await releaseSkill(target);
    await composerReleaser(target,{allowAbort,checkpoint:()=>writeJob(job)});
@@ -281,10 +281,10 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(rootsReady){
     await step('关闭本轮原生文件夹窗口',()=>releaseNativeFolder(job));
     await step('核对并移除本轮知识库注册',()=>releaseKnowledge(job));
-    await step('恢复本轮专家资源与历史',()=>releaseExpert(job));
+    const expertsReady=await step('恢复本轮专家资源与历史',()=>releaseExpert(job,{checkpoint:()=>writeJob(job)}));
     await step('恢复本轮工具配置',()=>releaseTool(job));
     await step('移除本轮新增技能',()=>releaseSkill(job));
-    await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+    if(expertsReady)await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
     }
     await step('保存录像并断开录制连接',()=>finishRecording(job,job.stopRequested?'stopped':'completed'));
     if(job.stopRequested)confirmed=await stopClient();
@@ -383,6 +383,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     if(action==='checkpoint'){
      if(scheduler.renderer(job.config.cdpPort).owner!==id)throw Error('没有页面操作权，不得登记草稿');
+     if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');}
      if(body.rootSessionVersion===1){
       if(job.recordingResources)throw Error('SOP录制生命周期不使用多根任务集合');
       if(job.sessionId||job.submissionPending||job.rootSessionVersion)throw Error('只能在首个根任务提交前开启集合模式');
@@ -422,7 +423,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       if(owned===null){if(isRootSessionJob(job))throw Error('集合共享资源只能在全部根收尾后由控制台释放');delete job.composerResources;}
       else{
        if(typeof owned.url!=='string'||!isClientPageUrl(owned.url)||!Array.isArray(owned.attachments)||!Array.isArray(owned.queueTexts)||typeof owned.restorePermission!=='boolean'||[...owned.attachments,...owned.queueTexts].some(value=>typeof value!=='string'||!value))throw Error('输入区资源归属格式无效');
-       if(owned.url!==job.sessionUrl&&owned.url!==job.ownedDraft?.url&&owned.url!==scheduler.renderer(job.config.cdpPort).expectedUrl&&owned.url!==job.composerResources?.url&&!(isRootSessionJob(job)&&isRootOwnedPage(job,owned.url)))throw Error('输入区资源页面归属不匹配');
+       if(owned.url!==job.sessionUrl&&owned.url!==job.ownedDraft?.url&&owned.url!==body.draft?.url&&owned.url!==scheduler.renderer(job.config.cdpPort).expectedUrl&&owned.url!==job.composerResources?.url&&!(isRootSessionJob(job)&&isRootOwnedPage(job,owned.url)))throw Error('输入区资源页面归属不匹配');
        if(owned.taskPin){
         const pin=owned.taskPin;
         if(typeof pin.title!=='string'||!pin.title||typeof pin.baseline!=='boolean')throw Error('本轮置顶恢复归属无效');
@@ -552,7 +553,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       }
      }
      if(body.draft===null)delete job.ownedDraft;
-     else if(body.draft){const d=body.draft;if(typeof d.url!=='string'||!isClientPageUrl(d.url)||typeof d.text!=='string'||!Array.isArray(d.skills)||!Array.isArray(d.selection))throw Error('草稿归属格式无效');job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
+     else if(body.draft){const d=body.draft;job.ownedDraft=d;await fs.writeFile(path.join(dataDir,'jobs',job.id,'草稿归属.json'),JSON.stringify({at:new Date().toISOString(),jobId:job.id,draft:d},null,2));}
      if(body.submitting){if(isRootSessionJob(job))throw Error('根任务提交须先登记唯一pending来源');job.submissionPending=true;}
      if(body.nextSession===true){
       if(isRootSessionJob(job))throw Error('活跃根任务不走串行阶段newSession');

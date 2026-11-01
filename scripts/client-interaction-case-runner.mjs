@@ -77,7 +77,7 @@ export async function runInteractionCase(number){
  const started=new Date(),dir=await createRunDirectory(path.join(root,'runs'),definition.label,started);
  const checks=[],events=[],outputs=[],sessions=[],remaining=new Set(definition.steps),recorder=createEvidenceRecorder(dir);
  const log=(step,detail='')=>{events.push({time:new Date().toISOString(),step,detail});console.log('['+beijingLogTime()+'] '+step+' '+detail);};
- const control=createTaskControl({log});let browser,page,owned,resources,sessionId,data,trace,rootGroup,recordingResources=null,submissionPending=false,result='BLOCKED',errorText='';
+ const control=createTaskControl({log});let browser,page,owned,resources,sessionId,data,trace,rootGroup,recordingResources=null,expertResources=null,submissionPending=false,result='BLOCKED',errorText='';
  const assert=(name,pass,actual)=>{checks.push({name,pass:Boolean(pass),...(actual===undefined?{}:{actual})});if(!pass)throw Error('断言失败：'+name);};
  const capture=(step,key)=>{
   key??=rootGroup?.activeControl?.rootKey||rootGroup?.pending?.key||rootGroup?.currentRootKey;
@@ -89,6 +89,11 @@ export async function runInteractionCase(number){
  };
  const createRootGroup=()=>{if(rootGroup)throw Error('本用例已建立根任务组');rootGroup=new RootSessionGroup({control,page,config,dir,capture,log});return rootGroup;};
  const checkpointResources=()=>control.call('checkpoint',{composerResources:resources});
+ const checkpointExpertResources=async next=>{
+  if(next)expertResources=next;
+  await control.call('checkpoint',{expertResources:next});
+  if(next===null)expertResources=null;
+ };
  const checkpointRecordingResources=async next=>{recordingResources=next;await control.call('checkpoint',{recordingResources:next});};
  const settleOwnedRecording=async()=>{
   if(!recordingResources)return;
@@ -97,7 +102,11 @@ export async function runInteractionCase(number){
   await checkpointRecordingResources(null);
  };
  const replaceClient=async next=>{const previous=browser;browser=next.browser;page=next.page;page.setDefaultTimeout(10000);await previous.close();};
- const checkpointPage=async(draft)=>{owned=draft||await snapshotDraft(page);await control.checkpointDraft(owned);resources.url=owned.url;await checkpointResources();};
+ const checkpointPage=async(draft,extra={})=>{
+  owned=draft||await snapshotDraft(page);resources.url=owned.url;
+  const {editor,...saved}=owned;
+  await control.call('checkpoint',{draft:saved,composerResources:resources,...extra});
+ };
  const recordPreparedSession=async session=>{
   const archive='准备会话-'+String(sessions.length+1).padStart(2,'0'),target=path.join(dir,archive);await fs.mkdir(target);
   const snapshot=await saveRunTrace({page,sessionId:session.id,number,dir:target,checks,log});
@@ -338,7 +347,7 @@ export async function runInteractionCase(number){
     await send('请直接完成以下虚构任务：起草星桥科技综合管理部关于办公设备盘点的通知，范围为电脑、显示器、打印机。各部门在2026年11月6日17时前向赵宁提交资产编号、使用人和设备状态。只输出通知，不发出、不改文件。');
     const output=finalAssistantText(data);assert('公文正文符合素材及通知用途',['通知','电脑','显示器','打印机','赵宁'].every(word=>output.includes(word))&&/11.{0,3}6/.test(output));remaining.delete('公文任务与实际Skill调用');
    }else if(number>=32){
-    await (number>=202?runUpdateSteps:number>=200?runFeedbackSteps:number>=199?runHelpFeedbackSteps:number>=192?runSecuritySettingsSteps:number>=187?runConversationSettingsSteps:number>=182?runSystemMemorySteps:number>=177?runSystemSettingsSteps:number>=172?runAccountProfileSteps:number>=167?runAccountNavigationSteps:number>=165?runAccountUsageSteps:number>=162?runEfficiencySteps:number>=152?runKanbanOperationsSteps:number>=147?runKanbanTaskSteps:number>=145?runKanbanSteps:number>=114?runKnowledgeManagementSteps:number>=104?runCaseLibrarySteps:number>=97?runAutomationSteps:number>=92?runExpertModuleSteps:number===91?runSkillManagementSteps:number>=87?runRecordingWorkflowSteps:number>=85?runGuiRecordingSteps:number>=82?runStaffMarketSteps:number>=80?runRpaPreconditions:number>=77?runWorkspaceManagementSteps:number>=72?runBrowserWorkspaceSteps:number>=67?runMindmapTodoSteps:number>=62?runOfficeFileSteps:number>=57?runFilePreviewSteps:number>=52?runQueueWorkbenchSteps:number>=47?runMessageActionsSteps:number>=42?runLoadingUsageSteps:number>=37?runMessageDisplaySteps:runTaskLifecycleSteps)({number,definition,page,config,control,dir,resources,remaining,outputs,checks,assert,capture,jobId:process.env.MW_CONSOLE_JOB_ID,getRecordingResources:()=>recordingResources,checkpointRecordingResources,settleOwnedRecording,createRootGroup,captureElement:(element,step)=>control.withUI(page,'EVIDENCE',()=>recorder.captureElement(element,step)),replaceClient,captureBrowser:(target,step)=>control.withUI(page,'EVIDENCE',()=>recorder.capture(target,step)),log,send,sendKanbanTask,adoptExternalSession,fill,markDraftSent,waitBusy,newSession,recordPreparedSession,checkpointResources,checkpointPage,getData:()=>data,getSessionId:()=>sessionId,saveTrace:async()=>{
+    await (number>=202?runUpdateSteps:number>=200?runFeedbackSteps:number>=199?runHelpFeedbackSteps:number>=192?runSecuritySettingsSteps:number>=187?runConversationSettingsSteps:number>=182?runSystemMemorySteps:number>=177?runSystemSettingsSteps:number>=172?runAccountProfileSteps:number>=167?runAccountNavigationSteps:number>=165?runAccountUsageSteps:number>=162?runEfficiencySteps:number>=152?runKanbanOperationsSteps:number>=147?runKanbanTaskSteps:number>=145?runKanbanSteps:number>=114?runKnowledgeManagementSteps:number>=104?runCaseLibrarySteps:number>=97?runAutomationSteps:number>=92?runExpertModuleSteps:number===91?runSkillManagementSteps:number>=87?runRecordingWorkflowSteps:number>=85?runGuiRecordingSteps:number>=82?runStaffMarketSteps:number>=80?runRpaPreconditions:number>=77?runWorkspaceManagementSteps:number>=72?runBrowserWorkspaceSteps:number>=67?runMindmapTodoSteps:number>=62?runOfficeFileSteps:number>=57?runFilePreviewSteps:number>=52?runQueueWorkbenchSteps:number>=47?runMessageActionsSteps:number>=42?runLoadingUsageSteps:number>=37?runMessageDisplaySteps:runTaskLifecycleSteps)({number,definition,page,config,control,dir,resources,remaining,outputs,checks,assert,capture,jobId:process.env.MW_CONSOLE_JOB_ID,getRecordingResources:()=>recordingResources,checkpointRecordingResources,checkpointExpertResources,settleOwnedRecording,createRootGroup,captureElement:(element,step)=>control.withUI(page,'EVIDENCE',()=>recorder.captureElement(element,step)),replaceClient,captureBrowser:(target,step)=>control.withUI(page,'EVIDENCE',()=>recorder.capture(target,step)),log,send,sendKanbanTask,adoptExternalSession,fill,markDraftSent,waitBusy,newSession,recordPreparedSession,checkpointResources,checkpointPage,getData:()=>data,getSessionId:()=>sessionId,getOwnedDraft:()=>owned,saveTrace:async()=>{
      trace=await saveRunTrace({page,sessionId,number,dir,checks,log,readLog:children=>control.readLog(children)});return trace;
     }});
    }
@@ -358,6 +367,9 @@ export async function runInteractionCase(number){
    catch(error){log('根任务组交接未完成',error.message);errorText+=(errorText?'；':'')+error.message;result='BLOCKED';}
    // Shared resources and all active roots remain registered. Only the server's
    // group barrier may settle them and hand the client to the next case.
+  }else if(expertResources){
+   const reason='专家安装、召唤或历史收尾尚未确认，保留模块与空间交控制台恢复';
+   log('专家资源交接未完成',reason);errorText+=(errorText?'；':'')+reason;result='BLOCKED';
   }else if(page&&resources){try{
    await settleOwnedRecording();
    if(resources.clientRestart){const next=await resumeClientRestart(resources,config,{checkpoint:checkpointResources});await replaceClient(next);}
