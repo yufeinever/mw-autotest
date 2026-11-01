@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "7b029057da32c0402f1c7a78bf5ba9a7cd4ffb2c7c0657487c3884d0fdd3ed14",
+  "workbookSha256": "0f610b51c2a8cf8ea7012baccc0915bfbfa4963f7db32371be48e9a9758b24c6",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -770,7 +770,7 @@
       },
       "script": "scripts/run-client-case023.mjs",
       "coverage": "部分覆盖，待复测",
-      "execution": "FAIL",
+      "execution": "BLOCKED",
       "evidence": [
         "runs/1031-2320-技能-第01次/执行报告.md",
         "runs/1031-2320-技能-第01次/执行结果.json",
@@ -791,9 +791,17 @@
         "runs/1102-0441-技能-第01次/执行结果.json",
         "runs/1102-0441-技能-第01次/执行日志.txt",
         "tmp/home-round6-final-20261102.json",
-        "tmp/home-round6-original-hashes-20261102.json"
+        "tmp/home-round6-original-hashes-20261102.json",
+        "runs/1102-0457-技能-第01次/执行报告.md",
+        "runs/1102-0457-技能-第01次/执行结果.json",
+        "runs/1102-0457-技能-第01次/执行日志.txt",
+        "tmp/home-round7-combined-final-20261102.json",
+        "tmp/home-round7-first-two-final-20261102.json",
+        "tmp/home-round7-continuation-final-20261102.json",
+        "tmp/home-round7-first-two-original-hashes-20261102.json",
+        "tmp/home-round7-continuation-original-hashes-20261102.json"
       ],
-      "notes": "04:41正式FAIL13/13仅已记录断言：搜索、悬停、滚动、chip选中、真实空白关闭、正常删除和取消恢复通过；进入市场后等待旧专家路由超时，市场安装/本轮新增卸载未验，原表知识库样例命中缺口保留。属于脚本路由契约过时，不以13/13宣称完整业务通过。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
+      "notes": "本轮正式BLOCKED13/13仅已记录断言：搜索候选、清空、滚动、悬停、技能chip选中/删除和取消恢复已观察；随后输入区资源页面归属不匹配，市场安装/新增卸载未完成。后续正常恢复仅证明收尾，不改原BLOCKED；原样例命中缺口保留。",
       "executionHistory": [
         {
           "batchId": "fea22062-f01b-4f2b-a1e1-b6fc76a21c2f",
@@ -866,6 +874,18 @@
             "total": 13
           },
           "report": "runs/1102-0441-技能-第01次/执行报告.md"
+        },
+        {
+          "batchId": "1ae9d52a-5424-4376-b684-7264c5d69d1a",
+          "jobId": "28162e30-27e9-4470-b254-d1bbc9779bb4",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T20:57:50.195Z",
+          "endedAt": "2026-11-01T20:58:05.037Z",
+          "assertions": {
+            "passed": 13,
+            "total": 13
+          },
+          "report": "runs/1102-0457-技能-第01次/执行报告.md"
         }
       ],
       "optimized": {
@@ -3900,15 +3920,23 @@
       },
       "script": "scripts/run-client-case090.mjs",
       "coverage": "部分覆盖，待复测",
-      "execution": "FAIL",
+      "execution": "BLOCKED",
       "evidence": [
         "runs/1102-0442-桌面录制技能复用-第01次/执行报告.md",
         "runs/1102-0442-桌面录制技能复用-第01次/执行结果.json",
         "runs/1102-0442-桌面录制技能复用-第01次/执行日志.txt",
         "tmp/home-round6-final-20261102.json",
-        "tmp/home-round6-original-hashes-20261102.json"
+        "tmp/home-round6-original-hashes-20261102.json",
+        "runs/1102-0458-桌面录制技能复用-第01次/执行报告.md",
+        "runs/1102-0458-桌面录制技能复用-第01次/执行结果.json",
+        "runs/1102-0458-桌面录制技能复用-第01次/执行日志.txt",
+        "tmp/home-round7-combined-final-20261102.json",
+        "tmp/home-round7-first-two-final-20261102.json",
+        "tmp/home-round7-continuation-final-20261102.json",
+        "tmp/home-round7-first-two-original-hashes-20261102.json",
+        "tmp/home-round7-continuation-original-hashes-20261102.json"
       ],
-      "notes": "04:42首次正式FAIL2/2仅为录制专家真实安装/召唤及收尾；IPC返回未透出packagePath，框架将undefined传入path导致失败。未创建Session、未启录，独立真实录制fixture、生成、新Session技能选择、桌面回放及计算器业务/Skill Trace均未执行。自动化测试录像不是产品录制功能证据。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
+      "notes": "本轮正式BLOCKED1/1：真实市场安装或复用并召唤录制专家已观察；登记草稿缺页面操作权，SOP所属会话/子任务及专家交接未结束而保留归属，后续公共恢复完成收尾。真实录制fixture、生成、新Session技能选择、计算器回放及实际Skill调用未验，测试录像不代替产品录制证据。",
       "optimized": {
         "module": "流程录制专家/桌面技能复用",
         "goal": "在独立新Session复用真实桌面计算器录制Skill并观察真实应用结果。",
@@ -3929,6 +3957,18 @@
             "total": 2
           },
           "report": "runs/1102-0442-桌面录制技能复用-第01次/执行报告.md"
+        },
+        {
+          "batchId": "1ae9d52a-5424-4376-b684-7264c5d69d1a",
+          "jobId": "d5ac4ce8-8022-4993-97fb-e7f52d7777da",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T20:58:07.523Z",
+          "endedAt": "2026-11-01T20:58:54.720Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1102-0458-桌面录制技能复用-第01次/执行报告.md"
         }
       ]
     },
@@ -5064,15 +5104,24 @@
       },
       "script": "scripts/run-client-case111.mjs",
       "coverage": "部分覆盖，待复测",
-      "execution": "FAIL",
+      "execution": "BLOCKED",
       "evidence": [
         "runs/1102-0443-做同款三专家协作-第01次/执行报告.md",
         "runs/1102-0443-做同款三专家协作-第01次/执行结果.json",
         "runs/1102-0443-做同款三专家协作-第01次/执行日志.txt",
         "tmp/home-round6-final-20261102.json",
-        "tmp/home-round6-original-hashes-20261102.json"
+        "tmp/home-round6-original-hashes-20261102.json",
+        "runs/1102-0514-做同款三专家协作-第01次/执行报告.md",
+        "runs/1102-0514-做同款三专家协作-第01次/执行结果.json",
+        "runs/1102-0514-做同款三专家协作-第01次/执行日志.txt",
+        "tmp/home-round7-combined-final-20261102.json",
+        "tmp/home-round7-first-two-final-20261102.json",
+        "tmp/home-round7-continuation-final-20261102.json",
+        "tmp/home-round7-first-two-original-hashes-20261102.json",
+        "tmp/home-round7-continuation-original-hashes-20261102.json",
+        "runs/1102-0514-做同款三专家协作-第01次/后续事实核对/全部实际子会话收尾状态.json"
       ],
-      "notes": "04:43首次正式FAIL3项中2项通过：官方案例完整基线及真实做同款预填通过，编辑成三专家后的尾部比较一边归一一边未归一导致断言失败。未发模型，三实际子Session、协作报告及产物未执行；不能据比较差异判产品丢失素材，也不改写原FAIL。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
+      "notes": "本轮正式BLOCKED2/2：完整做同款预填及三专家编辑保留业务素材通过；原600秒观察到限。前两位专家完成、第三位仅运行约32秒后被收尾中止，三位完整协作及最终业务报告未验。主及三个实际子Session后续idle仅为收尾补证。新20分钟预算未复验，不改原报告。",
       "optimized": {
         "module": "案例库/做同款修改为三专家",
         "goal": "验证修改真实预填后按3位专家协作完成原医疗健康业务，保留原机构、素材及约束。",
@@ -5093,6 +5142,18 @@
             "total": 3
           },
           "report": "runs/1102-0443-做同款三专家协作-第01次/执行报告.md"
+        },
+        {
+          "batchId": "2b80ce04-282b-4e0c-b285-4cfe3d653525",
+          "jobId": "1db193a4-9a9c-4051-af20-0d8207a14323",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T21:14:43.369Z",
+          "endedAt": "2026-11-01T21:25:13.655Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1102-0514-做同款三专家协作-第01次/执行报告.md"
         }
       ]
     },
@@ -5780,9 +5841,17 @@
         "runs/1102-0443-源文档六类解析状态-第01次/执行结果.json",
         "runs/1102-0443-源文档六类解析状态-第01次/执行日志.txt",
         "tmp/home-round6-final-20261102.json",
-        "tmp/home-round6-original-hashes-20261102.json"
+        "tmp/home-round6-original-hashes-20261102.json",
+        "runs/1102-0525-源文档六类解析状态-第01次/执行报告.md",
+        "runs/1102-0525-源文档六类解析状态-第01次/执行结果.json",
+        "runs/1102-0525-源文档六类解析状态-第01次/执行日志.txt",
+        "tmp/home-round7-combined-final-20261102.json",
+        "tmp/home-round7-first-two-final-20261102.json",
+        "tmp/home-round7-continuation-final-20261102.json",
+        "tmp/home-round7-first-two-original-hashes-20261102.json",
+        "tmp/home-round7-continuation-original-hashes-20261102.json"
       ],
-      "notes": "04:43首次正式REVIEW50/50仅已记录断言：本条600秒观察预算下真实解析completed，实际Wiki事实和源文件展示、本地更新待更新等分支有证据；六种原表状态未触发fail。既有图标断言只验证svg/img存在，没有记录完整路径绑定的MD/DOCX/BIN/目录几何身份，类型正确仍未验。不能按50/50或截图计全面验收；本轮源、注册和资源收尾完成，静态图标契约不冒充实机。录像COMPLETED，最终FINISHED、hold=false。",
+      "notes": "本轮正式REVIEW78/78仅已记录断言：真实解析终态、Wiki合成事实、源文件展示以及unparsed/unable_parse/updating/queued/success/pending_update六类状态有观察；原表仍缺实际fail。MD/Word/未知文件图标已按完整路径和SVG身份留证，目录类型仍待验。故意损坏DOCX仍success，不能按文件名推定fail或伪造状态。",
       "optimized": {
         "module": "知识中心/源文档",
         "goal": "验证源文件列表展示完整",
@@ -5803,6 +5872,18 @@
             "total": 50
           },
           "report": "runs/1102-0443-源文档六类解析状态-第01次/执行报告.md"
+        },
+        {
+          "batchId": "2b80ce04-282b-4e0c-b285-4cfe3d653525",
+          "jobId": "125ad456-e7da-474f-b077-b3bed8c603b0",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T21:25:20.673Z",
+          "endedAt": "2026-11-01T21:33:32.626Z",
+          "assertions": {
+            "passed": 78,
+            "total": 78
+          },
+          "report": "runs/1102-0525-源文档六类解析状态-第01次/执行报告.md"
         }
       ]
     },
@@ -6093,10 +6174,20 @@
         "总体预期结果": "全量更新：点击全量更新即更新整个源文件夹，生成相应wiki与知识卡片；支持为更新文件格式为doc/docx ppt/pptx xls/xlsx pdf 格式文件"
       },
       "script": "scripts/run-client-case130.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01依据123真实解析诊断document_parser_runtime_unavailable（0xc0000135）暂缓，本轮未启动、不生成正式BLOCKED。DOC/DOCX/PPT/PPTX/XLS/XLSX/PDF/MD各自解析正文、Wiki和卡片业务尚未验证。 运行时恢复后独立验证，不用127～129源管理通过代替解析结果。",
+      "coverage": "已实机尝试，解析观察到限待复验",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1102-0533-八格式全量解析与知识产物-第01次/执行报告.md",
+        "runs/1102-0533-八格式全量解析与知识产物-第01次/执行结果.json",
+        "runs/1102-0533-八格式全量解析与知识产物-第01次/执行日志.txt",
+        "tmp/home-round7-combined-final-20261102.json",
+        "tmp/home-round7-first-two-final-20261102.json",
+        "tmp/home-round7-continuation-final-20261102.json",
+        "tmp/home-round7-first-two-original-hashes-20261102.json",
+        "tmp/home-round7-continuation-original-hashes-20261102.json",
+        "runs/1102-0533-八格式全量解析与知识产物-第01次/后续事实核对/实际解析与收尾状态.json"
+      ],
+      "notes": "本轮正式BLOCKED6/6：独立真实新库、目录/源关联、默认计划和八格式全量解析请求已验证；原9分钟观察到限，逐格式成功/raw事实、全部Wiki来源及知识卡片验收未到达。产品后续解析及公共收尾另存后续事实核对，不改原BLOCKED或冒充脚本已完成后续断言。新40分钟预算尚未复验。",
       "optimized": {
         "module": "知识中心/源文档与生成",
         "goal": "验证是否可更新全量源文件，解析是否成功",
@@ -6104,7 +6195,21 @@
         "operations": "1.独立默认UI创建本轮库，复制既有真实DOC/DOCX/PPT/PPTX/XLS/XLSX/PDF/MD合成材料到本轮源根，核对清单哈希。\n2.各格式加不同前缀避免raw同名冲突，真实刷新并展示八份源。\n3.真实点击全量解析及确认，记录请求、本轮进度和终态，按definition最长观察2400秒（40分钟），新预算待实机复验，原9分钟到限BLOCKED保留，录像上限独立。\n4.逐文件核对真实success、独立raw解析正文核心事实。\n5.核对实际wiki/sources来源覆盖全部输入、真实知识卡片内容及关联，打开实际卡片验证UI。\n6.核对源字节未变，统一归属收尾；解析active/pause不得提前放行下一条。",
         "expected": "全量更新：点击全量更新即更新整个源文件夹，生成相应wiki与知识卡片；支持为更新文件格式为doc/docx ppt/pptx xls/xlsx pdf 格式文件",
         "assertions": "真实八格式样本及哈希；真实全量解析请求及本轮终态；所有源success、各自raw事实；实际Wiki资料页及全部来源；卡片实际内容、Wiki关联及可见UI；原材料保护。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "2b80ce04-282b-4e0c-b285-4cfe3d653525",
+          "jobId": "431dfae6-2f55-4ab7-b8d6-b28e068fb7ab",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T21:33:35.391Z",
+          "endedAt": "2026-11-01T21:42:50.409Z",
+          "assertions": {
+            "passed": 6,
+            "total": 6
+          },
+          "report": "runs/1102-0533-八格式全量解析与知识产物-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 132,
@@ -10462,7 +10567,7 @@
       "notes": ""
     }
   ],
-  "updatedAt": "2026-11-02T04:53:50+08:00",
+  "updatedAt": "2026-11-02T05:59:44+08:00",
   "workbookUpdates": [
     {
       "at": "2026-11-01T03:55:37.135Z",
