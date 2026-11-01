@@ -8,8 +8,8 @@ export function containsComposerText(actual,expected){
  return normalize(actual).includes(normalize(expected));
 }
 export const normalizeComposerText=s=>s.replace(/\r\n/g,'\n').replace(/\n{2,}/g,'\n').trim();
-export async function readComposerState(editor){
- return editor.evaluate(element=>{
+export async function readComposerState(editor,{trim=true}={}){
+ return editor.evaluate((element,trim)=>{
   // Read semantic editor content. Skill icons and remove buttons change on
   // hover; they are presentation, not prompt text or skill identity.
   const walk=node=>{
@@ -20,15 +20,18 @@ export async function readComposerState(editor){
    const text=[...node.childNodes].map(walk).join('');
    return /^(P|DIV|LI)$/.test(node.tagName)?text+'\n':text;
   };
-  return {text:[...element.childNodes].map(walk).join('').replace(/\r\n/g,'\n').replace(/\n{2,}/g,'\n').trim(),skills:[...element.querySelectorAll('[data-skill-remove]')].map(e=>e.getAttribute('data-skill-remove'))};
- });
+  const text=[...element.childNodes].map(walk).join('').replace(/\r\n/g,'\n').replace(/\n{2,}/g,'\n');
+  return {text:trim?text.trim():text,skills:[...element.querySelectorAll('[data-skill-remove]')].map(e=>e.getAttribute('data-skill-remove'))};
+ },trim);
 }
 export async function appendComposerText(editor,text,{onDraft=async()=>{},stepInterval=0.5}={}){
  if(typeof text!=='string'||!text.trim())throw Error('补充材料不能为空');
  await editor.waitFor({state:'visible',timeout:10000});
  if(await editor.count()!==1)throw Error('没有唯一的任务输入框');
  const page=editor.page(),url=page.url();
- const before=await readComposerState(editor);
+ // Keep the product's actual trailing space after a mention chip. Trimming it
+ // before appending would turn that known boundary into an unexpected change.
+ const before=await readComposerState(editor,{trim:false});
  // Record the intended state BEFORE mutation, including when insertText or
  // validation throws. Never claim arbitrary observed text after an error.
  await onDraft({text:normalizeComposerText(before.text+'\n\n'+text),skills:before.skills});
@@ -38,7 +41,7 @@ export async function appendComposerText(editor,text,{onDraft=async()=>{},stepIn
   const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
  });
  await waitStep(page,{stepInterval});
- await page.keyboard.insertText((before.text?'\n\n':'')+text);
+ await page.keyboard.insertText((normalizeComposerText(before.text)?'\n\n':'')+text);
  if(page.url()!==url)throw Error('补充材料期间页面发生切换，未点击发送');
  const after=await readComposerState(editor);
  if(!containsComposerText(after.text,text))throw Error('输入框没有保留完整补充材料，未点击发送');

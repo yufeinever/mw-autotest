@@ -60,8 +60,8 @@ export async function runCaseLibraryTaskSteps(context,items){
  const {number,page,resources,dir,remaining,assert,capture,checkpointResources,checkpointPage,send,config,control,getData,getSessionId,outputs,definition}=context;
  const save=(name,value)=>fs.writeFile(path.join(dir,name),JSON.stringify(value,null,2)),finish=step=>remaining.delete(step);
  if(number===112){
-  await save('并发需求冲突.json',{original:'两个案例同时做同款并行且互不干扰',constraint:'当前框架仅串行，前条和收尾完成后才能下一条',result:'REVIEW',implemented:false});
-  throw review('原表112要求同时执行两个案例，与已确认的严格串行约束冲突；保留并发目标，未以串行通过替代，也未启动并发任务');
+  await save('同用例多任务接入缺口.json',{original:'同一用例内两个案例做同款，模型运行时段重叠且互不影响',constraint:'不同用例保持严格串行，当前框架尚未管理同一job的多个活跃Session',result:'BLOCKED',implemented:false,missing:['分别登记两项真实Session、目录及提交归属','单一等待循环按Session处理审批、观察执行重叠及结果','正常与强停须确认本job全部任务终态后再放行下一用例']});
+  throw blocked('本条同用例多任务不与用例间串行冲突；框架多个活跃Session的归属、审批及统一收尾尚未接入，不能以串行完成替代重叠执行');
  }
  if(number===108){
   const before=await readCaseFavorites(page),beforeCount=Object.values(before.value).filter(v=>v?.favorite).length;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import {unzipSync,strFromU8} from 'fflate';
 import {finalAssistantText} from './client-case-runner.mjs';
 import {attachmentRow} from './mobilework-composer-resources.mjs';
-import {taskRow,openTaskMenu,selectWorkbench,previewTaskFile} from './mobilework-task-ui.mjs';
+import {taskRow,openTaskMenu,selectWorkbench,openArtifactMenu,closeArtifactMenu,previewTaskFile} from './mobilework-task-ui.mjs';
 import {uploadTaskAttachment} from './mobilework-attachment-ui.mjs';
 import {inspectExplorer} from './mobilework-explorer.mjs';
 import {snapshotDraft,inspectPageHandoff} from './mobilework-isolation.mjs';
@@ -65,7 +65,8 @@ export async function runTaskLifecycleSteps(context){
   assert('回复保留文件事实并提供异常测试点',['47','43','4','许棠','重复','缺失'].every(word=>output.includes(word))&&/11.{0,3}9|2026-11-09/.test(output));
   const read=toolEvidence.some(item=>item.pathMatches&&item.contentMatches);
   if(!read&&!extracted)throw review('最终回复吻合附件事实，但未取得附件解析文本或完成读取工具输出，不能完整验收文件解析');
-  resources.attachments=[];await checkpointResources();finish('附件发送及内容读取');
+  assert('本Session取得本轮上传材料的实际读取依据',read||extracted,{completedToolRead:read,parsedUserText:extracted});
+  await ui(async()=>{resources.attachments=[];await checkpointResources();});finish('附件发送及内容读取');
  }else if(number===33){
   await send('计算虚构台账的记录总量：甲组18条、乙组27条。回复结果与计算过程，不调用外部服务。');
   const first=getData(),firstUser=first.messages.find(message=>message.info?.role==='user');
@@ -126,7 +127,7 @@ export async function runTaskLifecycleSteps(context){
   await control.release(page,'VERIFYING');finish('删除确认与本轮任务移除');
  }else if(number===35||number===36){
   const sales=number===35,intermediate=sales?'明细.csv':'网页摘录.md',report=sales?'验收销售报告.docx':'网页摘要.docx';
-  const seen={todosDuring:false,intermediateBeforeFinal:false,browser:false};
+  const seen={todosDuring:false,intermediateBeforeFinal:false,browser:false,intermediatePanelOpened:false,intermediateEntryMissing:false};
   const observe=async({states,pending})=>{
    if(pending.length||states[getSessionId()]?.type!=='busy')return;
    const todos=await control.get('/session/'+getSessionId()+'/todo');
@@ -137,8 +138,27 @@ export async function runTaskLifecycleSteps(context){
    if(sales&&!seen.intermediateBeforeFinal){
     const files=await fs.readdir(control.directory);
     if(files.includes(intermediate)&&!files.includes(report)){
-     await ui(()=>previewTaskFile(page,config,intermediate,capture,['甲','乙']));
-     seen.intermediateBeforeFinal=!(await fs.readdir(control.directory)).includes(report);
+     await ui(async()=>{
+      if(!seen.intermediatePanelOpened){await selectWorkbench(page,config,'产物',capture);seen.intermediatePanelOpened=true;}
+      const trigger=page.getByTestId('session-workbench-panel').getByRole('button',{name:'产物',exact:true}).filter({visible:true});
+      let listed=false;
+      if(await trigger.count()){
+       const menu=await openArtifactMenu(page);
+       try{listed=await menu.getByRole('menuitem',{name:intermediate,exact:true}).filter({visible:true}).count()===1;}
+       finally{await closeArtifactMenu(page);}
+      }
+      if(!listed){
+       if(!seen.intermediateEntryMissing){
+        await fs.writeFile(path.join(dir,'中间文件尚未登记预览.json'),JSON.stringify({sessionId:getSessionId(),file:intermediate,diskPresent:true,artifactListed:false,time:new Date().toISOString()},null,2));
+        await capture('中间CSV已落盘但产物尚未登记');seen.intermediateEntryMissing=true;
+        log('中间文件预览待观察','本轮CSV已落盘，但客户端未提供该产物入口，继续处理模型及审批');
+       }
+       return;
+      }
+      if((await control.get('/session/status'))[getSessionId()]?.type!=='busy'||(await fs.readdir(control.directory)).includes(report))return;
+      await previewTaskFile(page,config,intermediate,capture,['甲','乙']);
+      seen.intermediateBeforeFinal=!(await fs.readdir(control.directory)).includes(report);
+     });
     }
    }
   };
@@ -170,7 +190,7 @@ export async function runTaskLifecycleSteps(context){
   await ui(async()=>{await previewTaskFile(page,config,intermediate,capture,sales?['甲','乙']:['baidu.com']);await previewTaskFile(page,config,report,capture,sales?['200','150','350']:[]);await selectWorkbench(page,config,'待办',capture);});
   const todos=await control.get('/session/'+getSessionId()+'/todo');await fs.writeFile(path.join(dir,'执行后待办.json'),JSON.stringify(todos,null,2));
   assert('本任务完成后真实待办全部完成',todos.length>=3&&todos.every(item=>item.status==='completed'));
-  for(const item of todos)assert('待办界面展示本轮节点：'+item.content,await page.getByText(item.content,{exact:true}).count()>0);
+  await ui(async()=>{for(const item of todos)assert('待办界面展示本轮节点：'+item.content,await page.getByText(item.content,{exact:true}).count()>0);});
   if(sales)finish('最终文件与待办查看');else{finish('中间及最终文件预览');if(seen.todosDuring)finish('待办执行前后状态');}
   if(remaining.size)throw review('真实业务及最终产物已检查，但未捕获以下过程分支：'+[...remaining].join('、'));
  }

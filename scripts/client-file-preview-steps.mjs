@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {unzipSync,strFromU8} from 'fflate';
-import {selectWorkbench,previewTaskFile,closeArtifactMenu,restoreWorkbenchLayout,readPreviewZoom} from './mobilework-task-ui.mjs';
+import {selectWorkbench,previewTaskFile,openArtifactMenu,closeArtifactMenu,readTaskPreviewText,restoreWorkbenchLayout,readPreviewZoom} from './mobilework-task-ui.mjs';
 import {xmlText} from './client-message-display-steps.mjs';
 
 const review=message=>Object.assign(Error(message),{review:true});
@@ -91,19 +91,19 @@ export async function runFilePreviewSteps(context){
   await send('请在本任务目录生成三个真实UTF-8文件，名称和内容如下：'+JSON.stringify(files)+'。只生成这些合成文件，最终分别提供文件入口。');
   for(const [name,text] of files)assert('真实多格式产物内容-'+name,(await fs.readFile(await archive(name),'utf8')).replace(/\r\n/g,'\n').trim()===text.trim());finish('本轮三类真实产物');
   await ui(async()=>{
-   await selectWorkbench(page,config,'产物',capture);await button(page,'产物').click();
-   const candidates=await page.getByRole('menuitem').filter({visible:true}).allTextContents();await save('产物目录候选.json',candidates);
+   await selectWorkbench(page,config,'产物',capture);const menu=await openArtifactMenu(page);
+   const candidates=await menu.getByRole('menuitem').allTextContents();await save('产物目录候选.json',candidates);
    assert('产物目录汇聚本轮全部文件',files.every(([name])=>candidates.some(text=>text.trim()===name)),candidates);await capture('多格式产物目录');
-   try{await page.getByRole('menuitem',{name:files[0][0],exact:true}).click();}
+   try{await menu.getByRole('menuitem',{name:files[0][0],exact:true}).click();}
    finally{await closeArtifactMenu(page);}finish('产物目录真实汇聚');
    for(const [name,text] of files){
     await previewTaskFile(page,config,name,capture);const panel=panelOf(page);
-    const fact=name.endsWith('.csv')?'7300':marker;assert('点击后正文属于当前文件-'+name,(await panel.innerText()).includes(fact));
+    const fact=name.endsWith('.csv')?'7300':marker;assert('点击后正文属于当前文件-'+name,(await readTaskPreviewText(panel,name)).includes(fact));
    }
    const panel=panelOf(page);assert('三个文件标签同时存在',await panel.getByRole('button',{name:/^关闭 目录核验\./}).count()===3);finish('逐项点击新开多标签预览');
    for(const [name] of [...files].reverse()){
     await panel.getByRole('button',{name,exact:true}).click();
-    assert('已有标签切换正文-'+name,(await panel.innerText()).includes(name.endsWith('.csv')?'7300':marker));await capture('切换已有标签-'+name);
+    assert('已有标签切换正文-'+name,(await readTaskPreviewText(panel,name)).includes(name.endsWith('.csv')?'7300':marker));await capture('切换已有标签-'+name);
    }
    finish('多标签往返内容正确');
    // The current client exposes an artifact menu. A menu is not evidence of

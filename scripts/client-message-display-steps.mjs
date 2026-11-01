@@ -4,7 +4,7 @@ import http from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {unzipSync,strFromU8} from 'fflate';
 import {uploadTaskAttachment} from './mobilework-attachment-ui.mjs';
-import {selectWorkbench,previewTaskFile,matchToolDetailText} from './mobilework-task-ui.mjs';
+import {selectWorkbench,previewTaskFile,openArtifactMenu,closeArtifactMenu,matchToolDetailText} from './mobilework-task-ui.mjs';
 
 const review=message=>Object.assign(Error(message),{review:true});
 const messages=page=>page.locator('[data-session-messages="true"]:not([aria-hidden="true"])');
@@ -214,16 +214,16 @@ export async function runMessageDisplaySteps(context){
   assert('Excel真实数据行及金额可核算',rows.some(row=>/甲/.test(row)&&/\b10\b/.test(row)&&/\b20\b/.test(row)&&/\b200\b/.test(row))&&rows.some(row=>/乙/.test(row)&&/\b150\b/.test(row))&&rows.some(row=>/\b350\b/.test(row)),rows);
   assert('Word真实说明与Excel事实一致',['甲','乙','200','150','350'].every(fact=>text.includes(fact)),text);await saveFile(excel);await saveFile(word);finish('Excel与Word真实产物内容');
   await ui(async()=>{
-   await selectWorkbench(page,config,'产物',capture);await page.getByRole('button',{name:'产物',exact:true}).filter({visible:true}).click();
+   await selectWorkbench(page,config,'产物',capture);const menu=await openArtifactMenu(page);
    const icons=[];
    for(const [name,typeClass] of [[excel,'text-green-9'],[word,'text-blue-9']]){
-    const item=page.getByRole('menuitem',{name,exact:true});await item.waitFor();
+    const item=menu.getByRole('menuitem',{name,exact:true});await item.waitFor();
     assert('产物列表名称完整显示：'+name,(await item.innerText()).includes(name));
     const svg=item.locator('svg');assert('产物有文件类型图标：'+name,await svg.count()>0);
     assert('文件图标匹配当前客户端类型映射：'+name,(await svg.first().getAttribute('class')).split(/\s+/).includes(typeClass));
     icons.push(await svg.first().evaluate(element=>element.innerHTML));
    }
-   assert('两种文件类型使用可区分图标',icons[0]!==icons[1]);await capture('两类交付物名称与图标');await page.keyboard.press('Escape');finish('两类产物名称与类型图标');
+   assert('两种文件类型使用可区分图标',icons[0]!==icons[1]);await capture('两类交付物名称与图标');await closeArtifactMenu(page);finish('两类产物名称与类型图标');
    await previewTaskFile(page,config,excel,capture,['甲','乙']);await previewTaskFile(page,config,word,capture,['350']);finish('两类文件各自实际预览');
   });
  }

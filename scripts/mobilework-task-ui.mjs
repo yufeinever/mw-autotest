@@ -40,33 +40,49 @@ export async function selectWorkbench(page,config,mode,capture){
  await capture('工作台-'+mode);
 }
 
-export async function closeArtifactMenu(page){
- const trigger=button(page,'产物');
- if(await trigger.getAttribute('aria-expanded')==='true'){
-  await page.keyboard.press('Escape');
-  await page.getByRole('menu').filter({visible:true}).waitFor({state:'hidden'});
+export async function openArtifactMenu(page){
+ const trigger=page.getByTestId('session-workbench-panel').getByRole('button',{name:'产物',exact:true}).filter({visible:true});
+ try{await trigger.waitFor({timeout:10000});}
+ catch(error){
+  if(error.name!=='TimeoutError')throw error;
+  throw Object.assign(Error('当前Session的产物目录尚未提供真实入口；磁盘文件存在不能代替客户端产物登记',{cause:error}),{review:true});
  }
+ await trigger.click();
+ const menuId=await trigger.getAttribute('aria-controls');
+ if(!menuId)throw Error('产物菜单触发器未提供aria-controls，无法确认菜单归属');
+ const menu=page.getByRole('menu').and(page.locator('[id='+JSON.stringify(menuId)+']'));
+ await menu.waitFor();return menu;
+}
+
+export async function closeArtifactMenu(page){
+ const panel=page.getByTestId('session-workbench-panel'),trigger=panel.getByRole('button',{name:'产物',exact:true}).filter({visible:true});
+ if(await trigger.count()&&await trigger.getAttribute('aria-expanded')==='true'){
+  await page.keyboard.press('Escape');
+  await panel.locator('button[aria-label="产物"][aria-expanded="true"]').waitFor({state:'hidden'});
+ }
+}
+
+export async function readTaskPreviewText(panel,name){
+ if(/\.csv$/i.test(name)){
+  const cells=panel.locator('table td input');await cells.first().waitFor();
+  return (await cells.evaluateAll(elements=>elements.map(element=>element.value))).join('\n');
+ }
+ let text=await panel.innerText();
+ const frame=panel.locator('iframe').filter({visible:true});
+ if(await frame.count()===1)text+='\n'+await frame.contentFrame().locator('body').innerText();
+ return text;
 }
 
 export async function previewTaskFile(page,config,name,capture,facts=[]){
  await selectWorkbench(page,config,'产物',capture);
- await button(page,'产物').click();
- try{await page.getByRole('menuitem',{name,exact:true}).click();}
+ const menu=await openArtifactMenu(page);
+ try{await menu.getByRole('menuitem',{name,exact:true}).click();}
  finally{await closeArtifactMenu(page);}
  const panel=page.locator('[data-slot="resizable-panel"]').filter({visible:true}).last();
  await panel.getByText(name,{exact:false}).first().waitFor();
  await waitTaskPreviewReady(panel,name);
- const csv=/\.csv$/i.test(name);let text;
- if(csv){
-  const cells=panel.locator('table td input');await cells.first().waitFor();
-  text=(await cells.evaluateAll(elements=>elements.map(element=>element.value))).join('\n');
- }
+ const text=await readTaskPreviewText(panel,name);
  await capture('文件预览-'+name);
- if(!csv){
-  text=await panel.innerText();
-  const frame=panel.locator('iframe').filter({visible:true});
-  if(await frame.count()===1)text+='\n'+await frame.contentFrame().locator('body').innerText();
- }
  if(facts.some(fact=>!text.includes(fact)))throw Object.assign(Error('文件入口已打开，但尚未在预览内容中核对关键事实：'+name),{review:true});
  return panel;
 }
