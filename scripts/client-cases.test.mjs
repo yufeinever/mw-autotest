@@ -57,8 +57,8 @@ test('正文和表格不必附JSON，等价时间、图布局和节点ID有效',
  const diagram='graph TD\nA(浏览器) --> B[API网关] --> C[订单服务]\nC --> D[(PostgreSQL数据库)]\nC --> E[(Redis缓存)]\nC -->|消息| F[消息队列] --> G(通知服务)';
  assert.ok(all(diagramChecks(diagram)));assert.ok(!all(diagramChecks(diagram.replace('F[消息队列] --> G(通知服务)','G(通知服务) --> F[消息队列]'))));
 });
-test('001～198按原表映射，入口存在，补缺迁移保留旧ID和用户脚本',async()=>{
- assert.equal(clientCases.length,198);
+test('001～203按原表映射，入口存在，补缺迁移保留旧ID和用户脚本',async()=>{
+ assert.equal(clientCases.length,203);
  for(const c of clientCases){assert.equal(c.row,c.number+1);await fs.access(c.entry);if(c.number>=3&&c.number<=16)assert.ok(clientCaseInput(c.number,{outputDir:'D:/独立产物',asOfDate:'2026-10-18'}).length>100);}
  const old=[{id:'old-2',name:'我的会议',path:path.resolve(getClientCase(2).entry)},{id:'custom',name:'其他',path:path.resolve('other.mjs')}];
  const migrated=withClientCases(old,projectRoot);

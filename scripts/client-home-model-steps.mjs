@@ -10,8 +10,9 @@ export async function runHomeModelSteps(context){
  return control.withUI(page,'VERIFYING',async()=>{
   const gaps=[];
   const before=await readModelOptions(page,config),selected=before.models.filter(model=>model.selected);
-  if(selected.length!==1||!selected[0].name||typeof selected[0].value!=='string'||!selected[0].value)throw blocked('当前模型的唯一选中项或身份不可读取，未切换模型');
-  const owned={restore:selected[0].name,value:selected[0].value};
+  await fs.writeFile(path.join(context.dir,'模型身份观察.json'),JSON.stringify({current:before.current,models:before.models.map(({name,selected,disabled,identity,identityStatus,slot})=>({name,selected,disabled,identity,identityStatus,slot}))},null,2));
+  if(selected.length!==1||!selected[0].name||!selected[0].identity)throw blocked('当前模型的唯一选中项或身份不可读取，未切换模型');
+  const owned={restore:selected[0].name,value:selected[0].identity};
   resources.homeModel=owned;
   let operationError,restoreError;
   try{
@@ -20,10 +21,11 @@ export async function runHomeModelSteps(context){
     const result=await window.__MOBILEWORK__.invoke('models:list');
     return (result.models||[]).filter(item=>item.officialRemote&&item.featureDesc?.trim()).map(item=>({id:item.id,modelId:item.modelId,description:item.featureDesc.trim()}));
    });
-   const matchDescription=model=>descriptions.find(item=>model.value?.toLowerCase().includes(JSON.stringify([item.id,item.modelId]).toLowerCase()));
-   const candidates=before.models.filter(model=>!model.disabled&&before.models.filter(item=>item.name===model.name).length===1);
+   const matchDescription=model=>descriptions.find(item=>model.identity?.[0]===item.id&&model.identity?.[1]===item.modelId);
+   const candidates=before.models.filter(model=>!model.disabled&&model.identity&&before.models.filter(item=>item.name===model.name).length===1);
    const described=candidates.find(model=>model.name!=='自动'&&matchDescription(model));
-   const target=candidates.find(model=>model.name!=='自动'&&model.value!==owned.value)||candidates.find(model=>model.value!==owned.value);
+   const different=model=>JSON.stringify(model.identity)!==JSON.stringify(owned.value);
+   const target=candidates.find(model=>model.name!=='自动'&&different(model))||candidates.find(different);
    const trigger=await modelTrigger(page);
    await waitStep(page,config);await trigger.click();
    const menu=page.getByRole('listbox').filter({visible:true});
@@ -70,9 +72,9 @@ export async function runHomeModelSteps(context){
    }
    if(menuError)throw menuError;
    if(target){
-    await selectModel(page,target.name,config);
+    await selectModel(page,target.name,{...config,expectedIdentity:target.identity});
     const switched=await readModelOptions(page,config);
-    context.assert('切换后目标模型真实选中',switched.models.some(model=>model.name===target.name&&model.selected));
+    context.assert('切换后目标模型真实选中',switched.models.some(model=>model.name===target.name&&model.selected&&JSON.stringify(model.identity)===JSON.stringify(target.identity)));
     await context.capture('目标模型切换完成');
     remaining.delete('切换选中与面板自动关闭');
    }else gaps.push('当前没有可唯一切换的其他模型');

@@ -50,6 +50,7 @@ export async function selectedFiles(){
  selected.push('scripts/client-account-profile-steps.mjs','scripts/mobilework-account-settings.mjs','scripts/mobilework-account-logout.mjs','scripts/mobilework-account-profile.test.mjs');
  selected.push('scripts/client-account-navigation-steps.mjs','scripts/mobilework-account-network.mjs','scripts/mobilework-account-network.ps1','scripts/mobilework-account-external.mjs','scripts/mobilework-account-observation.mjs','scripts/mobilework-account-navigation.test.mjs');
  selected.push('scripts/client-help-feedback-steps.mjs','scripts/mobilework-help-external.mjs');
+ selected.push('scripts/client-feedback-steps.mjs','scripts/mobilework-feedback-external.mjs','scripts/client-update-steps.mjs','scripts/mobilework-update-observation.mjs');
  selected.push('scripts/client-efficiency-steps.mjs','scripts/mobilework-efficiency.mjs','scripts/mobilework-disk-observation.ps1','scripts/fixtures/efficiency/disk-scan-reference.py','scripts/mobilework-account-menu.mjs','scripts/client-account-usage-steps.mjs','scripts/mobilework-efficiency-account.test.mjs');
  selected.push('scripts/client-mail-workflow-steps.mjs','scripts/mobilework-mail-operations.mjs','scripts/client-weather-steps.mjs','scripts/mobilework-weather-baseline.mjs');
  selected.push('scripts/client-kanban-task-steps.mjs','scripts/client-kanban-operations-steps.mjs','scripts/mobilework-kanban-operation-resources.mjs','scripts/client-mail-dashboard-steps.mjs','scripts/mobilework-mail-baseline.mjs');

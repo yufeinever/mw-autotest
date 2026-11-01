@@ -3,7 +3,6 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errors} from 'playwright-core';
 import {testEnvironment} from '../local-console/environment.mjs';
-import {readEngineConnection,engineRequest} from '../local-console/engine-client.mjs';
 import {openSettings,releaseSettingsPanel} from './mobilework-account-settings.mjs';
 import {prepareConversationSettings,readConversationPreferences,readSendMessageShortcut,chooseSendMessageShortcut,releaseConversationSettings} from './mobilework-conversation-settings.mjs';
 import {beginMessageClipboard,expectMessageClipboard,restoreMessageClipboard} from './mobilework-message-clipboard.mjs';
@@ -15,15 +14,23 @@ const review=message=>Object.assign(Error(message),{review:true});
 const save=(context,name,value)=>fs.writeFile(path.join(context.dir,name+'.json'),JSON.stringify(value,null,2));
 
 async function auditRequest(page,route){
- const connection=await readEngineConnection(page);let result;
- try{result=await engineRequest(connection,'/venusguard/api/v1/host'+route);}
- catch(error){
-  if(/^引擎接口请求失败：HTTP 5\d\d$/.test(error.message))throw blocked('安全审计插件不可用：'+error.message);
-  if(/^引擎接口请求失败：HTTP 404$/.test(error.message))throw review('安全审计未找到本轮会话或记录');
-  throw error;
+ const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo'));
+ const url=new URL(info.baseUrl??info.connectUrl??info.lanUrl??info.mdnsUrl);
+ if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password||url.search||url.hash)throw Error('安全审计服务不是有效的本机地址');
+ const base=url.href.replace(/\/$/,'');let token=info.ownerToken||info.clientToken;
+ if(!token)throw Error('安全审计服务缺少访问令牌');
+ if(info.ownerToken){
+  const probe=await fetch(base+'/workspaces',{headers:{Authorization:'Bearer '+info.ownerToken,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(5000)});
+  if([401,403].includes(probe.status)&&info.clientToken)token=info.clientToken;
  }
+ const response=await fetch(base+'/venusguard/api/v1/host'+route,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(10000)});
+ if(response.status>=500)throw blocked('安全审计接口不可用：HTTP '+response.status);
+ if(response.status===404)throw review('安全审计接口或本轮记录不存在：HTTP 404');
+ if(!response.ok)throw Error('安全审计接口请求失败：HTTP '+response.status);
+ let result;
+ try{result=await response.json();}catch(error){if(error instanceof SyntaxError)throw Error('安全审计接口返回非 JSON 数据：HTTP '+response.status);throw error;}
  if(result.notice)throw blocked('安全审计未提供当前账户的数据：'+result.notice.message);
- if(!result.ok)throw review('安全审计接口未返回可核对的数据');
+ if(result.ok!==true||!('data' in result))throw Error('安全审计接口请求失败：'+(result.error?.code||'响应数据无效'));
  return result.data;
 }
 

@@ -102,8 +102,11 @@ export const connectAccountExternal=(endpoint,options)=>{
 };
 
 export function isAccountExternalUrl(value,{origin,route}){
- if(!['/agentCenter/myUsage','/operationsMgr/productAnalysis','/p/portal/manual'].includes(route)||!URL.canParse(value))return false;
- const url=new URL(value),hash=url.hash.slice(1),query=new URLSearchParams(hash.split('?')[1]||'');
+ if(!URL.canParse(value))return false;
+ const url=new URL(value);
+ if(route==='/pjcustomer/pjcust/order/billoflading.html')return ['http:','https:'].includes(url.protocol)&&url.origin===origin&&!url.username&&!url.password&&url.pathname===route&&!url.hash&&Boolean(url.searchParams.get('token'))&&url.searchParams.get('system')==='mw'&&url.searchParams.get('platformCode')==='mw';
+ if(!['/agentCenter/myUsage','/operationsMgr/productAnalysis','/p/portal/manual'].includes(route))return false;
+ const hash=url.hash.slice(1),query=new URLSearchParams(hash.split('?')[1]||'');
  return ['http:','https:'].includes(url.protocol)&&url.origin===origin&&!url.username&&!url.password&&hash.split('?')[0]===route&&![...url.searchParams.keys(),...query.keys()].some(key=>/^(code|code_verifier|access_token|refresh_token|id_token|state|grant_type|token|ticket|nonce)$/i.test(key));
 }
 

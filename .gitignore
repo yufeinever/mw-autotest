@@ -155,6 +155,14 @@
 !/scripts/client-interaction-case-runner.mjs
 !/scripts/client-home-workspace-steps.mjs
 !/scripts/client-home-model-steps.mjs
+!/scripts/client-feedback-steps.mjs
+!/scripts/mobilework-feedback-external.mjs
+!/scripts/client-update-steps.mjs
+!/scripts/mobilework-update-observation.mjs
+!/scripts/run-client-case200.mjs
+!/scripts/run-client-case201.mjs
+!/scripts/run-client-case202.mjs
+!/scripts/run-client-case203.mjs
 !/scripts/mobilework-module-handoff.mjs
 !/scripts/mobilework-knowledge-guide.mjs
 !/scripts/mobilework-composer-resources.mjs

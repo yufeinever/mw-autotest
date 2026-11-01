@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "1163d42af15402cff77579f9dbf4a46f56c0a780e49cdf386b1a67fb9a84cf8a",
+  "workbookSha256": "469e0bf222ef2964eaed3265a958a87588f533d5917f42b4d14741d666c410c3",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -378,12 +378,37 @@
         "总体预期结果": "默认工作空间选择成功，展示会话标题"
       },
       "script": "scripts/run-client-case017.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "工作空间选择状态和Session目录绑定已拆分。",
+      "coverage": "已实机执行，待复核",
+      "execution": "REVIEW",
+      "evidence": [
+        "runs/1101-2315-选择默认工作空间-第01次/执行报告.md",
+        "runs/1101-2315-选择默认工作空间-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次7db597a2-ff1c-4e8d-b9d4-1a66aa407895，5/5项已记录断言通过；录像COMPLETED。默认空间未在工作空间列表显示独立行；最近任务同名标题数：1，需确认原表展示位置",
       "optimizedSheet": "客户端-优化用例",
-      "optimizedId": "017"
+      "optimizedId": "017",
+      "optimized": {
+        "module": "工作空间",
+        "goal": "默认空间选择、新建任务及本轮标题归属",
+        "precondition": "已登录；默认空间可用；新任务输入按授权清理。",
+        "operations": "选择真实默认空间；点击侧栏新建任务；发送带唯一测试标识的“你是谁”；核对本Session目录、标题及侧栏位置；恢复原空间和展开状态。",
+        "expected": "新任务仍使用默认空间，真实Session目录归属正确；标题在原表指定工作空间区域展示。",
+        "assertions": "默认空间选择；真实Session目录；产品登记标题；侧栏指定位置。缺展示位置对应关系记REVIEW。"
+      },
+      "executionHistory": [
+        {
+          "batchId": "7db597a2-ff1c-4e8d-b9d4-1a66aa407895",
+          "jobId": "67e55925-d0ce-45e4-bbed-9e6455ebf09e",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T15:15:32.888Z",
+          "endedAt": "2026-11-01T15:16:11.483Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1101-2315-选择默认工作空间-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 19,
@@ -402,12 +427,37 @@
         "总体预期结果": "点击和创建Mobile work04】工作空间成功并展示名称"
       },
       "script": "scripts/run-client-case018.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "使用本轮唯一隔离名称，结束后清理。",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1101-2316-新建工作空间-第01次/执行报告.md",
+        "runs/1101-2316-新建工作空间-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次7db597a2-ff1c-4e8d-b9d4-1a66aa407895，4/4项已记录断言通过；录像COMPLETED。业务与正常收尾通过。",
       "optimizedSheet": "客户端-优化用例",
-      "optimizedId": "018"
+      "optimizedId": "018",
+      "optimized": {
+        "module": "工作空间",
+        "goal": "默认存储位置创建与名称展示",
+        "precondition": "已登录；默认存储目录可读；唯一隔离名称。",
+        "operations": "通过真实默认存储创建入口输入唯一名称并创建；核对新增ID、实际路径及输入区和侧栏同名展示；收尾移除本轮注册并恢复基线，保留材料。",
+        "expected": "创建完成且弹窗关闭；新增空间位于默认存储目录，输入区及侧栏展示同名。",
+        "assertions": "新增ID与唯一名称；实际路径位于默认存储目录；两处展示一致。不发送无关对话。"
+      },
+      "executionHistory": [
+        {
+          "batchId": "7db597a2-ff1c-4e8d-b9d4-1a66aa407895",
+          "jobId": "888ff55b-16d1-4daa-b7f0-83c0568a5268",
+          "result": "PASS",
+          "startedAt": "2026-11-01T15:16:14.407Z",
+          "endedAt": "2026-11-01T15:17:03.227Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1101-2316-新建工作空间-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 20,
@@ -426,14 +476,38 @@
         "总体预期结果": "点击和展示Mobile work01】工作空间名称成功"
       },
       "script": "scripts/run-client-case019.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
       "evidence": [
-        "runs/1031-2307-原生文件夹控件验证-第02次/验证说明.md"
+        "runs/1031-2307-原生文件夹控件验证-第02次/验证说明.md",
+        "runs/1101-2317-选择本地工作空间-第01次/执行报告.md",
+        "runs/1101-2317-选择本地工作空间-第01次/执行结果.json"
       ],
-      "notes": "通过产品入口触发Windows原生文件夹窗口，按CDP客户端PID和真实控件填充确认；独立原生环节6项通过，完整019及共用模块提取后、强停期间收尾未验证。",
+      "notes": "本轮正式批次7db597a2-ff1c-4e8d-b9d4-1a66aa407895，5/5项已记录断言通过；录像COMPLETED。业务与正常收尾通过。完整019原生选择路径已实机通过，强停期间收尾另待验。",
       "optimizedSheet": "客户端-优化用例",
-      "optimizedId": "019"
+      "optimizedId": "019",
+      "optimized": {
+        "module": "工作空间",
+        "goal": "原生文件夹选择与空间注册展示",
+        "precondition": "已登录；本轮独立目录；可按客户端CDP进程识别原生窗口。",
+        "operations": "点击本地文件夹创建；用Win32控件读取真实目录框，填写本轮路径并回读后确认；核对窗口关闭、产品注册路径与名称及两处展示；移除本轮注册并恢复基线，保留目录。",
+        "expected": "真实原生框选择目标路径并关闭；注册路径与选择一致；输入区和侧栏展示本轮名称。",
+        "assertions": "原生控件归属、路径回读及关闭；新增ID；实际路径一致；输入区与侧栏展示。不用DOM或坐标假冒原生验证。"
+      },
+      "executionHistory": [
+        {
+          "batchId": "7db597a2-ff1c-4e8d-b9d4-1a66aa407895",
+          "jobId": "4fca0d95-c12c-4351-bcf1-956bf87138c3",
+          "result": "PASS",
+          "startedAt": "2026-11-01T15:17:06.180Z",
+          "endedAt": "2026-11-01T15:17:55.603Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1101-2317-选择本地工作空间-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 21,
@@ -452,12 +526,37 @@
         "总体预期结果": "已创建工作空间可被发现，可被引用"
       },
       "script": "scripts/run-client-case020.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "使用已有本机空间验证发现和引用。",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1101-2317-引用工作空间-第01次/执行报告.md",
+        "runs/1101-2317-引用工作空间-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次7db597a2-ff1c-4e8d-b9d4-1a66aa407895，3/3项已记录断言通过；录像COMPLETED。业务与正常收尾通过。",
       "optimizedSheet": "客户端-优化用例",
-      "optimizedId": "020"
+      "optimizedId": "020",
+      "optimized": {
+        "module": "工作空间",
+        "goal": "已有空间可发现、选择及引用展示",
+        "precondition": "已登录；存在可引用的已有非默认工作空间。",
+        "operations": "读取实际已有空间；通过输入区列表选择；核对输入区和侧栏同一ID及名称；恢复执行前空间与展开状态。",
+        "expected": "已有空间可发现并被输入区引用，侧栏展示对应名称。",
+        "assertions": "实际选择；输入区与侧栏同一已有空间；基线恢复。不创建删除已有空间，不发送无关对话。"
+      },
+      "executionHistory": [
+        {
+          "batchId": "7db597a2-ff1c-4e8d-b9d4-1a66aa407895",
+          "jobId": "643048e2-6b9a-499f-9610-87b5248c11b2",
+          "result": "PASS",
+          "startedAt": "2026-11-01T15:17:58.610Z",
+          "endedAt": "2026-11-01T15:18:23.400Z",
+          "assertions": {
+            "passed": 3,
+            "total": 3
+          },
+          "report": "runs/1101-2317-引用工作空间-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 22,
@@ -476,12 +575,51 @@
         "总体预期结果": "主流程通过，展示模型类型成功、模型切换正常"
       },
       "script": "scripts/run-client-case021.mjs",
-      "coverage": "已编写，待验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "稳定读取模型列表，切换后恢复自动。",
+      "coverage": "已实机尝试，前置阻塞",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1101-2318-模型选择-第01次/执行报告.md",
+        "runs/1101-2318-模型选择-第01次/执行结果.json",
+        "runs/1101-2335-模型选择-第01次/执行报告.md",
+        "runs/1101-2335-模型选择-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。当前模型的唯一选中项或身份不可读取，未切换模型仅收尾断言通过，业务模型切换未执行；原BLOCKED保留。安装版slot覆盖链已二次适配，效果待下轮实机。",
       "optimizedSheet": "客户端-优化用例",
-      "optimizedId": "021"
+      "optimizedId": "021",
+      "optimized": {
+        "module": "首页模型",
+        "goal": "模型分类、悬停简介、切换与原模型恢复",
+        "precondition": "已登录；实际列表加载完成；当前唯一选中项及模型身份可核验。",
+        "operations": "保存执行前模型身份；打开稳定列表，检查自动项、系列与自定义分组；悬停有简介模型；真实切换另一个唯一模型并回读选中和面板关闭；正常异常强停均恢复原模型。",
+        "expected": "分类及真实简介符合当前模型数据；切换后目标真实选中且面板关闭；执行前模型恢复。",
+        "assertions": "唯一选中与身份；自动项及分类；简介与对应模型；切换实际状态；原身份恢复。未定义的名称限制及自定义跳转保留REVIEW，不用历史值冒充当前。"
+      },
+      "executionHistory": [
+        {
+          "batchId": "7db597a2-ff1c-4e8d-b9d4-1a66aa407895",
+          "jobId": "827cbb2c-b0f2-4af7-b32b-1ae794ae5d13",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T15:18:27.096Z",
+          "endedAt": "2026-11-01T15:18:44.234Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2318-模型选择-第01次/执行报告.md"
+        },
+        {
+          "batchId": "ff17bb44-aa4c-4dd2-af5b-628d9d9a4990",
+          "jobId": "dcef9d80-7a99-4d5c-8fbf-d7d77ecdd376",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T15:35:34.254Z",
+          "endedAt": "2026-11-01T15:35:49.500Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2335-模型选择-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 23,
@@ -7380,10 +7518,13 @@
         "总体预期结果": "自定义指令字数上限150生效，无崩溃无数据丢失。"
       },
       "script": "scripts/run-client-case192.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "真实UI及异常/强停恢复待实机验证。",
+      "coverage": "已实机验证，通过",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1101-2335-自定义指令150字符限制-第01次/执行报告.md",
+        "runs/1101-2335-自定义指令150字符限制-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，5/5项已记录断言通过；录像COMPLETED。业务与正常收尾通过。",
       "optimized": {
         "module": "个性化",
         "goal": "验证自定义指令150字符上限、确认保存和重新打开后的值。",
@@ -7391,7 +7532,21 @@
         "operations": "登记原指令和风格，通过真实控件输入150字符并继续输入，核对计数；确认保存，重新打开回读，结束恢复原配置。",
         "expected": "显示150/150，超出部分不进入输入框，确认保存后150字符完整保留。",
         "assertions": "核对真实输入值、计数、额外按键后的值、实际保存和重新打开回读；不覆盖未知用户指令。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "ff17bb44-aa4c-4dd2-af5b-628d9d9a4990",
+          "jobId": "5eeca566-323a-4aa4-8b08-345cbf90dcf3",
+          "result": "PASS",
+          "startedAt": "2026-11-01T15:35:51.980Z",
+          "endedAt": "2026-11-01T15:36:07.395Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1101-2335-自定义指令150字符限制-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 194,
@@ -7410,10 +7565,13 @@
         "总体预期结果": "Guard安全拦截默认开启并展示完整说明。"
       },
       "script": "scripts/run-client-case193.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "当前接口不提供首次配置来源，首次默认分支保留REVIEW；未实机。",
+      "coverage": "已实机执行，脚本或业务失败待诊断",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1101-2336-Guard当前状态与首次默认-第01次/执行报告.md",
+        "runs/1101-2336-Guard当前状态与首次默认-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。Unexpected token '<', \"<!doctype \"... is not valid JSON仅收尾断言通过；安全接口返回HTML，尚未验证Guard或审计业务。已将误用的OpenCode服务改为安装版实际MobileWork Server及Bearer鉴权，待复验；不能据此判定产品审计缺陷。",
       "optimized": {
         "module": "安全与审计",
         "goal": "检查Guard安全拦截当前状态、完整说明和首次默认值证据。",
@@ -7421,7 +7579,21 @@
         "operations": "读取Guard当前状态，打开安全与审计，核对实际开关和完整说明；记录配置来源证据。",
         "expected": "界面状态与插件一致，说明完整；首次默认开启须有首次配置来源证明。",
         "assertions": "只读比对开关和插件当前布尔、说明；现有账户无法证明首次状态时REVIEW，不修改安全配置。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "ff17bb44-aa4c-4dd2-af5b-628d9d9a4990",
+          "jobId": "f0aabc8e-6d49-446e-a26a-20eab572681f",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T15:36:09.919Z",
+          "endedAt": "2026-11-01T15:36:22.244Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2336-Guard当前状态与首次默认-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 195,
@@ -7440,10 +7612,13 @@
         "总体预期结果": "行为审计记录正确展示并可查看明细。"
       },
       "script": "scripts/run-client-case194.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "截图限定本轮记录，审计框及嵌套详情按归属逆序关闭；未实机。",
+      "coverage": "已实机执行，脚本或业务失败待诊断",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1101-2336-行为审计真实工具记录-第01次/执行报告.md",
+        "runs/1101-2336-行为审计真实工具记录-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。Unexpected token '<', \"<!doctype \"... is not valid JSON仅收尾断言通过；安全接口返回HTML，尚未验证Guard或审计业务。已将误用的OpenCode服务改为安装版实际MobileWork Server及Bearer鉴权，待复验；不能据此判定产品审计缺陷。",
       "optimized": {
         "module": "安全与审计",
         "goal": "验证真实工具行为出现在行为审计及详情中，可按会话和时间追溯。",
@@ -7451,7 +7626,21 @@
         "operations": "生成带随机标记的合成文件，发起本轮真实读取任务；按Session和调用ID核对安全审计，再打开行为审计列表及该记录详情。",
         "expected": "工具实际执行，行为审计记录归属本轮，时间和记录原文可核对。",
         "assertions": "比对真实工具调用ID、Session、开始时间、界面记录和详情中的合成标记；未触发或无本轮记录时REVIEW。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "ff17bb44-aa4c-4dd2-af5b-628d9d9a4990",
+          "jobId": "923a7189-a6c0-4f50-bde7-3f8a1174365e",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T15:36:24.685Z",
+          "endedAt": "2026-11-01T15:36:36.730Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2336-行为审计真实工具记录-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 196,
@@ -7470,10 +7659,13 @@
         "总体预期结果": "会话审计记录正确展示并可查看明细。"
       },
       "script": "scripts/run-client-case195.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "不以普通会话日志冒充安全审计；截图限定本轮记录，未实机。",
+      "coverage": "已实机执行，脚本或业务失败待诊断",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1101-2336-会话审计真实消息记录-第01次/执行报告.md",
+        "runs/1101-2336-会话审计真实消息记录-第01次/执行结果.json"
+      ],
+      "notes": "本轮正式批次ff17bb44-aa4c-4dd2-af5b-628d9d9a4990，1/1项已记录断言通过；录像COMPLETED。Unexpected token '<', \"<!doctype \"... is not valid JSON仅收尾断言通过；安全接口返回HTML，尚未验证Guard或审计业务。已将误用的OpenCode服务改为安装版实际MobileWork Server及Bearer鉴权，待复验；不能据此判定产品审计缺陷。",
       "optimized": {
         "module": "安全与审计",
         "goal": "验证真实会话消息出现在会话安全审计及详情中，并可追溯时间与内容。",
@@ -7481,7 +7673,21 @@
         "operations": "发送带随机标记的合成计算任务，取得本Session和真实消息ID；进入会话审计，查找本轮会话并查看该消息详情。",
         "expected": "本轮消息在安全审计中可按Session、消息ID、时间和内容追溯。",
         "assertions": "比对真实消息和审计数据的身份、时间、唯一标记，并核对界面行与详情；缺记录或会话名称不唯一时REVIEW。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "ff17bb44-aa4c-4dd2-af5b-628d9d9a4990",
+          "jobId": "e35ed13a-bd40-4148-a384-9e8fce271345",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T15:36:39.203Z",
+          "endedAt": "2026-11-01T15:36:51.637Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1101-2336-会话审计真实消息记录-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 197,
@@ -7646,11 +7852,21 @@
         "每步预期结果": "1. 成功进入帮助与反馈页。\n2. 打开反馈表单。\n3. 提交成功，展示成功提示，反馈进入处理流程。",
         "总体预期结果": "意见反馈提交成功并进入处理流程。"
       },
-      "script": "",
-      "coverage": "待编写",
+      "script": "scripts/run-client-case200.mjs",
+      "coverage": "部分实现，草稿待验证与提交待授权",
       "execution": "未执行",
       "evidence": [],
-      "notes": ""
+      "notes": "200仅实现真实入口、字段与合成草稿准备；默认浏览器CDP及精确反馈origin未配置，未实机。实际创建工单及处理流程尚未实现验收，须明确授权后继续，不以草稿冒充提交。",
+      "optimizedSheet": "客户端-优化用例",
+      "optimizedId": "200",
+      "optimized": {
+        "module": "帮助与反馈",
+        "goal": "真实反馈工单及处理流程",
+        "precondition": "已登录；系统默认浏览器CDP可观测；明确配置反馈origin；真实提交授权及测试账号。",
+        "operations": "打开真实帮助与反馈入口；进入系统浏览器表单；核对必填项并准备合成反馈；获得明确授权后真实提交并核对工单与处理记录；仅关闭本轮页面。",
+        "expected": "有效意见成功提交，出现实际工单及处理流程；无授权不提交、不记通过。",
+        "assertions": "真实页面、完整必填项及草稿；实际成功回执与工单流程。"
+      }
     },
     {
       "row": 202,
@@ -7668,11 +7884,21 @@
         "每步预期结果": "1. 空内容被拦截并提示。\n2. 超长内容被拦截或限制，提示明确，无崩溃。",
         "总体预期结果": "非法反馈内容被拦截并提示。"
       },
-      "script": "",
-      "coverage": "待编写",
+      "script": "scripts/run-client-case201.mjs",
+      "coverage": "已编写，待验证",
       "execution": "未执行",
       "evidence": [],
-      "notes": ""
+      "notes": "已接入，真实表单负向校验待验证；静态网关结构不能替代当前已登录页面。",
+      "optimizedSheet": "客户端-优化用例",
+      "optimizedId": "201",
+      "optimized": {
+        "module": "帮助与反馈",
+        "goal": "空与超长反馈的真实校验",
+        "precondition": "已登录；系统默认浏览器CDP与精确origin；真实反馈表单可读；其他必填项可满足。",
+        "operations": "从真实入口打开独立反馈页；先满足标题及其他必填；空正文点击提交，观察明确提示；输入超长正文并提交，核对限制或拦截及明确提示；监测写请求并阻止实际创建；关闭本轮页面。",
+        "expected": "非法正文被表单真实限制或拦截，提示明确；无工单创建、无崩溃。",
+        "assertions": "空正文提示；超长输入真实回读及提示；未产生真实写入。请求被测试拦截不能冒充产品拦截。"
+      }
     },
     {
       "row": 203,
@@ -7690,11 +7916,21 @@
         "每步预期结果": "1.检查更新入口可正常点击\n2.检测完成，存在新版本时提示更新\n3.点击更新后开始下载，下载后操作安装，过程无中断、无卡死\n4.客户端启动后版本号显示为最新版本，与服务端最新版本一致",
         "总体预期结果": "手动检查更新可识别最新版本并同步更新到最新版本，版本号更新正确"
       },
-      "script": "",
-      "coverage": "待编写",
+      "script": "scripts/run-client-case202.mjs",
+      "coverage": "部分实现，待环境与安装能力",
       "execution": "未执行",
       "evidence": [],
-      "notes": ""
+      "notes": "部分实现：可运行只读状态和菜单入口观察；安装环境、下载及安装跨进程阶段未接入，不能称为完整用例。",
+      "optimizedSheet": "客户端-优化用例",
+      "optimizedId": "202",
+      "optimized": {
+        "module": "检查更新",
+        "goal": "旧版手动检查并完整更新至服务端新版",
+        "precondition": "可丢弃的非最新基线；真实服务端新版；可访问下载源；已接入安装器归属及新进程续跑。",
+        "operations": "核对安装版与服务端目标；点击账户菜单检查更新；记录manual状态链、提示与下载校验；交接归属安装器并完成安装；新进程核对服务端目标版本与可用性。",
+        "expected": "真实识别、下载、校验、安装至目标版本，过程无卡死；新版本可正常运行。",
+        "assertions": "手动来源；下载与校验；真实安装进程；新版本及服务端目标一致。入口和已有状态只作前置观察。"
+      }
     },
     {
       "row": 204,
@@ -7712,11 +7948,21 @@
         "每步预期结果": "1.检测到新版本时客户端自动下载并支持安装，需要人工确认\n2.安装过程界面不报错、不闪退，安装后客户端可正常启动\n3.客户端版本为服务端最新版本，更新记录/版本信息展示正确",
         "总体预期结果": "自动检查更新生效，Windows 系统支持自动安装更新且更新后版本正确"
       },
-      "script": "",
-      "coverage": "待编写",
+      "script": "scripts/run-client-case203.mjs",
+      "coverage": "部分实现，待环境与安装能力",
       "execution": "未执行",
       "evidence": [],
-      "notes": ""
+      "notes": "部分实现：仅只读既有状态与菜单入口；自动触发归属、持久事件与安装交接未接入。人工确认要求冲突保留待复核。",
+      "optimizedSheet": "客户端-优化用例",
+      "optimizedId": "203",
+      "optimized": {
+        "module": "检查更新",
+        "goal": "自然自动检查下载及Windows安装更新",
+        "precondition": "可归属本轮启动或定时触发的旧版；真实新版；持久事件观察与安装器交接；确认人工安装语义。",
+        "operations": "在本轮旧版启动就绪前登记观察；等待自然auto检查与下载，不调用手动check替代；观察Windows安装确认及真实安装；新进程核对版本与更新记录。",
+        "expected": "自然自动检查与下载生效，安装后版本正确；原表不干预与人工确认的冲突待确认。",
+        "assertions": "本轮auto来源与状态链；真实下载校验；安装确认及归属；新进程目标版本和记录。"
+      }
     },
     {
       "row": 205,

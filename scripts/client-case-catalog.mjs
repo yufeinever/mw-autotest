@@ -240,7 +240,11 @@ const interactionDefinitions=[
 {"label":"客户端版本展示与复制粘贴","kind":"interaction-software-version","steps":["安装包与界面版本一致","真实复制粘贴及剪贴板恢复"],"note":"以安装包productVersion为基准，真实点击复制并粘贴到本轮输入区，结束恢复原剪贴板并清理本轮草稿。未实机。","timeoutMs":600000,"title":"个人设置-设置-软件配置-01 版本信息展示并可复制"},
 {"label":"开机自启跨系统重启","kind":"interaction-software-autostart","steps":["开启开机启动及核对系统自启项","Windows重启后核对客户端自启","恢复原开机启动状态"],"unavailable":"跨Windows重启的续跑与原开关恢复尚未接入，暂不可执行。","note":"仅登记原用例，跨重启续跑能力尚未实现；未实机。","timeoutMs":900000,"title":"个人设置-设置-软件配置-02 开机启动开启后随系统自启"},
 {"label":"发送快捷键编辑与真实生效","kind":"interaction-software-shortcut","steps":["快捷键列表与新组合保存","旧键不发送及新键真实发送","原发送快捷键恢复"],"note":"真实设置发送快捷键为Enter后改为Ctrl+Enter，旧键保留本轮草稿，新键发起独立Session；按账号基线恢复原有效值。实机曾因旧Enter发送而失败，脚本换行判断修正待复验。","timeoutMs":600000,"title":"个人设置-设置-软件配置-03 快捷键编辑保存生效"},
-{"label":"帮助文档真实页面与目录","kind":"interaction-help-document","steps":["帮助入口与真实页面","帮助文档正文及四类目录"],"note":"通过真实设置入口打开系统浏览器，按本轮新页面归属检查文档内容；需预先配置默认浏览器本机CDP。","timeoutMs":600000,"title":"个人设置-帮助与反馈-01 打开帮助文档"}
+{"label":"帮助文档真实页面与目录","kind":"interaction-help-document","steps":["帮助入口与真实页面","帮助文档正文及四类目录"],"note":"通过真实设置入口打开系统浏览器，按本轮新页面归属检查文档内容；需预先配置默认浏览器本机CDP。","timeoutMs":600000,"title":"个人设置-帮助与反馈-01 打开帮助文档"},
+{"label":"意见反馈工单提交与处理","kind":"interaction-feedback-submit","steps":["真实反馈入口与表单","有效反馈草稿及必填校验","真实提交成功与处理流程"],"note":"系统默认浏览器需可观测CDP及精确反馈origin；合成草稿供审阅，实际创建工单需明确授权。未提交不得记PASS，保护用户既有标签与资料。","timeoutMs":600000,"title":"个人设置-帮助与反馈-02 提交意见反馈工单"},
+{"label":"反馈空内容与超长校验","kind":"interaction-feedback-validation","steps":["真实反馈入口与表单","空反馈内容真实拦截与提示","超长反馈内容真实限制或拦截"],"note":"真实外部表单先满足其他必填，再独立检查空正文和超长正文；监测并阻止写请求，不伪造成功响应，缺页面前置BLOCKED。","timeoutMs":600000,"title":"个人设置-帮助与反馈-03 空反馈内容被拦截"},
+{"label":"手动检查及完整更新安装","kind":"interaction-update-manual","steps":["非最新旧版与服务端新版前置","真实手动检查与新版本提示","真实下载校验及安装交接","新版启动与服务端目标一致"],"note":"保留真实下载安装完整目标；现阶段仅接入真实状态及入口观察，隔离旧新版、安装器归属和跨进程恢复未就绪时阻塞，不将只读采样称为完整更新通过。","timeoutMs":600000,"title":"检查更新-01 手动检查客户端版本并同步更新至最新版本成功"},
+{"label":"自动检查及Windows更新安装","kind":"interaction-update-auto","steps":["本轮旧版启动及新版发布前置","自然自动检查与自动下载","Windows安装确认及交接","新版启动版本与记录"],"note":"只认本轮自然auto事件，不能调用手动检查替代；原表不干预与人工确认存在歧义，保留待复核。完整安装能力未就绪时阻塞。","timeoutMs":600000,"title":"检查更新-02 自动检查更新及Windows系统自动安装更新成功"}
 ];
 clientCases.push(...interactionDefinitions.map((item,i)=>Object.freeze({
  ...item,number:i+27,id:'MW-CLIENT-'+String(i+27).padStart(3,'0'),row:i+28,category:'任务交互',button:item.label,skills:item.skills||[],timeoutMs:item.timeoutMs??600000,
@@ -248,5 +252,5 @@ clientCases.push(...interactionDefinitions.map((item,i)=>Object.freeze({
 })));
 export function getClientCase(number){
  const found=clientCases.find(c=>c.number===Number(number));
- if(!found)throw Error('用例编号必须为1～199');return found;
+ if(!found)throw Error('用例编号必须为1～203');return found;
 }

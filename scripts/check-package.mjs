@@ -14,7 +14,7 @@ import {probeCdp} from '../local-console/cdp-restart.mjs';
 // Isolated fixture execution validates the harness, never a MobileWork product case.
 export async function selfTestPackage(){
  assert.ok(Number(process.versions.node.split('.')[0])>=22,'需要 Node.js 22 或更新版本');
- assert.equal(clientCases.length,199);
+ assert.equal(clientCases.length,203);
  for(const item of clientCases)await fs.access(path.join(projectRoot,item.entry));
  await fs.access(path.join(projectRoot,'测试用例与脚本',caseWorkbook));
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'MobileWork-包自检-'));
@@ -48,7 +48,7 @@ export async function selfTestPackage(){
   await page.goto(app.url+'/?trace='+job.id);await page.getByRole('heading',{name:'Trace 记录',exact:true}).waitFor();
   assert.match(await page.locator('body').innerText(),/没有取得会话 ID/);assert.deepEqual(errors,[]);
   await page.screenshot({path:path.join(dir,'自检Trace.png'),fullPage:true});
-  return {checks:['Node运行时','199条入口及参数协议','用例工作簿','隔离配置与脚本执行','内置浏览器真实渲染','报告与产物下载','Trace页面'],evidenceDirectory:dir};
+  return {checks:['Node运行时','203条入口及参数协议','用例工作簿','隔离配置与脚本执行','内置浏览器真实渲染','报告与产物下载','Trace页面'],evidenceDirectory:dir};
  }finally{
   if(browser)await browser.close();if(app)await new Promise(r=>app.server.close(r));
   if(previous===undefined)delete process.env.MW_FIXTURE_DIR;else process.env.MW_FIXTURE_DIR=previous;
@@ -58,7 +58,7 @@ export async function selfTestPackage(){
 export async function runPackageCheck({selfTest=process.argv.includes('--self-test')}={}){
  try{
   const result=await selfTestPackage();console.log('包自检完成：'+result.checks.join('、'));console.log('自检证据：'+result.evidenceDirectory);
-  if(selfTest){console.log('CHECKED：仅验证测试平台，不代表199条产品用例通过。');return 0;}
+  if(selfTest){console.log('CHECKED：仅验证测试平台，不代表203条产品用例通过。');return 0;}
   const blocked=[];
   try{await fs.access(testEnvironment.clientExecutable);}catch{blocked.push('未发现 MobileWork，请安装客户端或配置 config/environment.json');}
   const build=await readCdpConfig();console.log('客户端版本：'+build.version+'；packagedCdpAllowed='+build.allowed);

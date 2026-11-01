@@ -34,15 +34,48 @@ export async function modelTrigger(page){
 async function modelSnapshot(page,name,timeoutMs){
  const menu=page.getByRole('listbox').filter({visible:true});
  return menu.evaluateHandle((root,name)=>{
+  const inspectIdentity=element=>{
+   const decode=value=>{
+    if(typeof value!=='string')return null;
+    const match=/^(\["(?:[^"\\]|\\.)*","(?:[^"\\]|\\.)*"\])(?:\s|$)/.exec(value);
+    if(!match)return null;
+    const identity=JSON.parse(match[1]);
+    return identity.every(Boolean)?identity:null;
+   };
+   const attribute=decode(element.getAttribute('data-value')??element.getAttribute('value'));
+   if(attribute)return {identity:attribute,status:'attribute'};
+   // The packaged picker keeps its provider/model pair in the React option value.
+   const key=Object.keys(element).find(item=>item.startsWith('__reactFiber$'));
+   if(!key)return {identity:null,status:'fiber-missing'};
+   const slot=element.getAttribute('data-slot');
+   if(!slot)return {identity:null,status:'slot-missing'};
+   let matchedSlot=false,foundValue=false;
+   for(let fiber=element[key];fiber;fiber=fiber.return){
+    if(fiber.tag===5&&fiber.stateNode!==element)break;
+    if(fiber.memoizedProps?.['data-slot']!==slot)continue;
+    matchedSlot=true;
+    if(typeof fiber.memoizedProps.value==='string')foundValue=true;
+    const identity=decode(fiber.memoizedProps.value);
+    const alternate=fiber.alternate?.memoizedProps;
+    if(identity&&alternate&&JSON.stringify(identity)!==JSON.stringify(decode(alternate.value)))return {identity:null,status:'fiber-changed'};
+    if(identity)return {identity,status:'fiber'};
+   }
+   return {identity:null,status:foundValue?'value-unrecognized':matchedSlot?'value-missing':'slot-unmatched'};
+  };
+  const identityOf=element=>inspectIdentity(element).identity;
   const elements=[...root.querySelectorAll('[role="option"]')].filter(e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden');
-  const models=elements.map(e=>({
-   name:e.querySelector('span.truncate')?.textContent?.trim()||(e.innerText||'').trim().split('\n').filter(x=>x!=='--'&&x!=='默认')[0],
-   selected:e.getAttribute('data-checked')==='true',
-   disabled:e.hasAttribute('data-disabled')||e.getAttribute('aria-disabled')==='true',
-   value:e.getAttribute('data-value')??e.getAttribute('value'),
-  }));
+  const models=elements.map(e=>{
+   const {identity,status}=inspectIdentity(e);
+   return {
+    name:e.querySelector('span.truncate')?.textContent?.trim()||(e.innerText||'').trim().split('\n').filter(x=>x!=='--'&&x!=='默认')[0],
+    selected:e.getAttribute('data-checked')==='true',
+    disabled:e.hasAttribute('data-disabled')||e.getAttribute('aria-disabled')==='true',
+    value:e.getAttribute('data-value')??e.getAttribute('value'),
+    identity,identityStatus:status,slot:e.getAttribute('data-slot'),
+   };
+  });
   const matches=models.flatMap((m,i)=>m.name===name?[i]:[]);
-  return {models,element:matches.length===1?elements[matches[0]]:null};
+  return {models,element:matches.length===1?elements[matches[0]]:null,identityOf};
  },name,{timeout:timeoutMs});
 }
 async function stableModelSnapshot(page,name,{timeoutMs=10000,stableMs=1000}={}){
@@ -79,13 +112,13 @@ export async function readModelOptions(page,config={}){
   try{return {current,models:await snapshot.evaluate(s=>s.models)};}finally{await snapshot.dispose();}
  }finally{await waitStep(page,config);await page.keyboard.press('Escape');}
 }
-export async function selectModel(page,name,{stepInterval=0.5}={}){
+export async function selectModel(page,name,{stepInterval=0.5,expectedIdentity}={}){
  if(!name)return null;
  const trigger=await modelTrigger(page);await waitStep(page,{stepInterval});await trigger.click();
  await page.getByRole('listbox').filter({visible:true}).waitFor({timeout:5000});
  await waitStep(page,{stepInterval});
  const deadline=Date.now()+10000;
- let clicked=false,selectedValue=null;
+ let clicked=false,selectedValue=null,selectedIdentity=null;
  while(Date.now()<deadline&&!clicked){
   const snapshot=await stableModelSnapshot(page,name,{timeoutMs:deadline-Date.now()});
   const chosen=await snapshot.getProperty('element');
@@ -98,9 +131,11 @@ export async function selectModel(page,name,{stepInterval=0.5}={}){
     if(!e?.isConnected||!expected||label(e)!==name||e.hasAttribute('data-disabled')||e.getAttribute('aria-disabled')==='true')return false;
     const root=e.closest('[role="listbox"]');if(!root)return false;
     const matches=[...root.querySelectorAll('[role="option"]')].filter(row=>row.getClientRects().length&&getComputedStyle(row).visibility!=='hidden'&&label(row)===name);
-    return matches.length===1&&(e.getAttribute('data-value')??e.getAttribute('value'))===expected.value;
+    return matches.length===1&&(e.getAttribute('data-value')??e.getAttribute('value'))===expected.value&&JSON.stringify(s.identityOf(e))===JSON.stringify(expected.identity);
    },name))continue;
    selectedValue=await snapshot.evaluate((s,name)=>s.models.find(m=>m.name===name)?.value,name);
+   selectedIdentity=await snapshot.evaluate((s,name)=>s.models.find(m=>m.name===name)?.identity,name);
+   if(expectedIdentity&&JSON.stringify(selectedIdentity)!==JSON.stringify(expectedIdentity))throw Error('目标模型身份已变化，未切换：'+name);
    try{await chosen.asElement().click({timeout:Math.max(1,deadline-Date.now())});clicked=true;}
    catch(error){
     if(!/Element is not attached|Element is not connected/i.test(error.message))throw error;
@@ -111,7 +146,7 @@ export async function selectModel(page,name,{stepInterval=0.5}={}){
  await page.getByRole('listbox').filter({visible:true}).waitFor({state:'hidden',timeout:5000});
  const verify=await readModelOptions(page,{stepInterval});
  const matches=verify.models.filter(m=>m.name===name);
- if(matches.length!==1||!matches[0].selected||(selectedValue!==null&&matches[0].value!==selectedValue))throw Error('模型切换未生效或目标已变化：'+name);
+ if(matches.length!==1||!matches[0].selected||(selectedValue!==null&&matches[0].value!==selectedValue)||(selectedIdentity&&JSON.stringify(matches[0].identity)!==JSON.stringify(selectedIdentity)))throw Error('模型切换未生效或目标已变化：'+name);
  return name;
 }
 
@@ -120,10 +155,11 @@ export async function restoreHomeModel(page,owned,config={}){
  if(await menu.count()===1)await page.keyboard.press('Escape');
  const before=await readModelOptions(page,config);
  const matches=before.models.filter(model=>model.name===owned.restore);
- if(matches.length!==1||matches[0].value!==owned.value)throw Error('原模型身份已变化，未选择其他模型');
- if(!matches[0].selected)await selectModel(page,owned.restore,config);
+ const sameIdentity=model=>Array.isArray(owned.value)?JSON.stringify(model.identity)===JSON.stringify(owned.value):typeof owned.value==='string'&&Boolean(owned.value)&&model.value===owned.value;
+ if(matches.length!==1||!sameIdentity(matches[0]))throw Error('原模型身份不可核对或已变化，未选择其他模型');
+ if(!matches[0].selected)await selectModel(page,owned.restore,Array.isArray(owned.value)?{...config,expectedIdentity:owned.value}:config);
  const after=await readModelOptions(page,config);
- if(!after.models.some(model=>model.name===owned.restore&&model.value===owned.value&&model.selected))throw Error('原模型恢复未确认');
+ if(!after.models.some(model=>model.name===owned.restore&&sameIdentity(model)&&model.selected))throw Error('原模型恢复未确认');
 }
 // The current renderer concatenates the numbered badge and label in textContent
 // ("1下周…"), while older builds put whitespace/newlines between them. Match
