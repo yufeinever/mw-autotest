@@ -4,12 +4,12 @@ import {randomUUID} from 'node:crypto';
 import {openSources,refreshSources,returnToReferenceTask} from './client-knowledge-source-steps.mjs';
 import {parseOwnedKnowledge,completedKnowledgeParse} from './mobilework-knowledge-parse.mjs';
 import {prepareKnowledgeReading,knowledgeFingerprint} from './mobilework-knowledge-reading.mjs';
-import {openKnowledgeReference,knowledgeReferenceRow,hasKnowledgeBudget,flattenKnowledgeFiles} from './mobilework-knowledge-source-ui.mjs';
+import {openKnowledgeReference,observeLoadedKnowledgeReference,knowledgeReferenceRow,hasKnowledgeBudget,flattenKnowledgeFiles} from './mobilework-knowledge-source-ui.mjs';
 import {finalAssistantText} from './client-case-runner.mjs';
 import {selectNativeFolder} from './mobilework-native-folder.mjs';
 import {sameKnowledgePath} from './mobilework-knowledge-resources.mjs';
 import {closeKnowledgeSettings,openKnowledgeSettings} from './mobilework-knowledge-api.mjs';
-import {observeKnowledgeGraph,assessKnowledgeGraph,assessGraphHighlight,blankGraphPoint,relatedKnowledgeNodes,nextKnowledgeSchedule,knowledgeDirectoryManifest,relocatedKnowledgePath} from './mobilework-knowledge-graph-settings.mjs';
+import {observeKnowledgeGraph,observeKnowledgeGraphHover,assessKnowledgeGraph,assessGraphHighlight,blankGraphPoint,relatedKnowledgeNodes,nextKnowledgeSchedule,knowledgeDirectoryManifest,relocatedKnowledgePath} from './mobilework-knowledge-graph-settings.mjs';
 
 const review=message=>Object.assign(Error(message),{review:true});
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -78,8 +78,11 @@ async function visualization(context,call,created){
   await context.capture('图谱规则-'+label);
  }
  context.remaining.delete('真实节点尺寸配色及边类型');context.remaining.delete('真实缩放阈值标签显隐');
- const missing=samples[0].assessment.missingBranches;if(missing.length)throw review('实际生成图谱未覆盖全部可视化分支：'+missing.join('、')+'；已观察部分保留，不制造缺来源节点或关系强度');
- context.remaining.delete('全部可视化分支真实覆盖');
+ const missing=samples[0].assessment.missingBranches;if(!missing.length)context.remaining.delete('全部可视化分支真实覆盖');
+ // This source color requirement has not been reconciled with the current design. Keep a manual acceptance gate after all observable rules; do not infer semantic agreement from palette equality.
+ const colorSemantics={source:'实体黑色、缺来源或空内容实体浅灰',actualPalette:samples[0].observed.palette,status:'REVIEW',reason:'原表黑色/浅灰颜色语义尚未确认；已保存现场实际颜色，需人工复核'};
+ await save(context,'图谱原表配色语义差异',colorSemantics);
+ throw review((missing.length?'实际图谱缺分支：'+missing.join('、')+'；':'')+colorSemantics.reason+'；已完成其余真实规则及两档缩放观察');
 }
 const onCanvas=(observed,node)=>node.client[0]>observed.rect.x+20&&node.client[0]<observed.rect.x+observed.rect.width-90&&node.client[1]>observed.rect.y+20&&node.client[1]<observed.rect.y+observed.rect.height-150;
 async function interactions(context,call,created){
@@ -98,9 +101,9 @@ async function interactions(context,call,created){
  const target=before.nodes.find(n=>onCanvas(before,n)&&relatedKnowledgeNodes(graph,n.id).size<graph.nodes.length)||before.nodes.find(n=>onCanvas(before,n));
  if(!target)throw review('真实图谱节点不在可操作视口内，未猜测坐标');
  const source=graph.nodes.find(n=>n.id===target.id);
- await page.mouse.move(...target.client);let hover=await graphReady(context,graph,v=>v.nodes.filter(n=>relatedKnowledgeNodes(graph,source.id).has(n.id)).every(n=>n.opacity===1)&&(!graph.nodes.some(n=>!relatedKnowledgeNodes(graph,source.id).has(n.id))||v.nodes.some(n=>n.opacity<1)));
- const highlighting=assessGraphHighlight(graph,hover,source.id);assert('悬停真实关联节点及连线保持高亮',highlighting.related&&highlighting.edges,highlighting);
- if(!highlighting.other)gaps.push('本轮图谱缺未关联节点，未验证置灰');await capture('图谱悬停关联与其他置灰');
+ const hover=await observeKnowledgeGraphHover(page,graph,source.id,()=>page.mouse.move(...target.client));await save(context,'悬停真实处理及绘制就绪',hover);
+ const highlighting=assessGraphHighlight(graph,hover,source.id,'hover');assert('悬停真实关联节点及连线保持高亮',highlighting.related&&highlighting.edges,highlighting);assert('悬停保留节点类型配色及真实边颜色',assessKnowledgeGraph(graph,hover).nodes.every(node=>node.color)&&!!hover.palette.edge&&hover.edges.every(edge=>edge.stroke===hover.palette.edge));
+ const hasOtherNodes=graph.nodes.some(node=>!relatedKnowledgeNodes(graph,source.id).has(node.id));if(hasOtherNodes)assert('悬停未关联节点真实淡化',highlighting.other,highlighting);else gaps.push('本轮图谱缺未关联节点，未验证置灰');await capture('图谱悬停关联与其他置灰');
  await page.mouse.down();try{
   await page.getByRole('heading',{name:source.label,exact:true}).filter({visible:true}).waitFor();await capture('节点真实长按详情');
  }finally{await page.mouse.up();}
@@ -113,8 +116,8 @@ async function interactions(context,call,created){
  assert('拖动真实节点改变其画布坐标',Math.hypot(actual.position[0]-selected.position[0],actual.position[1]-selected.position[1])>5);
  await page.mouse.move(...actual.client);await page.mouse.down();try{
   const during=await observe('第二次拖动起点');await page.mouse.move(actual.client[0]+12,actual.client[1]+8,{steps:4});
-  const dragged=await graphReady(context,graph,v=>v.nodes.find(n=>n.id===source.id).size===16),highlight=assessGraphHighlight(graph,dragged,source.id);
-  assert('真实拖动期间关联高亮、其余置灰',highlight.related&&highlight.edges&&(!highlighting.other||highlight.other),highlight);await save(context,'节点拖动真实高亮',{during,dragged,highlight});
+  const dragged=await graphReady(context,graph,v=>v.nodes.find(n=>n.id===source.id).size===16),highlight=assessGraphHighlight(graph,dragged,source.id,'drag');
+  assert('真实拖动期间关联颜色及连线高亮、其余淡化',highlight.related&&highlight.edges&&(!highlighting.other||highlight.other),highlight);if(highlighting.other&&!highlight.distinguishable)gaps.push('本轮关联邻居与未关联节点缺可区分的真实配色样本，未将同色冒充高亮');await save(context,'节点拖动真实高亮',{during,dragged,highlight});
  }finally{await page.mouse.up();}
  before=await observe('准备平移');const point=blankGraphPoint(before);await page.mouse.move(point.x,point.y);await page.mouse.down();try{await page.mouse.move(point.x+35,point.y+18,{steps:8});}finally{await page.mouse.up();}
  const panned=await graphReady(context,graph,v=>v.nodes.some(n=>Math.hypot(n.client[0]-before.nodes.find(b=>b.id===n.id).client[0],n.client[1]-before.nodes.find(b=>b.id===n.id).client[1])>10));
@@ -131,12 +134,16 @@ async function interactions(context,call,created){
 
 async function reference(context,call,created,fixture){
  let settings=await openSettings(context,created);await setSwitch(context,created,'引用',false);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
+ settings=await openSettings(context,created,{reload:true});const off=await call('/knowledge/'+created.id);
+ context.assert('重载后关闭引用真实保留',await settings.getByRole('switch',{name:'引用',exact:true}).getAttribute('aria-checked')==='false'&&off.open_ref===false);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
  await returnToReferenceTask(context.page,context.resources);let panel=await openKnowledgeReference(context.page),row=knowledgeReferenceRow(panel,created.name);
- const off=await call('/knowledge/'+created.id),switches=row.getByRole('switch');
- context.assert('关闭引用真实持久且任务列表不可选择该库',off.open_ref===false&&(await row.count()===0||await switches.count()===0||await switches.isDisabled()));await context.capture('关闭后引用列表不可选');await button(context.page,'知识库').click();
+ const disabledCandidates=await observeLoadedKnowledgeReference(context.page,panel);await save(context,'关闭引用后真实完整候选',disabledCandidates);
+ context.assert('关闭引用真实持久且已加载任务列表不可选择该库',off.open_ref===false&&!disabledCandidates.items.some(item=>item.id===created.id)&&await row.count()===0);await context.capture('关闭后引用列表不可选');await button(context.page,'知识库').click();
  settings=await openSettings(context,created);await setSwitch(context,created,'引用',true);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
  settings=await openSettings(context,created,{reload:true});context.assert('重载后引用开关真实保留',await settings.getByRole('switch',{name:'引用',exact:true}).getAttribute('aria-checked')==='true'&&(await call('/knowledge/'+created.id)).open_ref===true);await closeKnowledgeSettings(context.page,{storageDir:created.storage_dir});
- context.remaining.delete('引用关闭不可选及开启持久');await returnToReferenceTask(context.page,context.resources);panel=await openKnowledgeReference(context.page);row=knowledgeReferenceRow(panel,created.name);await row.getByRole('switch').waitFor();
+ context.remaining.delete('引用关闭不可选及开启持久');await returnToReferenceTask(context.page,context.resources);panel=await openKnowledgeReference(context.page);
+ const enabledCandidates=await observeLoadedKnowledgeReference(context.page,panel);await save(context,'开启引用后真实完整候选',enabledCandidates);context.assert('开启后已加载候选真实包含本轮同ID知识库',enabledCandidates.items.some(item=>item.id===created.id&&item.name===created.name&&item.referenceEnabled===true));
+ row=knowledgeReferenceRow(panel,created.name);await row.getByRole('switch').waitFor();
  context.resources.knowledgeSelection={items:[{id:created.id,name:created.name}]};delete context.resources.moduleNavigation;await context.checkpointResources();
  context.assert('开启后本任务可选且初始未选择',await row.getByRole('switch').getAttribute('aria-checked')==='false');await row.getByRole('switch').click();await button(context.page,'知识库').click();
  await context.send('请仅依据选中的知识库“'+created.name+'”，列出晴川项目代号、负责人、预算和未完成的验收事项。');

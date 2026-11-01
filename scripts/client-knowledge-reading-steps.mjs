@@ -118,7 +118,7 @@ async function wikiList(context,call,created){
 
 const cardRows=page=>page.locator('aside.mw-knowledge-workspace button').filter({has:page.locator('span.font-semibold')});
 const cardRow=(context,item)=>cardRows(context.page).nth(context.knowledgeCardItems.findIndex(card=>card.id===item.id));
-const relationSection=(page,title)=>page.locator('section').filter({has:page.getByRole('heading',{name:title,exact:true})}).filter({visible:true});
+const relationSection=(page,title)=>page.getByRole('heading',{name:title,exact:true}).filter({visible:true}).locator('xpath=ancestor::section[1]');
 async function cardObservation(page,detail){
  const heading=page.getByRole('heading',{name:detail.title,exact:true});await heading.waitFor();const body=heading.locator('xpath=..');
  await page.waitForFunction(({title,date,summary})=>[...document.querySelectorAll('h2')].some(node=>node.textContent===title&&node.parentElement.textContent.includes(date)&&node.parentElement.textContent.replace(/[#*_`|>\s]/g,'').includes(summary)),{title:detail.title,date:detail.updated_at,summary:readableKnowledgeText(detail.summary)});

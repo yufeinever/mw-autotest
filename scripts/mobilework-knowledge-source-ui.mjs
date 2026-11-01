@@ -39,6 +39,59 @@ export async function openKnowledgeReference(page){
 }
 export const knowledgeReferenceRow=(panel,name)=>panel.getByText(name,{exact:true}).locator('xpath=..');
 
+// Installed Yyn owns the local ['knowledge','picker-list'] QueryObserver.
+// Its error render reuses the empty message, so DOM absence alone is not readiness.
+export async function observeLoadedKnowledgeReference(page,panel){
+ const element=await panel.elementHandle();let handle;
+ try{
+  handle=await page.waitForFunction(root=>{
+   const shown=node=>node.isConnected&&node.getClientRects().length>0&&getComputedStyle(node).visibility!=='hidden';
+   if(!shown(root))return {error:'本轮引用面板已关闭，未将无行当作已加载空态'};
+   const committedPath=node=>{
+    const host=node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))],pending=[host,host?.alternate].filter(Boolean).map(fiber=>[fiber]),seen=new Set();
+    while(pending.length){
+     const chain=pending.shift(),fiber=chain.at(-1);if(seen.has(fiber))continue;seen.add(fiber);
+     if(fiber.tag===3){if(fiber.stateNode.current===fiber)return chain;continue;}
+     for(const parent of [fiber.return,fiber.return?.alternate]){
+      if(!parent)continue;let child=parent.child;while(child&&child!==fiber)child=child.sibling;
+      if(child===fiber)pending.push([...chain,parent]);
+     }
+    }
+    return null;
+   };
+   const owner=committedPath(root)?.find(fiber=>fiber.type?.name==='Yyn');
+   if(!owner||owner.memoizedProps.open!==true)return {error:'当前引用面板未对应已识别的打开组件，未猜测加载状态'};
+   const observers=[];
+   for(let hook=owner.memoizedState;hook;hook=hook.next){
+    const value=hook.memoizedState;
+    if(typeof value?.getCurrentQuery==='function'&&typeof value?.getCurrentResult==='function'&&JSON.stringify(value.getCurrentQuery().queryKey)==='["knowledge","picker-list"]')observers.push(value);
+   }
+   if(observers.length!==1)return {error:'引用列表真实QueryObserver未唯一识别，未以空文案代替成功加载'};
+   const result=observers[0].getCurrentResult();
+   if(result.status==='error')return {error:'真实本地知识库引用列表加载失败，未将错误渲染的空态当通过',blocked:true};
+   if(result.status!=='success'||result.fetchStatus!=='idle')return false;
+   const search=root.querySelector('input[type="text"]');
+   if(!search||search.value.trim())return {error:'引用列表搜索状态不是已识别的空查询，不能声称观察了完整候选'};
+   const items=result.data.map(({id,name,status,referenceEnabled})=>({id,name,status,referenceEnabled})),rows=[];
+   for(const label of root.querySelectorAll('span.truncate')){
+    const chain=committedPath(label),row=chain?.find(fiber=>fiber.type?.name==='VNe');
+    if(!row||chain.find(fiber=>fiber.type?.name==='Yyn')!==owner||!shown(label))continue;
+    const item=row.memoizedProps.item;rows.push({id:item.id,name:item.name,label:label.textContent});
+   }
+   const identities=values=>JSON.stringify(values.map(item=>[item.id,item.name]).sort((a,b)=>a[0].localeCompare(b[0])));
+   if(identities(items)!==identities(rows)||rows.some(row=>row.label!==row.name))return false;
+   const loading=[...root.querySelectorAll('div')].some(node=>shown(node)&&node.textContent==='正在加载知识库…');
+   if(loading)return false;
+   const empty=items.length===0&&[...root.querySelectorAll('div')].some(node=>shown(node)&&node.textContent==='暂无可引用的知识库');
+   if(items.length===0&&!empty)return false;
+   return {queryKey:['knowledge','picker-list'],status:result.status,fetchStatus:result.fetchStatus,dataUpdatedAt:result.dataUpdatedAt,items,rows,empty};
+  },element);
+  const state=await handle.jsonValue();
+  if(state.error)throw Object.assign(Error(state.error),state.blocked?{blocked:true}:{review:true});
+  return state;
+ }finally{if(handle)await handle.dispose();await element.dispose();}
+}
+
 export async function releaseKnowledgeSelection(page,resources){
  const owned=resources.knowledgeSelection;if(!owned)return;
  if(page.url()!==resources.url)throw Error('知识库引用所在页面已变化，保留当前选择');
