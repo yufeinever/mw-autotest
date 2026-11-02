@@ -505,6 +505,9 @@ async function showBrowserTrace(id) {
   }
 }
 
+// package.json
+var version = "0.0.50";
+
 // local-console/client-edition.mjs
 var editionLabels = { enterprise: "\u653F\u4F01\u7248", public: "\u516C\u4F17\u7248" };
 
@@ -1351,6 +1354,7 @@ async function showBatch(id) {
 }
 
 // local-console/app-source.js
+document.querySelector("header h1")?.append(Object.assign(document.createElement("span"), { className: "console-version", textContent: "v" + version }));
 var params = new URLSearchParams(location.search);
 var traceId = params.get("trace");
 var batchId = params.get("batch");

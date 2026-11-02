@@ -101,6 +101,7 @@ input[type=checkbox]{width:auto!important;accent-color:#267e63}.history-table{ma
 .execution-result [title]{cursor:help}.execution-result [tabindex]:focus-visible{outline:2px solid #267e63;outline-offset:3px}
 @media(min-width:1001px){#scriptSection .script-table table{min-width:1080px}#scriptSection .script-table th:nth-child(2){width:22%}#scriptSection .script-table th:nth-child(4){width:170px}#scriptSection .script-table th:nth-child(5){width:25%}}
 /* Console identity and repository entry. */
+header h1 .console-version{display:inline-block;margin-left:12px;font-size:13px;line-height:1.5;font-weight:400;letter-spacing:0;color:#7a8796;vertical-align:baseline;white-space:nowrap}
 .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
 .github-link{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;padding:8px;border:1px solid #d7e0e8;border-radius:8px;background:#fff;color:#34475b;text-decoration:none;white-space:nowrap}
 .github-link:hover{background:#f0f6f4;border-color:#79a997;color:#206b54}

@@ -1,4 +1,5 @@
 import {showBrowserTrace} from './trace-browser.mjs';
+import {version as consoleVersion} from '../package.json';
 import {editionLabels} from './client-edition.mjs';
 import {scriptsInSuite,suiteLabels} from './script-groups.mjs';
 import {showBatch} from './batch-browser.mjs';
@@ -6,6 +7,7 @@ import {appendResultDescription,resultGuide,describeResult} from './result-displ
 import {installDetailPreview,findScriptCase} from './detail-preview.mjs';
 import {canStopJob,stopAllJobs} from './stop-all.mjs';
 import {collectBatches,batchLabels,batchResultClass,assertionRate,batchDate,phaseLabels} from './batches.mjs';
+document.querySelector('header h1')?.append(Object.assign(document.createElement('span'),{className:'console-version',textContent:'v'+consoleVersion}));
 const params=new URLSearchParams(location.search),traceId=params.get('trace'),batchId=params.get('batch');
 if(traceId){await showBrowserTrace(traceId);}else if(batchId){await showBatch(batchId);}else{
 const $=s=>document.querySelector(s);
