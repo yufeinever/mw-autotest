@@ -185,9 +185,22 @@ export async function runTaskLifecycleSteps(context){
    assert('DOCX报告给出正确总金额350元',/总|合计|汇总/.test(reportText)&&/\b350(?:\.0+)?\b/.test(reportText));
    finish('真实销售报告及金额核对');if(seen.todosDuring)finish('规划及执行状态观察');if(seen.intermediateBeforeFinal)finish('中间CSV生成期间预览');
   }else{
-   const visited=completedTools(data).filter(part=>/browser/i.test(part.tool)&&JSON.stringify(part.state.input).includes('baidu.com'));
+   const pageTools=new Set(['browser_snapshot','browser_click','browser_fill','browser_eval','browser_screenshot']);
+   const browserPages=completedTools({messages:data.messages.filter(message=>message.info?.sessionID===getSessionId())}).filter(part=>part.sessionID===getSessionId()&&pageTools.has(part.tool)).flatMap((part,index)=>{
+    const output=String(typeof part.state.output==='string'?part.state.output:JSON.stringify(part.state.output));
+    // Snapshot output may be truncated after its structured header. Read only
+    // the successful top-level page metadata, never URLs embedded in page text.
+    const header=output.match(/^\s*\{\s*"ok"\s*:\s*true,\s*"(target_id)"\s*:\s*("(?:\\.|[^"\\])*"),\s*"url"\s*:\s*("(?:\\.|[^"\\])*")/);
+    if(!header)return [];
+    const title=output.slice(header[0].length).match(/^\s*,\s*"title"\s*:\s*("(?:\\.|[^"\\])*")/);
+    return [{index,partId:part.id,tool:part.tool,input:part.state.input,ownerKind:header[1],ownerId:JSON.parse(header[2]),url:JSON.parse(header[3]),title:title?JSON.parse(title[1]):null,output}];
+   });
+   const visited=browserPages.filter(item=>{
+    const url=new URL(item.url);
+    return item.ownerKind==='target_id'&&url.origin==='https://www.baidu.com'&&url.pathname==='/';
+   });
    assert('本Session有完成的真实浏览器访问',visited.length>0);
-   const observed=completedTools(data).filter(part=>/browser/i.test(part.tool)).map(part=>String(typeof part.state.output==='string'?part.state.output:JSON.stringify(part.state.output))).join('\n');
+   const observed=browserPages.map(item=>item.output).join('\n');
    if(/未.{0,4}(?:发现|找到)|没有.{0,8}(?:时事|新闻)|无法.{0,5}(?:访问|获取)/.test(middle))throw review('原表新闻素材前提未满足，已保留当次页面与产物，不把缺少时事内容判为已覆盖');
    const excerpts=[...new Set(middle.split(/\r?\n/).filter(line=>/^\s*>/.test(line)).map(line=>normalizeExcerpt(line.replace(/^\s*>\s*/,''))).filter(text=>text.length>=8))];
    const observedText=normalizeExcerpt(observed),documentText=normalizeExcerpt(reportText);
@@ -205,7 +218,14 @@ export async function runTaskLifecycleSteps(context){
      const view=host.locator('webview').filter({visible:true});await view.waitFor();
      const actual=await view.evaluate(element=>({url:element.getURL(),title:element.getTitle(),loading:element.isLoading()}));
      await fs.writeFile(path.join(dir,'浏览器工作台实际地址.json'),JSON.stringify({sessionId:getSessionId(),...actual},null,2));
-     assert('浏览器工作台展示实际访问地址',/^https?:\/\/(?:[a-z0-9-]+\.)*baidu\.com(?:[/:?#]|$)/i.test(actual.url),actual);
+     const sourceUrls=text=>[...new Set([...text.matchAll(/https?:\/\/[^\s<>"'()\[\]，。；、）]+/gu)].map(match=>new URL(match[0]).href))];
+     const markdownSources=sourceUrls(middle),documentSources=sourceUrls(reportText),actualUrl=new URL(actual.url).href;
+     const linkedFacts=facts.filter(fact=>documentText.includes(fact)&&browserPages.some(item=>item.index>=visited[0].index&&normalizeExcerpt(item.output).includes(fact)&&markdownSources.includes(new URL(item.url).href)&&documentSources.includes(new URL(item.url).href)));
+     const matches=browserPages.filter(item=>item.index>=visited[0].index&&new URL(item.url).href===actualUrl&&item.title===actual.title&&linkedFacts.some(fact=>normalizeExcerpt(item.output).includes(fact))&&markdownSources.includes(actualUrl)&&documentSources.includes(actualUrl));
+     const navigation={sessionId:getSessionId(),actual,markdownSources,documentSources,linkedFactCount:linkedFacts.length,completedPages:browserPages.map(({output,...item})=>item),matchedPartIds:matches.map(item=>item.partId)};
+     await fs.writeFile(path.join(dir,'浏览器工作台导航及来源核对.json'),JSON.stringify(navigation,null,2));
+     assert('至少两项不同原文对应本Session真实页面且两文件保留其来源',linkedFacts.length>=2,navigation);
+     assert('浏览器工作台展示本Session真实访问且摘录报告保留的来源页',!actual.loading&&matches.length>0,navigation);
      await captureBrowser(host,'本Session浏览器工作台实际页面');
     }finally{if(hostBrowser)await hostBrowser.close();}
    });finish('浏览器工作台真实页面');

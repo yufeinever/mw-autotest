@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "17aada077f37aa47229c4e9f090bfdc41d932d916fc1e1ea09a29c47979951cf",
+  "workbookSha256": "3a80f1245b2b67419df597162a9573c0b74f86e309cc670b3ef69a956dced332",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -1921,7 +1921,7 @@
         "总体预期结果": "任务产物的文件/待办/浏览器结果均可正确查看。"
       },
       "script": "scripts/run-client-case036.mjs",
-      "coverage": "已实机执行，摘录断言过严待复验",
+      "coverage": "本Session真实浏览、两项不同原文及DOCX来源已验；实际webview成功识别，但脚本强制百度域名导致失败，文件预览及最终待办未执行。",
       "execution": "FAIL",
       "evidence": [
         "runs/1102-0041-工作台查看-第01次/执行报告.md",
@@ -1931,9 +1931,21 @@
         "runs/1102-0101-工作台查看-第01次/执行报告.md",
         "runs/1102-0101-工作台查看-第01次/执行结果.json",
         "runs/1102-0101-工作台查看-第01次/ses_e67f05f40ffeayvfYtld1wlVlQ-session-log.json",
-        "runs/1102-0101-工作台查看-第01次/trace.json"
+        "runs/1102-0101-工作台查看-第01次/trace.json",
+        "runs/1102-0733-工作台查看-第01次/执行报告.md",
+        "runs/1102-0733-工作台查看-第01次/执行结果.json",
+        "runs/1102-0733-工作台查看-第01次/执行日志.txt",
+        "tmp/home-round8-20261102.json",
+        "tmp/home-round8-final-20261102.json",
+        "tmp/home-round8-original-hashes-20261102.json",
+        "tmp/home-round8-archive-notes-20261102.json",
+        "runs/1102-0733-工作台查看-第01次/浏览器工作台实际地址.json",
+        "runs/1102-0733-工作台查看-第01次/网页摘录核对.json",
+        "runs/1102-0733-工作台查看-第01次/1102-0739-08-异常现场.png",
+        "tmp/home-round8-case36-original-hashes-20261102.json",
+        "tmp/home036-browser-provenance-20261102/README.md"
       ],
-      "notes": "正式批次0c402c4d-4456-48b1-82da-2a2fd8be1c1a；录像COMPLETED。正式FAIL，4/5项断言通过：真实执行中待办、完成浏览器访问、两项摘录可在本轮真实浏览输出核对及收尾通过；DOCX来源可追溯摘录及URL断言失败。只读复核：网页摘录有7条原文且均匹配真实浏览输出，DOCX实际保留4条原文、两新闻来源URL及baidu.com；脚本硬取facts.slice(0,2)，而DOCX合理保留第1/4条，存在固定头两条匹配导致误报的明确依据。历史FAIL保持，浏览器工作台真实页面、最终预览及后续待办等4项剩余步骤未验收；调整为实际两条不同摘录及来源匹配后仍需后续实机，不能改判PASS。",
+      "notes": "5/6项记录断言通过。真实最终页面为百度搜索后访问的12371.cn新闻来源，已读取本Session webview实际URL、标题及loading=false；现有baidu.com域名断言过窄。保留FAIL，不将地址定位修正等同整条通过。文件与待办后续分支未进入；正常收尾、hold=false，原三份哈希保持。导航及来源候选仅静态准备，未应用或测试。",
       "optimized": {
         "goal": "验证真实浏览器访问后，文件、待办及浏览器三个工作台入口能查看本轮实际结果。",
         "precondition": "已登录；自动模型；公网和真实浏览器工具可用；DOCX生成能力可用；只使用本轮Session与目录。",
@@ -1965,6 +1977,18 @@
             "total": 5
           },
           "report": "runs/1102-0101-工作台查看-第01次/执行报告.md"
+        },
+        {
+          "batchId": "1d2872ba-01ec-4c22-985c-5e588732f836",
+          "jobId": "2065bfa0-a3fb-41dd-adcb-fb8e0e328c1c",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T23:33:11.841Z",
+          "endedAt": "2026-11-01T23:39:18.873Z",
+          "assertions": {
+            "passed": 5,
+            "total": 6
+          },
+          "report": "runs/1102-0733-工作台查看-第01次/执行报告.md"
         }
       ]
     },
@@ -1985,19 +2009,44 @@
         "总体预期结果": "底部固定提示正常展示，”内容由AI生成，请核实重要信息”提示提示在新建、历史、执行中及完成状态均固定可见。。"
       },
       "script": "scripts/run-client-case037.mjs",
-      "coverage": "已编写，待复测",
-      "execution": "FAIL",
+      "coverage": "真实执行中、完成、滚动顶部/中部/底部及同Session续轮和历史重载后固定提示完整、可见且无遮挡。",
+      "execution": "PASS",
       "evidence": [
-        "runs/1101-0215-固定提示-第01次/执行报告.md"
+        "runs/1101-0215-固定提示-第01次/执行报告.md",
+        "runs/1102-0739-固定提示-第01次/执行报告.md",
+        "runs/1102-0739-固定提示-第01次/执行结果.json",
+        "runs/1102-0739-固定提示-第01次/执行日志.txt",
+        "tmp/home-round8-20261102.json",
+        "tmp/home-round8-final-20261102.json",
+        "tmp/home-round8-original-hashes-20261102.json",
+        "tmp/home-round8-archive-notes-20261102.json",
+        "runs/1102-0739-固定提示-第01次/固定提示位置核对.json",
+        "runs/1102-0739-固定提示-第01次/历史会话重载核对.json",
+        "runs/1102-0739-固定提示-第01次/1102-0741-11-历史会话重新加载固定提示.png",
+        "tmp/home-round8-case37-original-hashes-20261102.json"
       ],
-      "notes": "首次正式执行FAIL：脚本把未创建Session的首页当作会话页。已改为首次创建本Session后检查，尚未复测；原失败不代表产品固定提示缺失。",
+      "notes": "10/10项记录断言通过。历史重载前后精确Session URL保持，实际控件及已知引擎提示就绪后重新focus核首条真实消息；固定提示在消息区外、完整可见且无遮挡。两轮均自然完成，正常收尾、hold=false。截图、位置几何、重载核对及原三份哈希已保存；不扩大为其他历史会话或独立认证专项通过。",
       "optimized": {
         "goal": "验证新Session首次展示、执行中、完成、多轮与历史重新加载时固定提示真实可见，消息滚动不带走提示。",
         "precondition": "客户端登录；18888统一调度；有效空间；自动模型；长清单产生真实滚动。",
         "operations": "1. 发送60项合成检查清单，由产品正常创建本轮独立Session。\n2. 在新Session首次执行中核对固定提示文字、可视区域和遮挡；未发起首页不作会话断言。\n3. 完成后实际滚动消息到顶部、中部、底部，逐处核对。\n4. 同一Session续轮后重新加载，核对历史提示。",
         "expected": "提示始终完整可见、无遮挡，位于消息滚动区外；各位置确实发生滚动；多轮及历史加载后仍可见。",
         "assertions": "真实元素边界与视口、elementFromPoint遮挡核验、实际scrollTop、执行阶段、截图及位置JSON。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "1d2872ba-01ec-4c22-985c-5e588732f836",
+          "jobId": "1ee7b8ff-a0aa-489a-be56-f8269b6500a2",
+          "result": "PASS",
+          "startedAt": "2026-11-01T23:39:24.251Z",
+          "endedAt": "2026-11-01T23:41:09.175Z",
+          "assertions": {
+            "passed": 10,
+            "total": 10
+          },
+          "report": "runs/1102-0739-固定提示-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 39,
@@ -2016,19 +2065,43 @@
         "总体预期结果": "回复消息执行全流程展示完整、可交互，步骤自动收展正常。"
       },
       "script": "scripts/run-client-case038.mjs",
-      "coverage": "部分覆盖，待复测",
-      "execution": "BLOCKED",
+      "coverage": "真实多步骤工具及思考等待完成；展开后截图已有历史步骤，脚本只读状态行造成误断言，自动收展、收起及Word预览未完整验。",
+      "execution": "FAIL",
       "evidence": [
-        "runs/1101-0216-执行展示-第01次/执行报告.md"
+        "runs/1101-0216-执行展示-第01次/执行报告.md",
+        "runs/1102-0741-执行展示-第01次/执行报告.md",
+        "runs/1102-0741-执行展示-第01次/执行结果.json",
+        "runs/1102-0741-执行展示-第01次/执行日志.txt",
+        "tmp/home-round8-20261102.json",
+        "tmp/home-round8-final-20261102.json",
+        "tmp/home-round8-original-hashes-20261102.json",
+        "tmp/home-round8-archive-notes-20261102.json",
+        "runs/1102-0741-执行展示-第01次/执行展示过程观察.json",
+        "runs/1102-0741-执行展示-第01次/1102-0744-07-异常现场.png",
+        "tmp/home-round8-case38-original-hashes-20261102.json"
       ],
-      "notes": "正式执行BLOCKED：统一checkpoint替换job.json时Windows返回EPERM。已采到真实思考/等待状态，未取得自动收展、Word及预览的完整验收；具体文件占用或权限原因未确认。",
+      "notes": "3/4项记录断言通过，16个真实完成工具。展开按钮aria-expanded由false变true且异常截图可见过程正文；断言却比较按钮parentElement状态行，前后均为已完成/2m45s、18px，未读取实际展开区域。保留原FAIL，不能据此判产品展开失效；自动步骤转换未取得充分采样，最终Word内容及预览未进入。正常收尾、hold=false，原三份哈希保持；组件合同修正仅静态准备。",
       "optimized": {
         "goal": "验证多步骤执行的思考与等待、自动收展、半屏收纳交互和最终Word完整展示。",
         "precondition": "客户端登录；自动模型；Word生成可用；任务真实产生至少三个工具步骤及足够过程高度。",
         "operations": "1. 发起合成星桥项目约500字Word周报任务，分阶段保存中间材料及核验文件。\n2. 按统一wait观察真实busy、思考文本及各步骤收展状态变化。\n3. 出现执行过程收纳后展开、核对增加的历史内容，再收起。\n4. 解压核对实际Word关键事实并打开预览。",
         "expected": "过程状态与真实执行对应；已完成步骤自动收起且下一步打开；触发半屏收纳后可展开收起；最终Word包含真实素材且可预览。",
         "assertions": "同Session完成工具、过程连续采样、真实收展变化、aria-expanded及前后内容、DOCX正文与实际预览。未捕获过程或阈值分支记REVIEW。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "1d2872ba-01ec-4c22-985c-5e588732f836",
+          "jobId": "e24a7fa7-a24c-4f25-9c41-4e1a8d45eb29",
+          "result": "FAIL",
+          "startedAt": "2026-11-01T23:41:13.569Z",
+          "endedAt": "2026-11-01T23:44:27.143Z",
+          "assertions": {
+            "passed": 3,
+            "total": 4
+          },
+          "report": "runs/1102-0741-执行展示-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 40,
@@ -2047,19 +2120,43 @@
         "总体预期结果": "Markdown渲染规范，超链接可跳转。"
       },
       "script": "scripts/run-client-case039.mjs",
-      "coverage": "部分覆盖，待复测",
-      "execution": "FAIL",
+      "coverage": "真实上传与模型复制产物逐字一致；send后附件checkpoint未先取页面权，被框架拦截，Markdown语义、代码不执行及链接跳转未开始。",
+      "execution": "BLOCKED",
       "evidence": [
-        "runs/1101-0217-Markdown渲染-第01次/执行报告.md"
+        "runs/1101-0217-Markdown渲染-第01次/执行报告.md",
+        "runs/1102-0744-Markdown渲染-第01次/执行报告.md",
+        "runs/1102-0744-Markdown渲染-第01次/执行结果.json",
+        "runs/1102-0744-Markdown渲染-第01次/执行日志.txt",
+        "tmp/home-round8-20261102.json",
+        "tmp/home-round8-final-20261102.json",
+        "tmp/home-round8-original-hashes-20261102.json",
+        "tmp/home-round8-archive-notes-20261102.json",
+        "tmp/home-round8-case39-original-hashes-20261102.json",
+        "tmp/home039-page-ownership-20261102/README.md",
+        "tmp/home039-page-ownership-20261102/manifest.json"
       ],
-      "notes": "正式执行FAIL：真实MD上传完成，审批前会话正文核对误选产品内部附件说明，导致focus超时。共用focus已只剔除已知附件路径/策略包装，保留真实正文与Session核对；修正未复测，渲染及链接未验。",
+      "notes": "2/2仅产物一致及公共收尾断言。模型已正常完成，send交还页面后脚本在control.withUI之外清attachments并checkpoint，收到没有页面操作权，不得登记草稿；不是模型未完成或Markdown渲染失败。已准备把资源登记移入紧接既有withUI块的最小候选，不放宽调度校验。正常收尾、hold=false，原三份哈希保持；候选未应用测试。",
       "optimized": {
         "goal": "验证标准Markdown在真实产物预览中渲染语义、可读层级、代码不执行及链接真实跳转。",
         "precondition": "客户端登录；自动模型；真实附件上传与Markdown预览可用；本机可绑定临时回环端口。",
         "operations": "1. 生成含标题、列表、加粗、行内代码、代码块、引用、表格与本轮链接的合成MD。\n2. 通过产品上传入口发送，模型原样复制为本任务MD产物。\n3. 对照输入内容，打开产物预览，检查真实语义节点及样式。\n4. 点击链接，核对点击后新GET；结束关闭本轮HTTP服务。",
         "expected": "输入与产物一致；各Markdown语义真实渲染且可见，标题层级可区分；代码只展示；链接保留目标并实际发出请求。",
         "assertions": "产品filechooser及附件标签、文件字节文本、h1/h2/li/strong/code/pre/blockquote/table/a、字号与指针、代码标记未执行、点击前后真实请求。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "1d2872ba-01ec-4c22-985c-5e588732f836",
+          "jobId": "89b44749-3814-414c-9fe7-f802dccf605b",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-01T23:44:30.966Z",
+          "endedAt": "2026-11-01T23:46:17.576Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1102-0744-Markdown渲染-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 41,
@@ -2078,19 +2175,43 @@
         "总体预期结果": "工具调用卡片、详情入参出参、关联文件跳转均正常。"
       },
       "script": "scripts/run-client-case040.mjs",
-      "coverage": "部分覆盖，待复测",
+      "coverage": "真实文件和成功工具、对应卡片详情已核对；write详情缺filePath及关联文件入口，完整参数和详情文件跳转未验收。",
       "execution": "REVIEW",
       "evidence": [
-        "runs/1101-0219-工具详情-第01次/执行报告.md"
+        "runs/1101-0219-工具详情-第01次/执行报告.md",
+        "runs/1102-0746-工具详情-第01次/执行报告.md",
+        "runs/1102-0746-工具详情-第01次/执行结果.json",
+        "runs/1102-0746-工具详情-第01次/执行日志.txt",
+        "tmp/home-round8-20261102.json",
+        "tmp/home-round8-final-20261102.json",
+        "tmp/home-round8-original-hashes-20261102.json",
+        "tmp/home-round8-archive-notes-20261102.json",
+        "runs/1102-0746-工具详情-第01次/工具详情对应关系.json",
+        "runs/1102-0746-工具详情-第01次/1102-0747-05-工具真实入参出参.png",
+        "tmp/home-round8-case40-original-hashes-20261102.json"
       ],
-      "notes": "正式执行REVIEW：实际写入/读取唯一标记TXT通过，详情定位假设渲染消息ID等于引擎ID，未匹配详情。已改为本Session内按真实唯一输入/输出核对，并记录未展示的输入字段；修正及详情关联待复测。",
+      "notes": "4/4项记录断言通过，仅证明文件生成、对应完成工具、卡片详情主体及公共收尾。真实write详情显示正文输入与Wrote file successfully输出，缺filePath字段，也无详情内关联文件入口。按原表保留REVIEW，不从产物菜单另开文件冒充详情关联。正常收尾、hold=false，原三份哈希保持。",
       "optimized": {
         "goal": "验证本轮成功工具卡片、工作台详情实际入参出参及关联文件预览。",
         "precondition": "客户端登录；自动模型；本任务文件生成及读取工具可用。",
         "operations": "1. 在独立Session创建唯一标记TXT并读取。\n2. 由真实完成工具消息ID找到本轮卡片，展开执行过程。\n3. 打开对应工具详情，按实际工具类型核对完整语义输入与输出。\n4. 从详情内关联文件入口打开预览并核对唯一标记。",
         "expected": "工具卡片与本次完成调用对应；当前产品右工作台详情展示实际内容；关联入口对应本任务文件，不能用产物菜单替代该路径。",
         "assertions": "真实文件内容、引擎完成工具及message/callID、卡片与详情实际参数匹配、详情关联入口及预览正文；缺入口或无法完整核对记REVIEW。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "1d2872ba-01ec-4c22-985c-5e588732f836",
+          "jobId": "30a9cc8a-c366-498a-ad02-cb415dcaa4f4",
+          "result": "REVIEW",
+          "startedAt": "2026-11-01T23:46:21.728Z",
+          "endedAt": "2026-11-01T23:47:14.925Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1102-0746-工具详情-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 42,

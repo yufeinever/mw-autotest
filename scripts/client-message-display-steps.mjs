@@ -143,12 +143,27 @@ export async function runMessageDisplaySteps(context){
   await ui(async()=>{
    const expand=messages(page).getByRole('button',{name:'展开执行过程',exact:true});
    if(!await expand.count()){log('过程收纳待复核','本次未出现半屏收纳入口，未以最终完成替代阈值分支');return;}
-   const toggle=expand.first(),before=await toggle.evaluate(element=>({expanded:element.getAttribute('aria-expanded'),text:element.parentElement.innerText,height:element.parentElement.getBoundingClientRect().height}));
-   assert('收纳块初始为收起状态',before.expanded==='false',before);await capture('执行过程自动收纳');
-   await toggle.click();const collapse=messages(page).getByRole('button',{name:'收起执行过程',exact:true}).first();await collapse.waitFor();
-   const expanded=await collapse.evaluate(element=>({expanded:element.getAttribute('aria-expanded'),text:element.parentElement.innerText,height:element.parentElement.getBoundingClientRect().height}));
-   assert('展开后展示更多真实历史步骤',expanded.expanded==='true'&&expanded.text.length>before.text.length,{before,expanded});await capture('展开执行过程');
-   await collapse.click();await messages(page).getByRole('button',{name:'展开执行过程',exact:true}).first().waitFor();await capture('收起执行过程');finish('半屏收纳及展开收起');
+   const facts=['素材.md','周报正文.md'].map(name=>({name,calls:complete.filter(tool=>JSON.stringify([tool.state.input,tool.state.output]).includes(name)).map(tool=>({tool:tool.tool,callID:tool.callID,messageId:tool.messageId}))}));
+   const toggle=await expand.first().elementHandle();
+   // IJn renders the animated process body immediately after its status row.
+   const content=await toggle.evaluateHandle(element=>element.parentElement.nextElementSibling),fold={facts};
+   const snapshot=()=>content.evaluate((element,toggle)=>({sameContent:element.isConnected&&toggle.parentElement.nextElementSibling===element,expanded:toggle.getAttribute('aria-expanded'),text:element.innerText,height:element.getBoundingClientRect().height,scrollHeight:element.scrollHeight,overflowY:getComputedStyle(element).overflowY}),toggle);
+   const waitFold=async open=>{const ready=await page.waitForFunction(({content,open})=>{
+    const height=content.getBoundingClientRect().height;
+    return open?height>1&&height>=content.scrollHeight-1:height<=1;
+   },{content,open});await ready.dispose();};
+   try{
+    fold.before=await snapshot();
+    assert('收纳块初始内容实际被裁剪',fold.before.sameContent&&fold.before.expanded==='false'&&fold.before.overflowY==='hidden'&&fold.before.height<=1,fold.before);
+    await capture('执行过程自动收纳');await toggle.click();await waitFold(true);fold.expanded=await snapshot();
+    assert('展开后展示真实过程正文及文件步骤',fold.expanded.sameContent&&fold.expanded.expanded==='true'&&fold.expanded.height>fold.before.height+1&&fold.expanded.height>=fold.expanded.scrollHeight-1&&facts.every(fact=>fact.calls.length&&fold.expanded.text.includes(fact.name)),{facts,before:fold.before,expanded:fold.expanded});
+    await capture('展开执行过程');await toggle.click();await waitFold(false);fold.collapsed=await snapshot();
+    assert('收起后相同过程正文保留且实际被裁剪',fold.collapsed.sameContent&&fold.collapsed.expanded==='false'&&fold.collapsed.overflowY==='hidden'&&fold.collapsed.height<=1&&fold.collapsed.text===fold.expanded.text,{expanded:fold.expanded,collapsed:fold.collapsed});
+    await capture('收起执行过程');finish('半屏收纳及展开收起');
+   }finally{
+    try{fold.final=await snapshot();await fs.writeFile(path.join(dir,'执行过程展开收起核对.json'),JSON.stringify(fold,null,2));}
+    finally{await content.dispose();await toggle.dispose();}
+   }
   });
   const file='项目周报.docx',archive=unzipSync(await fs.readFile(path.join(control.directory,file))),text=xmlText(strFromU8(archive['word/document.xml']));
   assert('真实Word包含本轮周报事实',['40','32','8','许棠','联调'].every(fact=>text.includes(fact)),text);await saveFile(file);
@@ -163,8 +178,9 @@ export async function runMessageDisplaySteps(context){
    await fs.writeFile(file,body,'utf8');
    await uploadTaskAttachment(page,{file,name,resources,checkpointResources,capture});finish('真实上传标准Markdown');
    await send('请读取刚上传的Markdown文件，将全部内容原样复制为当前任务目录的“'+output+'”，不要修改Markdown语法或链接，不执行代码块。最终提供这个文件的预览入口。');
-   assert('任务产物与上传Markdown内容一致',(await fs.readFile(path.join(control.directory,output),'utf8')).replace(/\r\n/g,'\n').trimEnd()===body.trimEnd());await saveFile(output);resources.attachments=[];await checkpointResources();
+   assert('任务产物与上传Markdown内容一致',(await fs.readFile(path.join(control.directory,output),'utf8')).replace(/\r\n/g,'\n').trimEnd()===body.trimEnd());await saveFile(output);
    await ui(async()=>{
+    resources.attachments=[];await checkpointResources();
     const panel=await previewTaskFile(page,config,output,capture,['星桥排版验收']);
     // The renderer can live directly in the panel or inside its documented preview frame.
     const frame=panel.locator('iframe').filter({visible:true}),root=await frame.count()===1?frame.contentFrame().locator('body'):panel;
