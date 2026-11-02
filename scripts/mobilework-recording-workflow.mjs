@@ -169,7 +169,7 @@ export async function refreshRecordingBinding(page,owned,{checkpoint=async()=>{}
    Object.assign(owned.recording,{recorder:actual.recorder,packageRoot:actual.packageRoot,packageVersion:manifest.packageVersion,apiSha256:sha(api)});
   }
   if(interruptedStart&&binding.status==='completed'){
-   const settlement=await observeRecordingSettlement(owned);
+   const settlement=await observeRecordingSettlement(page,owned);
    requireValue(settlement.artifactSettled&&settlement.continuationSettled,'中断启录后的实际产物或finish交付尚未完成，保留归属');
    requireValue(!(await processInfo(owned,'Probe')).recorder,'中断启录材料已完成但录制器仍活动，保留现场');
   }else if(interruptedStart){
@@ -216,11 +216,26 @@ export async function requestRecordingStop(page,owned,{checkpoint=async()=>{},al
  owned.stage='processing';await checkpoint();return result;
 }
 
-export async function observeRecordingSettlement(owned){
+export function recordingContinuationFinished(deliveries,messages,status,previouslySettled=false){
+ const accepted=deliveries.filter(delivery=>delivery.status==='accepted');
+ return accepted.every(delivery=>delivery.engineMessageId&&messages.some(message=>message.info?.id===delivery.engineMessageId&&message.info.role==='user')&&messages.some(message=>message.info?.role==='assistant'&&message.info.parentID===delivery.engineMessageId&&(message.info.error||message.info.time?.completed&&message.info.finish&&message.info.finish!=='tool-calls')))&&
+  (previouslySettled||status==='idle');
+}
+export async function observeRecordingSettlement(page,owned){
  const binding=await readBinding(owned),callbackReceived=binding.deliveries.length>0;
  const callbackSettled=callbackReceived&&binding.deliveries.every(delivery=>['accepted','cancelled'].includes(delivery.status));
  const continuationSuppressed=!callbackReceived&&Boolean(owned.hostStopMessageId)&&binding.stopMessageId===owned.hostStopMessageId;
- const continuationSettled=callbackSettled||continuationSuppressed;
+ let continuationSettled=continuationSuppressed,deliveredMessagesVisible=false;
+ if(callbackSettled){
+  const accepted=binding.deliveries.filter(delivery=>delivery.status==='accepted');
+  if(!accepted.length)continuationSettled=true;
+  else{
+   const connection=await readEngineConnection(page),data=await sourceLog(connection,owned);
+   const status=await engineRequest(connection,'/session/status?directory='+encodeURIComponent(owned.sourceSession.directory));
+   deliveredMessagesVisible=accepted.every(delivery=>delivery.engineMessageId&&data.messages.some(message=>message.info?.id===delivery.engineMessageId&&message.info.role==='user'));
+   continuationSettled=recordingContinuationFinished(accepted,data.messages,status[owned.sourceSession.id]?.type||'idle',owned.continuationSettled);
+  }
+ }
  let artifactSettled=false,hasRecordedSteps=false;
  if(binding.status==='completed'&&Number.isFinite(binding.artifactCompletedAt)&&!binding.terminalCauseCode){
   const file=await fs.lstat(owned.recording.stepInfoFilePath);requireValue(file.isFile()&&!file.isSymbolicLink(),'本轮步骤路径不是普通录制材料');
@@ -229,7 +244,7 @@ export async function observeRecordingSettlement(owned){
   hasRecordedSteps=Array.isArray(artifact.steps)&&artifact.steps.length>0;
  }
  owned.artifactSettled=artifactSettled;owned.continuationSettled=continuationSettled;
- return {artifactSettled,hasRecordedSteps,callbackReceived,callbackSettled,continuationSuppressed,continuationSettled,binding};
+ return {artifactSettled,hasRecordedSteps,callbackReceived,callbackSettled,deliveredMessagesVisible,continuationSuppressed,continuationSettled,binding};
 }
 export function canAdvanceRecordingSession(owned){
  return Boolean(owned&&!owned.cleanupComplete&&owned.startOutcome==='started'&&owned.artifactSettled&&owned.continuationSettled&&owned.generatedSkill?.delivered&&!owned.generatedSkill.removed&&['generated','replaying'].includes(owned.stage));
@@ -347,10 +362,15 @@ async function settleOwnedSessions(page,owned,connection,{allowAbort,checkpoint}
  for(const session of [...roots,...owned.childSessions]){
   // A startup abort may precede a late finish continuation. Re-read actual
   // state even when this identity had been idle in an earlier cycle.
-  const job={sessionId:session.id,directory:session.directory,abortAcknowledged:session.abortAcknowledged};
-  const ready=await settleSession(page,job,connection,{allowAbort});
-  for(const key of ['abortAcknowledged','sessionSettled','sessionMissing','recoveryAbortAttempted'])if(job[key]!==undefined)session[key]=job[key];
-  await checkpoint();requireValue(ready,'SOP所属Session或真实子任务仍在运行/等待交互：'+session.id);
+  const job={sessionId:session.id,directory:session.directory,abortAcknowledged:session.abortAcknowledged,recoveryAbortAttempted:session.recoveryAbortAttempted};
+  let ready;
+  const save=async()=>{
+   for(const key of ['abortAcknowledged','sessionSettled','sessionMissing','recoveryAbortAttempted'])if(job[key]!==undefined)session[key]=job[key];
+   await checkpoint();
+  };
+  try{ready=await settleSession(page,job,connection,{allowAbort,checkpoint:save});}
+  finally{await save();}
+  requireValue(ready,'SOP所属Session或真实子任务仍在运行/等待交互：'+session.id);
  }
  // After aborting the parent, re-read once: children created during handoff
  // must enter the next existing controller cycle, never escape this barrier.
@@ -389,8 +409,9 @@ export async function settleRecordingResources(page,owned,{allowAbort=false,chec
  if(owned.startOutcome!=='started'){
   const starts=recordingTool(data,'recording_start'),running=starts.some(tool=>!['completed','error'].includes(tool.state?.status));
   if(allowAbort&&running){
-   const job={sessionId:owned.sourceSession.id,...owned.sourceSession};await settleSession(page,job,connection,{allowAbort:true});
-   for(const key of ['abortAcknowledged','sessionSettled','recoveryAbortAttempted'])if(job[key]!==undefined)owned.sourceSession[key]=job[key];await checkpoint();
+   const job={sessionId:owned.sourceSession.id,...owned.sourceSession};
+   const save=async()=>{for(const key of ['abortAcknowledged','sessionSettled','sessionMissing','recoveryAbortAttempted'])if(job[key]!==undefined)owned.sourceSession[key]=job[key];await checkpoint();};
+   try{await settleSession(page,job,connection,{allowAbort:true,checkpoint:save});}finally{await save();}
    throw blocked('已请求停止启动回合，仍等待真实启录工具/产品绑定终态，未放行');
   }
   requireValue(!running&&!starts.some(tool=>tool.state?.status==='completed'),'录制启动尚未确认完成，保留现场');
@@ -412,9 +433,15 @@ export async function settleRecordingResources(page,owned,{allowAbort=false,chec
  }else{
   requireValue(binding&&!binding.terminalCauseCode&&['active','completed'].includes(binding.status),'已启录但产品终态异常，不能伪装处理完成');
   if(binding.status==='active')await requestRecordingStop(page,owned,{checkpoint,allowInterruptedStart:true});
-  const settlement=await observeRecordingSettlement(owned);await checkpoint();
+  let settlement=await observeRecordingSettlement(page,owned);await checkpoint();
+  if(allowAbort&&settlement.artifactSettled&&settlement.callbackSettled&&settlement.deliveredMessagesVisible&&!settlement.continuationSettled){
+   await settleOwnedSessions(page,owned,connection,{allowAbort,checkpoint});
+   settlement=await observeRecordingSettlement(page,owned);await checkpoint();
+  }
   requireValue(settlement.artifactSettled&&settlement.continuationSettled,'SOP材料或真实finish续轮尚未收尾，保留归属');
   await settleOwnedSessions(page,owned,connection,{allowAbort,checkpoint});
+  const after=await observeRecordingSettlement(page,owned);await checkpoint();
+  requireValue(after.artifactSettled&&after.continuationSettled&&JSON.stringify(after.binding.deliveries)===JSON.stringify(settlement.binding.deliveries),'SOP交接期间finish交付发生变化或续轮未结束，保留归属');
  }
  await recoverPendingGeneration(page,owned,connection,checkpoint);
  if(owned.calculator){

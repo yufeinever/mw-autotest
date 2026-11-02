@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import re
+import subprocess
 import win32con
 import win32gui
 import win32process
@@ -26,10 +27,10 @@ def child_windows(parent):
     return children
 
 
-def folder_dialogs(process_id):
+def folder_dialogs(process_id, include_hidden=False):
     result = []
     def visit(hwnd, _):
-        if not win32gui.IsWindowVisible(hwnd) or win32gui.GetClassName(hwnd) != '#32770':
+        if (not include_hidden and not win32gui.IsWindowVisible(hwnd)) or win32gui.GetClassName(hwnd) != '#32770':
             return
         if win32process.GetWindowThreadProcessId(hwnd)[1] != process_id:
             return
@@ -68,7 +69,7 @@ def folder_controls(hwnd):
     raise RuntimeError('已识别原生窗口，但无法唯一识别文件夹输入框及确认按钮；未发送键盘或坐标操作')
 
 
-def owned_errors(parent, process_id):
+def owned_alerts(parent, process_id, read_text=False):
     result = []
     def visit(hwnd, _):
         if not win32gui.IsWindowVisible(hwnd) or win32gui.GetClassName(hwnd) != '#32770' or hwnd == parent:
@@ -82,8 +83,21 @@ def owned_errors(parent, process_id):
             return
         text = ' '.join(win32gui.GetWindowText(child) for child in child_windows(hwnd)
                         if win32gui.GetClassName(child) == 'Static')
-        if re.search(r'不存在|找不到|无效|不正确|拒绝|权限|does not exist|not found|invalid|denied', text, re.I):
-            result.append({'hwnd': hwnd, 'text': text})
+        if read_text and not text.strip():
+            script = ("[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
+                      "Add-Type -AssemblyName UIAutomationClient;Add-Type -AssemblyName UIAutomationTypes;"
+                      "$root=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]" + str(hwnd) + ");"
+                      "$condition=[System.Windows.Automation.PropertyCondition]::new("
+                      "[System.Windows.Automation.AutomationElement]::ControlTypeProperty,"
+                      "[System.Windows.Automation.ControlType]::Text);"
+                      "$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition) | "
+                      "ForEach-Object { $_.Current.Name }")
+            text = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+                                  capture_output=True, text=True, encoding='utf-8', check=True).stdout.strip()
+        buttons = [child for child in child_windows(hwnd)
+                   if win32gui.IsWindowVisible(child) and win32gui.GetClassName(child) == 'Button']
+        button = buttons[0] if len(buttons) == 1 and win32gui.GetWindowText(buttons[0]).lower() in ('确定', 'ok') else None
+        result.append({'hwnd': hwnd, 'text': text, 'button': button})
     win32gui.EnumWindows(visit, None)
     return result
 
@@ -93,6 +107,7 @@ def main():
     parser.add_argument('--pid', type=int, required=True)
     parser.add_argument('--path')
     parser.add_argument('--inspect', action='store_true')
+    parser.add_argument('--window-state', type=int)
     parser.add_argument('--wait', action='store_true')
     parser.add_argument('--dialog', type=int)
     parser.add_argument('--prepare', action='store_true')
@@ -101,8 +116,23 @@ def main():
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--invalid', action='store_true')
     args = parser.parse_args()
+    if args.window_state:
+        exists = bool(win32gui.IsWindow(args.window_state))
+        if exists and (win32process.GetWindowThreadProcessId(args.window_state)[1] != args.pid
+                       or win32gui.GetClassName(args.window_state) != '#32770'):
+            raise RuntimeError('登记的文件夹窗口归属不匹配')
+        print(json.dumps({'ok': True, 'exists': exists}, ensure_ascii=False))
+        return 0
     if args.inspect:
-        print(json.dumps({'ok': True, 'dialogs': [description(hwnd) for hwnd in folder_dialogs(args.pid)]}, ensure_ascii=False))
+        dialogs = []
+        for hwnd in folder_dialogs(args.pid, include_hidden=True):
+            alerts = owned_alerts(hwnd, args.pid)
+            if win32gui.IsWindowVisible(hwnd) or alerts:
+                dialog = description(hwnd)
+                dialog['visible'] = bool(win32gui.IsWindowVisible(hwnd))
+                dialog['alerts'] = alerts
+                dialogs.append(dialog)
+        print(json.dumps({'ok': True, 'dialogs': dialogs}, ensure_ascii=False))
         return 0
     if not args.path:
         parser.error('选择目录需要 --path')
@@ -111,10 +141,10 @@ def main():
         raise RuntimeError('目标测试目录不存在：' + target)
     hwnd = args.confirm or args.cancel or args.dialog
     if hwnd:
-        if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+        if not win32gui.IsWindow(hwnd):
             print(json.dumps({'ok': True, 'dialogClosed': True, 'alreadyClosed': True}, ensure_ascii=False))
             return 0
-        if hwnd not in folder_dialogs(args.pid):
+        if win32process.GetWindowThreadProcessId(hwnd)[1] != args.pid or win32gui.GetClassName(hwnd) != '#32770':
             raise RuntimeError('登记的文件夹窗口归属不匹配，未操作窗口')
     else:
         deadline = time.monotonic() + args.timeout
@@ -129,52 +159,60 @@ def main():
             raise RuntimeError('未找到当前MobileWork进程的Windows文件夹选择器')
         hwnd = dialogs[0]
     if args.cancel:
-        for error in owned_errors(hwnd, args.pid):
-            buttons = [child for child in child_windows(error['hwnd'])
-                       if win32gui.GetClassName(child) == 'Button' and win32gui.GetDlgCtrlID(child) == 1]
-            if len(buttons) != 1:
-                raise RuntimeError('本轮路径错误确认按钮不唯一，保留现场')
-            win32gui.PostMessage(buttons[0], win32con.BM_CLICK, 0, 0)
+        for error in owned_alerts(hwnd, args.pid):
+            if not error['button']:
+                raise RuntimeError('本轮原生子弹框确认按钮不唯一，保留现场')
+            win32gui.PostMessage(error['button'], win32con.BM_CLICK, 0, 0)
             deadline = time.monotonic() + args.timeout
             while win32gui.IsWindow(error['hwnd']) and win32gui.IsWindowVisible(error['hwnd']):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('本轮路径错误框尚未关闭，保留现场')
                 time.sleep(0.1)
+        if not win32gui.IsWindow(hwnd):
+            print(json.dumps({'ok': True, 'dialogClosed': True, 'alreadyClosed': True}, ensure_ascii=False))
+            return 0
+    if not win32gui.IsWindowVisible(hwnd):
+        raise RuntimeError('本轮文件夹窗口不可见，未确认完成')
     before = description(hwnd)
-    edit, button = folder_controls(hwnd)
     if args.wait:
-        print(json.dumps({'ok': True, 'path': control_text(edit), 'dialogFound': True,
+        print(json.dumps({'ok': True, 'dialogFound': True,
                           'dialogClosed': False, 'dialog': before}, ensure_ascii=False))
         return 0
-    if not args.confirm and not args.cancel:
-        win32gui.SendMessage(edit, win32con.WM_SETTEXT, 0, target)
-    field = control_text(edit)
-    # Cancelling an owned picker must also work before a path has been entered.
-    if not args.cancel and os.path.normcase(field) != os.path.normcase(target):
-        raise RuntimeError('原生文件夹输入框回读与目标路径不一致')
-    if args.prepare:
-        print(json.dumps({'ok': True, 'path': field, 'dialogFound': True, 'dialogClosed': False,
-                          'dialog': before}, ensure_ascii=False))
-        return 0
     if args.cancel:
+        field = None
         buttons = [child for child in child_windows(hwnd)
                    if win32gui.GetClassName(child) == 'Button' and win32gui.GetDlgCtrlID(child) == 2]
         if len(buttons) != 1:
             raise RuntimeError('未唯一识别本轮窗口的取消按钮')
         button = buttons[0]
+    else:
+        edit, button = folder_controls(hwnd)
+        if not args.confirm:
+            win32gui.SendMessage(edit, win32con.WM_SETTEXT, 0, target)
+        field = control_text(edit)
+        if os.path.normcase(field) != os.path.normcase(target):
+            raise RuntimeError('原生文件夹输入框回读与目标路径不一致')
+        if args.prepare:
+            print(json.dumps({'ok': True, 'path': field, 'dialogFound': True, 'dialogClosed': False,
+                              'dialog': before}, ensure_ascii=False))
+            return 0
     win32gui.PostMessage(button, win32con.BM_CLICK, 0, 0)
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
-        if not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+        if args.invalid:
+            alerts = owned_alerts(hwnd, args.pid, read_text=True)
+            if alerts:
+                errors = [{'hwnd': item['hwnd'], 'text': item['text']} for item in alerts]
+                rejected = any(re.search(r'不存在|找不到|无效|不正确|拒绝|权限|does not exist|not found|invalid|denied', item['text'], re.I) for item in errors)
+                print(json.dumps({'ok': True, 'path': field, 'dialogFound': True, 'dialogClosed': False,
+                                  'dialog': before, 'rejected': rejected, 'errors': errors}, ensure_ascii=False))
+                return 0
+        if not win32gui.IsWindow(hwnd):
             print(json.dumps({'ok': True, 'path': field, 'dialogFound': True, 'dialogClosed': True,
                               'dialog': before}, ensure_ascii=False))
             return 0
-        if args.invalid:
-            errors = owned_errors(hwnd, args.pid)
-            if errors:
-                print(json.dumps({'ok': True, 'path': field, 'dialogFound': True, 'dialogClosed': False,
-                                  'dialog': before, 'rejected': True, 'errors': errors}, ensure_ascii=False))
-                return 0
+        if not args.invalid and not win32gui.IsWindowVisible(hwnd) and owned_alerts(hwnd, args.pid):
+            raise RuntimeError('文件夹窗口已隐藏，但本轮原生子弹框仍未关闭')
         time.sleep(0.1)
     if args.invalid:
         print(json.dumps({'ok': True, 'path': field, 'dialogFound': True, 'dialogClosed': False,

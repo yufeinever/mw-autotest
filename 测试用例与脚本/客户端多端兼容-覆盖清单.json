@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workbook": "测试用例与脚本\\灵犀通用智能体· MobileWork Demo 功能点与测试案例-v1.8-1014.xlsx",
-  "workbookSha256": "3a80f1245b2b67419df597162a9573c0b74f86e309cc670b3ef69a956dced332",
+  "workbookSha256": "a83e30b990f908ecc106f6d9ced670260dd45d375bf5275ae7ba6bb321b3f281",
   "sheet": "测试案例（客户端-多端兼容）",
   "createdAt": "2026-10-31T20:31:55+08:00",
   "cases": [
@@ -70,10 +70,44 @@
         "总体预期结果": "会话执行成功，查看输出结果符合预期"
       },
       "script": "scripts/run-client-case003.mjs",
-      "coverage": "已审查，待实测",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "使用虚构邮件材料，检查场景填充、完整邮件及 email-official 实际调用；不发送邮件。"
+      "coverage": "已实机通过：场景填充、会话回复及Skill实际调用",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1103-0042-邮件处理-第01次/执行报告.md",
+        "runs/1103-0042-邮件处理-第01次/执行结果.json",
+        "runs/1103-0042-邮件处理-第01次/执行日志.txt",
+        "runs/1103-0043-邮件处理-第01次/执行报告.md",
+        "runs/1103-0043-邮件处理-第01次/执行结果.json",
+        "runs/1103-0043-邮件处理-第01次/执行日志.txt",
+        "runs/1103-0043-邮件处理-第01次/trace.json"
+      ],
+      "notes": "使用虚构邮件材料，不发送邮件。00:42首次因输入区资源页面归属不匹配BLOCKED，录像首帧超时；00:43复跑PASS，13/13断言含email-official实际调用，录像完成，收尾完成。两次历史结果均保留。",
+      "executionHistory": [
+        {
+          "batchId": "de4cd02c-33cb-4702-991c-135e2b851492",
+          "jobId": "4360568e-b2e0-4c3c-be70-bcabd7fa6678",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T16:42:30.019Z",
+          "endedAt": "2026-11-02T16:43:04.377Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1103-0042-邮件处理-第01次/执行报告.md"
+        },
+        {
+          "batchId": "4bee1138-a158-418d-8b60-9bb9df258ed3",
+          "jobId": "3e601d35-1d00-4046-97b1-4d1ae587daac",
+          "result": "PASS",
+          "startedAt": "2026-11-02T16:43:50.337Z",
+          "endedAt": "2026-11-02T16:45:03.940Z",
+          "assertions": {
+            "passed": 13,
+            "total": 13
+          },
+          "report": "runs/1103-0043-邮件处理-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 5,
@@ -491,14 +525,33 @@
         "总体预期结果": "点击和展示Mobile work01】工作空间名称成功"
       },
       "script": "scripts/run-client-case019.mjs",
-      "coverage": "已实机验证，通过",
+      "coverage": "实机通过：原生目录选择、空间注册展示及正常收尾；偶发回跳待查",
       "execution": "PASS",
       "evidence": [
         "runs/1031-2307-原生文件夹控件验证-第02次/验证说明.md",
         "runs/1101-2317-选择本地工作空间-第01次/执行报告.md",
-        "runs/1101-2317-选择本地工作空间-第01次/执行结果.json"
+        "runs/1101-2317-选择本地工作空间-第01次/执行结果.json",
+        "runs/1103-0045-选择本地工作空间-第01次/执行报告.md",
+        "runs/1103-0045-选择本地工作空间-第01次/执行结果.json",
+        "runs/1103-0045-选择本地工作空间-第01次/执行日志.txt",
+        "runs/1103-0045-选择本地工作空间-第01次/原生文件夹选择器.json",
+        "runs/1103-0053-选择本地工作空间-第01次/执行报告.md",
+        "runs/1103-0053-选择本地工作空间-第01次/执行结果.json",
+        "runs/1103-0053-选择本地工作空间-第01次/执行日志.txt",
+        "runs/1103-0053-选择本地工作空间-第01次/原生文件夹选择器.json",
+        "runs/1103-0053-选择本地工作空间-第01次/1103-0054-02-异常现场.json",
+        "runs/1103-0102-选择本地工作空间-第01次/执行报告.md",
+        "runs/1103-0102-选择本地工作空间-第01次/原生文件夹选择器.json",
+        "runs/1103-0153-选择本地工作空间-第01次/执行报告.md",
+        "runs/1103-0153-选择本地工作空间-第01次/原生文件夹选择器.json",
+        "runs/1103-0200-选择本地工作空间-第01次/执行报告.md",
+        "runs/1103-0200-选择本地工作空间-第01次/空间创建导航记录.json",
+        "runs/1103-0255-选择本地工作空间-第01次/执行报告.md",
+        "runs/1103-0255-选择本地工作空间-第01次/空间创建导航记录.json",
+        "runs/1103-0256-选择本地工作空间-第01次/原生文件夹选择器.json",
+        "runtime-config/test-console/stores/strategy-store-8hJke5/jobs/9a68d461-adf4-4feb-9ed4-b958ca241b3f/执行日志.txt"
       ],
-      "notes": "本轮正式批次7db597a2-ff1c-4e8d-b9d4-1a66aa407895，5/5项已记录断言通过；录像COMPLETED。业务与正常收尾通过。完整019原生选择路径已实机通过，强停期间收尾另待验。",
+      "notes": "02:55正常实机PASS，5/5断言、录像及收尾完成。02:56目录确认后强停，业务BLOCKED且无报告，02:57自动完成交接并释放锁；录像完成。01:53目录选择后回跳旧Session的原因仍未确定，保留历史记录。",
       "optimizedSheet": "客户端-优化用例",
       "optimizedId": "019",
       "optimized": {
@@ -521,6 +574,87 @@
             "total": 5
           },
           "report": "runs/1101-2317-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "13491216-9194-4af7-921d-dc684694189c",
+          "jobId": "0624a67b-55e5-4b6d-8f96-1d69a09b336a",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T16:45:34.279Z",
+          "endedAt": "2026-11-02T16:46:14.980Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1103-0045-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "d99d4d2e-2265-45e9-955e-e816e71a2f72",
+          "jobId": "74d4814d-3e28-45af-bcea-1b80668319a5",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T16:53:35.802Z",
+          "endedAt": "2026-11-02T16:54:05.982Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1103-0053-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "2121ad55-59b4-4b16-83e4-5333a7732c8b",
+          "jobId": "d55e4f46-e46a-4ec3-9b15-9022b99c6a61",
+          "result": "PASS",
+          "startedAt": "2026-11-02T17:02:41.472Z",
+          "endedAt": "2026-11-02T17:03:33.815Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1103-0102-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "1deb6abe-5392-48d5-a5a5-6a98ef9a7946",
+          "jobId": "87668b1c-cb3c-4390-bbd1-1698c6c9def4",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T17:53:13.714Z",
+          "endedAt": "2026-11-02T17:55:03.704Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1103-0153-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "09a81dc9-7a80-4da8-a8a0-432c415b8af9",
+          "jobId": "c2e207a0-d653-4834-bd8f-edbb678e3d7c",
+          "result": "PASS",
+          "startedAt": "2026-11-02T17:59:59.293Z",
+          "endedAt": "2026-11-02T18:00:44.670Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1103-0200-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "3e80bf9d-5308-4f63-ba3d-cbcdc9b0f62c",
+          "jobId": "f1ec4305-0c03-4d48-9561-4201e0bfef8a",
+          "result": "PASS",
+          "startedAt": "2026-11-02T18:55:08.719Z",
+          "endedAt": "2026-11-02T18:55:54.891Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1103-0255-选择本地工作空间-第01次/执行报告.md"
+        },
+        {
+          "batchId": "a8251011-d355-47c4-89fe-b6cbe7b6a1c0",
+          "jobId": "9a68d461-adf4-4feb-9ed4-b958ca241b3f",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T18:56:24.193Z",
+          "endedAt": "2026-11-02T18:56:39.281Z",
+          "report": null,
+          "note": "原生目录确认后强停，业务未完成；后台自动完成交接并释放锁，录像完成。"
         }
       ]
     },
@@ -1161,9 +1295,12 @@
         "runs/1102-0431-知识库-第01次/执行结果.json",
         "runs/1102-0431-知识库-第01次/执行日志.txt",
         "tmp/home-round5-final-20261102.json",
-        "tmp/home-round5-original-hashes-20261102.json"
+        "tmp/home-round5-original-hashes-20261102.json",
+        "runs/1103-0324-知识库-第01次/执行报告.md",
+        "runs/1103-0324-知识库-第01次/执行结果.json",
+        "runs/1103-0324-知识库-第01次/执行日志.txt"
       ],
-      "notes": "04:31正式PASS23/23：本轮真实解析completed约223秒，核对实际Wiki关键事实、更新设置回读、五模块、首页引用开关及注册收尾；真实目录和本轮材料归属有证据。此前150秒观察不足的BLOCKED及后续补证保留，本轮独立完整结果不倒改历史。仅本条材料及流程通过，不代替八格式或六状态专项。录像COMPLETED，最终FINISHED、hold=false、收尾完成。",
+      "notes": "11-03 03:24 实机 PASS 23/23：真实解析、Wiki、设置、引用和收尾通过；创建前归属登记及正常目录回填已覆盖，强停交接待实机验证。录像完成，调度锁已释放。",
       "executionHistory": [
         {
           "batchId": "fea22062-f01b-4f2b-a1e1-b6fc76a21c2f",
@@ -1272,6 +1409,19 @@
             "total": 23
           },
           "report": "runs/1102-0431-知识库-第01次/执行报告.md"
+        },
+        {
+          "batchId": "022a5111-f238-4753-ba64-e3444df9b231",
+          "jobId": "241d3418-77a0-4bb3-a441-7ff83ffa77b7",
+          "result": "PASS",
+          "businessResult": "PASS",
+          "startedAt": "2026-11-02T19:24:06.138Z",
+          "endedAt": "2026-11-02T19:27:47.203Z",
+          "assertions": {
+            "passed": 23,
+            "total": 23
+          },
+          "report": "runs/1103-0324-知识库-第01次/执行报告.md"
         }
       ],
       "optimized": {
@@ -1371,16 +1521,24 @@
         "总体预期结果": "默认权限和完全访问权限流程通过，权限切换正常"
       },
       "script": "scripts/run-client-case028.mjs",
-      "coverage": "已实现，主流程实测通过",
+      "coverage": "会话权限主流程已实机通过。",
       "execution": "PASS",
       "evidence": [
         "runs/1101-0122-会话权限-第01次/执行报告.md",
         "runs/1101-0122-会话权限-第01次/执行结果.json",
         "runs/1102-0419-会话权限-第01次/执行报告.md",
         "runs/1102-0419-会话权限-第01次/执行结果.json",
-        "tmp/home-round4-final-20261102.json"
+        "tmp/home-round4-final-20261102.json",
+        "runs/1103-0003-会话权限-第01次/执行报告.md",
+        "runs/1103-0003-会话权限-第01次/执行结果.json",
+        "runs/1103-0003-会话权限-第01次/执行日志.txt",
+        "runs/1103-0136-会话权限-第01次/执行报告.md",
+        "runs/1103-0136-会话权限-第01次/执行结果.json",
+        "runs/1103-0303-会话权限-第01次/执行报告.md",
+        "runs/1103-0303-会话权限-第01次/执行结果.json",
+        "runs/1103-0303-会话权限-第01次/trace.json"
       ],
-      "notes": "04:19正式PASS5/5：默认权限第一份真实文件经历3次允许一次审批；完全访问额外二次确认后，第二份真实文件无新增审批，随后恢复原默认权限与资源。录像COMPLETED，FINISHED、hold=false、收尾完成；保留旧BLOCKED和报告。",
+      "notes": "2026-11-03 03:03实机PASS，5/5断言：真实多次允许一次、完全访问二次确认及权限恢复；录像和收尾完成。未触发审批接口400或确认后强停，异常分支仍待实机复验。",
       "optimized": {
         "goal": "在同一独立Session验证默认权限允许一次、完全访问的二次确认和实际文件副作用。",
         "precondition": "默认权限；隔离目录可写；自动模型；原表敏感文件操作确实触发审批才可覆盖允许一次。",
@@ -1412,6 +1570,30 @@
             "total": 5
           },
           "report": "runs/1102-0419-会话权限-第01次/执行报告.md"
+        },
+        {
+          "batchId": "66cb6712-3123-4b6e-ad86-28fe04abb4d7",
+          "jobId": "0134524b-53b8-41ce-80d9-f4a5d4f2fc82",
+          "result": "PASS",
+          "startedAt": "2026-11-02T16:03:54.790Z",
+          "endedAt": "2026-11-02T16:05:29.911Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1103-0003-会话权限-第01次/执行报告.md"
+        },
+        {
+          "batchId": "8edad7d7-a33d-4ab9-8fc0-c9653eebb0b7",
+          "jobId": "6ed3a535-1796-42ca-a8e7-e5b498abdbca",
+          "result": "PASS",
+          "startedAt": "2026-11-02T19:03:51.088Z",
+          "endedAt": "2026-11-02T19:05:33.635Z",
+          "assertions": {
+            "passed": 5,
+            "total": 5
+          },
+          "report": "runs/1103-0303-会话权限-第01次/执行报告.md"
         }
       ]
     },
@@ -1783,15 +1965,18 @@
         "总体预期结果": "任务管理的置顶任务、重命名、打开文件夹和删除等操作都正常"
       },
       "script": "scripts/run-client-case034.mjs",
-      "coverage": "已实机验证，通过",
+      "coverage": "任务管理真实操作及删除会话交接已验证",
       "execution": "PASS",
       "evidence": [
         "runs/1102-0000-任务管理-第01次/执行报告.md",
         "runs/1102-0000-任务管理-第01次/执行结果.json",
         "runs/1102-0015-任务管理-第01次/执行报告.md",
-        "runs/1102-0015-任务管理-第01次/执行结果.json"
+        "runs/1102-0015-任务管理-第01次/执行结果.json",
+        "runs/1103-0230-任务管理-第01次/执行报告.md",
+        "runs/1103-0230-任务管理-第01次/执行结果.json",
+        "runs/1103-0230-任务管理-第01次/执行日志.txt"
       ],
-      "notes": "正式批次d7f25b25-5188-4046-969c-8dd6c47244ab；录像COMPLETED。本Session任务目录及产物、置顶区域、重命名持久化、Explorer真实定位、删除确认、Session移除及本机文件保留、删除后精确空首页交接与正常收尾均通过，9/9项已记录断言通过。当前普通路径PASS，旧删除后交接BLOCKED及同条恢复记录保留，强停分支仍另待验。",
+      "notes": "2026-11-03 实机9/9：本轮任务文件、置顶和取消、重命名、打开目录、确认删除与404均通过；空首页和资源交接完成，录像完成。",
       "optimized": {
         "goal": "验证本轮任务的置顶、取消、重命名、实际文件夹和删除；保留已有任务及本地材料。",
         "precondition": "已登录；自动模型；仅新建本轮合成任务；Python+pywin32可读Windows Explorer实际目录。",
@@ -1823,6 +2008,19 @@
             "total": 9
           },
           "report": "runs/1102-0015-任务管理-第01次/执行报告.md"
+        },
+        {
+          "batchId": "2ecde359-2af4-4a48-b45e-e2c2b0593941",
+          "jobId": "19e5e49a-98e4-4bf5-af90-ab2780d60567",
+          "result": "PASS",
+          "startedAt": "2026-11-02T18:30:20.163Z",
+          "endedAt": "2026-11-02T18:31:25.391Z",
+          "assertions": {
+            "passed": 9,
+            "total": 9
+          },
+          "report": "runs/1103-0230-任务管理-第01次/执行报告.md",
+          "note": "2026-11-03 实机9/9：本轮任务文件、置顶和取消、重命名、打开目录、确认删除与404均通过；空首页和资源交接完成，录像完成。"
         }
       ]
     },
@@ -1843,7 +2041,7 @@
         "总体预期结果": "任务会话全流程贯通：发起→规划→执行→过程预览→产物查看均正常。"
       },
       "script": "scripts/run-client-case035.mjs",
-      "coverage": "已实机验证，通过",
+      "coverage": "真实执行三阶段规划、执行中CSV预览、销售明细与350元报告及完成待办；同会话双审批分别点击并确认消失。",
       "execution": "PASS",
       "evidence": [
         "runs/1102-0016-规划交付-第01次/执行报告.md",
@@ -1855,9 +2053,35 @@
         "runs/1102-0057-规划交付-第01次/执行报告.md",
         "runs/1102-0057-规划交付-第01次/执行结果.json",
         "runs/1102-0057-规划交付-第01次/ses_e67f4cc7effeqvvlUQNFs80NkB-session-log.json",
-        "runs/1102-0057-规划交付-第01次/trace.json"
+        "runs/1102-0057-规划交付-第01次/trace.json",
+        "runs/1102-2144-规划交付-第01次/执行报告.md",
+        "runs/1102-2144-规划交付-第01次/执行结果.json",
+        "runs/1102-2144-规划交付-第01次/执行日志.txt",
+        "tmp/home-round11-20261102.json",
+        "tmp/home-round11-final-20261102.json",
+        "tmp/home-round11-original-hashes-20261102.json",
+        "tmp/home-round11-archive-notes-20261102.json",
+        "runs/1102-2144-规划交付-第01次/1102-2147-08-异常现场.png",
+        "runs/1102-2210-规划交付-第01次/执行报告.md",
+        "runs/1102-2210-规划交付-第01次/执行结果.json",
+        "runs/1102-2210-规划交付-第01次/执行日志.txt",
+        "tmp/home-round12-20261102.json",
+        "tmp/home-round12-final-20261102.json",
+        "tmp/home-round12-original-hashes-20261102.json",
+        "tmp/home-round12-archive-notes-20261102.json",
+        "runs/1102-2238-规划交付-第01次/执行报告.md",
+        "runs/1102-2238-规划交付-第01次/执行结果.json",
+        "runs/1102-2238-规划交付-第01次/执行日志.txt",
+        "runs/1102-2238-规划交付-第01次/trace.json",
+        "runs/1102-2238-规划交付-第01次/ses_e634cf922ffeW4AAX2HynCIaXb-session-log.json",
+        "runs/1102-2238-规划交付-第01次/1102-2241-08-执行中CSV预览-明细.csv.png",
+        "runs/1103-0048-规划交付-第01次/执行报告.md",
+        "runs/1103-0048-规划交付-第01次/执行结果.json",
+        "runs/1103-0048-规划交付-第01次/执行日志.txt",
+        "runs/1103-0048-规划交付-第01次/trace.json",
+        "runs/1103-0048-规划交付-第01次/ses_e62d676e9ffeMVolDjZClSGXyp-session-log.json"
       ],
-      "notes": "正式批次0c402c4d-4456-48b1-82da-2a2fd8be1c1a；录像COMPLETED。正式PASS，10/10项断言通过：执行中待办及界面节点一致，中间CSV销量/单价、DOCX明细金额200/150及总计350正确；过程中间文件观察、最终文件预览及待办展示步骤全部完成，实际待办全部completed，正常收尾完成。实际产物菜单定位及正文读取修正本轮普通流程通过；旧最终明细.csv入口超时FAIL保留，强停专项另待验。",
+      "notes": "2026-11-03 00:48复验PASS，10/10断言，录像及收尾完成。同会话两个审批于00:50:31相继出现，分别点击允许一次并确认各自消失；多根计时、强停与其他竞态仍待专项验证。历史报告与此前阻塞记录保留。",
       "optimized": {
         "goal": "验证原表三阶段规划、过程中的中间文件预览、正确销售报告及最终文件/待办展示。",
         "precondition": "已登录；自动模型；真实待办和工作台可用；仅本轮任务目录；DOCX生成能力可用。",
@@ -1901,6 +2125,54 @@
             "total": 10
           },
           "report": "runs/1102-0057-规划交付-第01次/执行报告.md"
+        },
+        {
+          "batchId": "37f27d1d-5a28-43ba-92df-0d7946e989de",
+          "jobId": "8ba264e7-d0f6-4cc4-aca7-b54e9b635c65",
+          "result": "FAIL",
+          "startedAt": "2026-11-02T13:44:41.866Z",
+          "endedAt": "2026-11-02T13:47:52.121Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1102-2144-规划交付-第01次/执行报告.md"
+        },
+        {
+          "batchId": "0b843ae2-53ce-4b77-aee6-1e5719bb21b2",
+          "jobId": "da36d18a-023e-4730-92e0-3ff13a2a01cc",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T14:10:16.016Z",
+          "endedAt": "2026-11-02T14:11:56.401Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1102-2210-规划交付-第01次/执行报告.md"
+        },
+        {
+          "batchId": "d06408a3-1571-4ea6-9beb-97188cae3db9",
+          "jobId": "d8e3199b-e0b7-4b3d-baab-0b5c0d0d6647",
+          "result": "PASS",
+          "startedAt": "2026-11-02T14:38:48.883Z",
+          "endedAt": "2026-11-02T14:43:32.607Z",
+          "assertions": {
+            "passed": 9,
+            "total": 9
+          },
+          "report": "runs/1102-2238-规划交付-第01次/执行报告.md"
+        },
+        {
+          "batchId": "e3bc7e0e-81b2-4a00-a060-fb0fe7833ca2",
+          "jobId": "d25a97de-087c-4ca7-b50a-7384d027d2ef",
+          "result": "PASS",
+          "startedAt": "2026-11-02T16:48:09.598Z",
+          "endedAt": "2026-11-02T16:52:25.706Z",
+          "assertions": {
+            "passed": 10,
+            "total": 10
+          },
+          "report": "runs/1103-0048-规划交付-第01次/执行报告.md"
         }
       ]
     },
@@ -1921,7 +2193,7 @@
         "总体预期结果": "任务产物的文件/待办/浏览器结果均可正确查看。"
       },
       "script": "scripts/run-client-case036.mjs",
-      "coverage": "本Session真实浏览、两项不同原文及DOCX来源已验；实际webview成功识别，但脚本强制百度域名导致失败，文件预览及最终待办未执行。",
+      "coverage": "网页及文件已生成，来源关联断言未通过，后续预览未完成。",
       "execution": "FAIL",
       "evidence": [
         "runs/1102-0041-工作台查看-第01次/执行报告.md",
@@ -1943,9 +2215,35 @@
         "runs/1102-0733-工作台查看-第01次/网页摘录核对.json",
         "runs/1102-0733-工作台查看-第01次/1102-0739-08-异常现场.png",
         "tmp/home-round8-case36-original-hashes-20261102.json",
-        "tmp/home036-browser-provenance-20261102/README.md"
+        "tmp/home036-browser-provenance-20261102/README.md",
+        "runs/1102-2123-工作台查看-第01次/执行报告.md",
+        "runs/1102-2123-工作台查看-第01次/执行结果.json",
+        "runs/1102-2123-工作台查看-第01次/执行日志.txt",
+        "tmp/home-round9-20261102.json",
+        "tmp/home-round9-final-20261102.json",
+        "tmp/home-round9-original-hashes-20261102.json",
+        "tmp/home-round9-archive-notes-20261102.json",
+        "runs/1102-2123-工作台查看-第01次/1102-2124-03-异常现场.png",
+        "tmp/home-round9-case36-original-hashes-20261102.json",
+        "runs/1102-2148-工作台查看-第01次/执行报告.md",
+        "runs/1102-2148-工作台查看-第01次/执行结果.json",
+        "runs/1102-2148-工作台查看-第01次/执行日志.txt",
+        "tmp/home-round11-20261102.json",
+        "tmp/home-round11-final-20261102.json",
+        "tmp/home-round11-original-hashes-20261102.json",
+        "tmp/home-round11-archive-notes-20261102.json",
+        "runs/1102-2212-工作台查看-第01次/执行报告.md",
+        "runs/1102-2212-工作台查看-第01次/执行结果.json",
+        "runs/1102-2212-工作台查看-第01次/执行日志.txt",
+        "tmp/home-round12-20261102.json",
+        "tmp/home-round12-final-20261102.json",
+        "tmp/home-round12-original-hashes-20261102.json",
+        "tmp/home-round12-archive-notes-20261102.json",
+        "runs/1102-2349-工作台查看-第01次/执行报告.md",
+        "runs/1102-2349-工作台查看-第01次/执行结果.json",
+        "runs/1102-2349-工作台查看-第01次/执行日志.txt"
       ],
-      "notes": "5/6项记录断言通过。真实最终页面为百度搜索后访问的12371.cn新闻来源，已读取本Session webview实际URL、标题及loading=false；现有baidu.com域名断言过窄。保留FAIL，不将地址定位修正等同整条通过。文件与待办后续分支未进入；正常收尾、hold=false，原三份哈希保持。导航及来源候选仅静态准备，未应用或测试。",
+      "notes": "4/5项断言通过；两项摘录均可见于浏览输出并存在DOCX，但仅一项与两份文件保留的真实页面URL关联；最终工作台页面也未匹配来源，具体原因待核对。录像完成。",
       "optimized": {
         "goal": "验证真实浏览器访问后，文件、待办及浏览器三个工作台入口能查看本轮实际结果。",
         "precondition": "已登录；自动模型；公网和真实浏览器工具可用；DOCX生成能力可用；只使用本轮Session与目录。",
@@ -1989,6 +2287,54 @@
             "total": 6
           },
           "report": "runs/1102-0733-工作台查看-第01次/执行报告.md"
+        },
+        {
+          "batchId": "ad67d02d-e642-47b5-98f6-967b29786429",
+          "jobId": "abd309d3-2e90-440a-97ef-a8da45f4a335",
+          "result": "FAIL",
+          "startedAt": "2026-11-02T13:23:24.421Z",
+          "endedAt": "2026-11-02T13:24:50.531Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1102-2123-工作台查看-第01次/执行报告.md"
+        },
+        {
+          "batchId": "37f27d1d-5a28-43ba-92df-0d7946e989de",
+          "jobId": "1dd32338-eee7-4ba0-a1e9-01cf7f1aedb4",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T13:48:02.037Z",
+          "endedAt": "2026-11-02T13:55:08.051Z",
+          "assertions": {
+            "passed": 14,
+            "total": 14
+          },
+          "report": "runs/1102-2148-工作台查看-第01次/执行报告.md"
+        },
+        {
+          "batchId": "0b843ae2-53ce-4b77-aee6-1e5719bb21b2",
+          "jobId": "c846eef6-569f-4763-9602-8618a9e981eb",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T14:12:08.876Z",
+          "endedAt": "2026-11-02T14:16:26.111Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1102-2212-工作台查看-第01次/执行报告.md"
+        },
+        {
+          "batchId": "695c5778-8649-4843-8c4e-66fde950ca76",
+          "jobId": "c9cacb38-1381-4c18-a7d4-a547c57c7ba9",
+          "result": "FAIL",
+          "startedAt": "2026-11-02T15:49:38.016Z",
+          "endedAt": "2026-11-02T15:55:44.678Z",
+          "assertions": {
+            "passed": 4,
+            "total": 5
+          },
+          "report": "runs/1102-2349-工作台查看-第01次/执行报告.md"
         }
       ]
     },
@@ -2065,8 +2411,8 @@
         "总体预期结果": "回复消息执行全流程展示完整、可交互，步骤自动收展正常。"
       },
       "script": "scripts/run-client-case038.mjs",
-      "coverage": "真实多步骤工具及思考等待完成；展开后截图已有历史步骤，脚本只读状态行造成误断言，自动收展、收起及Word预览未完整验。",
-      "execution": "FAIL",
+      "coverage": "真实工具过程、展开收起及Word已验证；自动切换步骤缺证据。",
+      "execution": "REVIEW",
       "evidence": [
         "runs/1101-0216-执行展示-第01次/执行报告.md",
         "runs/1102-0741-执行展示-第01次/执行报告.md",
@@ -2078,9 +2424,22 @@
         "tmp/home-round8-archive-notes-20261102.json",
         "runs/1102-0741-执行展示-第01次/执行展示过程观察.json",
         "runs/1102-0741-执行展示-第01次/1102-0744-07-异常现场.png",
-        "tmp/home-round8-case38-original-hashes-20261102.json"
+        "tmp/home-round8-case38-original-hashes-20261102.json",
+        "runs/1102-2124-执行展示-第01次/执行报告.md",
+        "runs/1102-2124-执行展示-第01次/执行结果.json",
+        "runs/1102-2124-执行展示-第01次/执行日志.txt",
+        "tmp/home-round9-20261102.json",
+        "tmp/home-round9-final-20261102.json",
+        "tmp/home-round9-original-hashes-20261102.json",
+        "tmp/home-round9-archive-notes-20261102.json",
+        "runs/1102-2124-执行展示-第01次/执行过程展开收起核对.json",
+        "runs/1102-2124-执行展示-第01次/1102-2128-07-展开执行过程.png",
+        "tmp/home-round9-case38-original-hashes-20261102.json",
+        "runs/1102-2355-执行展示-第01次/执行报告.md",
+        "runs/1102-2355-执行展示-第01次/执行结果.json",
+        "runs/1102-2355-执行展示-第01次/执行日志.txt"
       ],
-      "notes": "3/4项记录断言通过，16个真实完成工具。展开按钮aria-expanded由false变true且异常截图可见过程正文；断言却比较按钮parentElement状态行，前后均为已完成/2m45s、18px，未读取实际展开区域。保留原FAIL，不能据此判产品展开失效；自动步骤转换未取得充分采样，最终Word内容及预览未进入。正常收尾、hold=false，原三份哈希保持；组件合同修正仅静态准备。",
+      "notes": "6/6项已记录断言通过；未捕获完成步骤自动收起与下一步打开；录像ERROR，业务收尾完成。",
       "optimized": {
         "goal": "验证多步骤执行的思考与等待、自动收展、半屏收纳交互和最终Word完整展示。",
         "precondition": "客户端登录；自动模型；Word生成可用；任务真实产生至少三个工具步骤及足够过程高度。",
@@ -2100,6 +2459,30 @@
             "total": 4
           },
           "report": "runs/1102-0741-执行展示-第01次/执行报告.md"
+        },
+        {
+          "batchId": "ad67d02d-e642-47b5-98f6-967b29786429",
+          "jobId": "8d441a0b-375f-4031-adf6-c5c277c2fcad",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T13:24:58.292Z",
+          "endedAt": "2026-11-02T13:28:53.185Z",
+          "assertions": {
+            "passed": 6,
+            "total": 6
+          },
+          "report": "runs/1102-2124-执行展示-第01次/执行报告.md"
+        },
+        {
+          "batchId": "695c5778-8649-4843-8c4e-66fde950ca76",
+          "jobId": "993304ae-daa0-4916-81f1-d561aa88f98d",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T15:55:51.014Z",
+          "endedAt": "2026-11-02T15:59:44.741Z",
+          "assertions": {
+            "passed": 6,
+            "total": 6
+          },
+          "report": "runs/1102-2355-执行展示-第01次/执行报告.md"
         }
       ]
     },
@@ -2120,8 +2503,8 @@
         "总体预期结果": "Markdown渲染规范，超链接可跳转。"
       },
       "script": "scripts/run-client-case039.mjs",
-      "coverage": "真实上传与模型复制产物逐字一致；send后附件checkpoint未先取页面权，被框架拦截，Markdown语义、代码不执行及链接跳转未开始。",
-      "execution": "BLOCKED",
+      "coverage": "真实Markdown复制、各类型渲染、代码不执行及链接请求通过。",
+      "execution": "PASS",
       "evidence": [
         "runs/1101-0217-Markdown渲染-第01次/执行报告.md",
         "runs/1102-0744-Markdown渲染-第01次/执行报告.md",
@@ -2133,9 +2516,18 @@
         "tmp/home-round8-archive-notes-20261102.json",
         "tmp/home-round8-case39-original-hashes-20261102.json",
         "tmp/home039-page-ownership-20261102/README.md",
-        "tmp/home039-page-ownership-20261102/manifest.json"
+        "tmp/home039-page-ownership-20261102/manifest.json",
+        "runs/1102-2128-Markdown渲染-第01次/执行报告.md",
+        "runs/1102-2128-Markdown渲染-第01次/执行结果.json",
+        "runs/1102-2128-Markdown渲染-第01次/执行日志.txt",
+        "tmp/home-round9-20261102.json",
+        "tmp/home-round9-final-20261102.json",
+        "tmp/home-round9-original-hashes-20261102.json",
+        "tmp/home-round9-archive-notes-20261102.json",
+        "runs/1102-2128-Markdown渲染-第01次/1102-2130-07-文件预览-Markdown渲染验收.md.png",
+        "tmp/home-round9-case39-original-hashes-20261102.json"
       ],
-      "notes": "2/2仅产物一致及公共收尾断言。模型已正常完成，send交还页面后脚本在control.withUI之外清attachments并checkpoint，收到没有页面操作权，不得登记草稿；不是模型未完成或Markdown渲染失败。已准备把资源登记移入紧接既有withUI块的最小候选，不放宽调度校验。正常收尾、hold=false，原三份哈希保持；候选未应用测试。",
+      "notes": "23/23记录断言通过，含公共收尾；本轮文件与附件逐字一致，标题、列表、加粗、代码、引用、表格可见，链接触发真实本机GET，代码块未执行。发送后附件登记和预览已走通。录像完成。",
       "optimized": {
         "goal": "验证标准Markdown在真实产物预览中渲染语义、可读层级、代码不执行及链接真实跳转。",
         "precondition": "客户端登录；自动模型；真实附件上传与Markdown预览可用；本机可绑定临时回环端口。",
@@ -2155,6 +2547,18 @@
             "total": 2
           },
           "report": "runs/1102-0744-Markdown渲染-第01次/执行报告.md"
+        },
+        {
+          "batchId": "ad67d02d-e642-47b5-98f6-967b29786429",
+          "jobId": "52ec4628-f428-43ae-96e4-ed67a4bea6b2",
+          "result": "PASS",
+          "startedAt": "2026-11-02T13:28:57.469Z",
+          "endedAt": "2026-11-02T13:30:01.549Z",
+          "assertions": {
+            "passed": 23,
+            "total": 23
+          },
+          "report": "runs/1102-2128-Markdown渲染-第01次/执行报告.md"
         }
       ]
     },
@@ -2230,16 +2634,44 @@
         "总体预期结果": "多类型文件卡片展示正确并可预览。"
       },
       "script": "scripts/run-client-case041.mjs",
-      "coverage": "部分覆盖，预览正文自动证据待补",
-      "execution": "REVIEW",
+      "coverage": "实际生成Excel与Word，内容、文件名、类型图标及真实预览通过。",
+      "execution": "PASS",
       "evidence": [
         "runs/1101-0220-多类交付物-第01次/执行报告.md",
         "runs/1102-0109-多类交付物-第01次/执行报告.md",
         "runs/1102-0109-多类交付物-第01次/执行结果.json",
         "runs/1102-0109-多类交付物-第01次/ses_e67e9b7a3ffelpeAvNL8NukZqo-session-log.json",
-        "runs/1102-0109-多类交付物-第01次/trace.json"
+        "runs/1102-0109-多类交付物-第01次/trace.json",
+        "runs/1102-2130-多类交付物-第01次/执行报告.md",
+        "runs/1102-2130-多类交付物-第01次/执行结果.json",
+        "runs/1102-2130-多类交付物-第01次/执行日志.txt",
+        "tmp/home-round9-20261102.json",
+        "tmp/home-round9-final-20261102.json",
+        "tmp/home-round9-original-hashes-20261102.json",
+        "tmp/home-round9-archive-notes-20261102.json",
+        "runs/1102-2130-多类交付物-第01次/1102-2133-10-文件预览-星桥销量报表.xlsx.png",
+        "runs/1102-2130-多类交付物-第01次/1102-2133-12-文件预览-星桥销量说明.docx.png",
+        "tmp/home-round9-case41-original-hashes-20261102.json",
+        "runs/1102-2155-多类交付物-第01次/执行报告.md",
+        "runs/1102-2155-多类交付物-第01次/执行结果.json",
+        "runs/1102-2155-多类交付物-第01次/执行日志.txt",
+        "tmp/home-round11-20261102.json",
+        "tmp/home-round11-final-20261102.json",
+        "tmp/home-round11-original-hashes-20261102.json",
+        "tmp/home-round11-archive-notes-20261102.json",
+        "runs/1102-2155-多类交付物-第01次/1102-2158-10-文件预览-星桥销量报表.xlsx.png",
+        "runs/1102-2155-多类交付物-第01次/1102-2158-12-文件预览-星桥销量说明.docx.png",
+        "runs/1102-2216-多类交付物-第01次/执行报告.md",
+        "runs/1102-2216-多类交付物-第01次/执行结果.json",
+        "runs/1102-2216-多类交付物-第01次/执行日志.txt",
+        "tmp/home-round12-20261102.json",
+        "tmp/home-round12-final-20261102.json",
+        "tmp/home-round12-original-hashes-20261102.json",
+        "tmp/home-round12-archive-notes-20261102.json",
+        "runs/1102-2216-多类交付物-第01次/1102-2219-10-文件预览-星桥销量报表.xlsx.png",
+        "runs/1102-2216-多类交付物-第01次/1102-2219-12-文件预览-星桥销量说明.docx.png"
       ],
-      "notes": "正式批次0c402c4d-4456-48b1-82da-2a2fd8be1c1a；录像COMPLETED。正式REVIEW，11/11项已记录断言通过：实际生成Excel/Word，商品金额200/150和总计350可核算且两文档一致，产物目录两种文件名称及可区分类型图标正确。Word文件入口已打开，截图1102-0112-12-文件预览-星桥销量说明.docx.png可见完整明细及350，但同截图JSON的main innerText仅标题；当前自动正文读取未取得实际渲染正文，不能判产品预览失败。剩余两类文件各自实际预览尚未完整验收，需补渲染器正文证据后复验，不用11/11改判通过。",
+      "notes": "11/11记录断言通过，实际预览两类文件并核对内容；录像首帧超时。",
       "optimized": {
         "goal": "验证Excel与Word真实生成、业务内容一致、产物名称与类型图标及分别预览。",
         "precondition": "客户端登录；自动模型；真实Excel/Word生成与预览可用；本轮合成两种商品数据。",
@@ -2259,6 +2691,42 @@
             "total": 11
           },
           "report": "runs/1102-0109-多类交付物-第01次/执行报告.md"
+        },
+        {
+          "batchId": "ad67d02d-e642-47b5-98f6-967b29786429",
+          "jobId": "1627c928-281f-4b8a-b009-7301d95ceba8",
+          "result": "PASS",
+          "startedAt": "2026-11-02T13:30:05.192Z",
+          "endedAt": "2026-11-02T13:33:16.927Z",
+          "assertions": {
+            "passed": 11,
+            "total": 11
+          },
+          "report": "runs/1102-2130-多类交付物-第01次/执行报告.md"
+        },
+        {
+          "batchId": "37f27d1d-5a28-43ba-92df-0d7946e989de",
+          "jobId": "9f8788f3-430c-4df1-bbee-d0bbb5e8a4d8",
+          "result": "PASS",
+          "startedAt": "2026-11-02T13:55:13.714Z",
+          "endedAt": "2026-11-02T13:58:27.180Z",
+          "assertions": {
+            "passed": 11,
+            "total": 11
+          },
+          "report": "runs/1102-2155-多类交付物-第01次/执行报告.md"
+        },
+        {
+          "batchId": "0b843ae2-53ce-4b77-aee6-1e5719bb21b2",
+          "jobId": "84cff359-e01e-470d-bdcd-fc3d30606e6c",
+          "result": "PASS",
+          "startedAt": "2026-11-02T14:16:32.166Z",
+          "endedAt": "2026-11-02T14:19:53.405Z",
+          "assertions": {
+            "passed": 11,
+            "total": 11
+          },
+          "report": "runs/1102-2216-多类交付物-第01次/执行报告.md"
         }
       ]
     },
@@ -2310,19 +2778,63 @@
         "总体预期结果": "欢迎语开启后4秒展示、10秒轮换、语调切换跟随均正常。"
       },
       "script": "scripts/run-client-case043.mjs",
-      "coverage": "已编写，待复测",
-      "execution": "BLOCKED",
+      "coverage": "两种语调、首次显示和部分真实轮换已检查；采样缺口使完整轮换时序与连续重复待复核。",
+      "execution": "REVIEW",
       "evidence": [
-        "runs/1101-0259-欢迎语轮换-第01次/执行报告.md"
+        "runs/1101-0259-欢迎语轮换-第01次/执行报告.md",
+        "runs/1102-2133-欢迎语轮换-第01次/执行报告.md",
+        "runs/1102-2133-欢迎语轮换-第01次/执行结果.json",
+        "runs/1102-2133-欢迎语轮换-第01次/执行日志.txt",
+        "tmp/home-round9-20261102.json",
+        "tmp/home-round9-final-20261102.json",
+        "tmp/home-round9-original-hashes-20261102.json",
+        "tmp/home-round9-archive-notes-20261102.json",
+        "runs/1102-2133-欢迎语轮换-第01次/基础语调欢迎语时间线.json",
+        "tmp/home-round9-case43-original-hashes-20261102.json",
+        "runs/1102-2158-欢迎语轮换-第01次/执行报告.md",
+        "runs/1102-2158-欢迎语轮换-第01次/执行结果.json",
+        "runs/1102-2158-欢迎语轮换-第01次/执行日志.txt",
+        "tmp/home-round11-20261102.json",
+        "tmp/home-round11-final-20261102.json",
+        "tmp/home-round11-original-hashes-20261102.json",
+        "tmp/home-round11-archive-notes-20261102.json",
+        "runs/1102-2158-欢迎语轮换-第01次/基础语调欢迎语时间线轮换分析.json",
+        "runs/1102-2158-欢迎语轮换-第01次/友好语调新Session时间线.json"
       ],
-      "notes": "首次BLOCKED：账户触发按钮的data-slot被dropdown-menu-trigger覆盖，源码推断定位失效；未创建业务Session。已按实际data-sidebar与aria-haspopup修正公共入口，正常重启后原基线恢复且交接完成；未复跑043，四秒及十秒轮换未验收。",
+      "notes": "20/20记录断言通过，但真实采样存在空档，不能确认全部轮换；基础阶段结束后实际进入友好语调新Session。录像首帧超时，交接短暂等待后恢复。",
       "optimized": {
         "goal": "验证开启欢迎语后四秒延迟、十秒轮换、淡入淡出及新Session语调即时跟随。",
         "precondition": "已登录；自动模型；长Loading真实发生；固定欢迎语语调词表与当前客户端版本一致。",
         "operations": "1. 登记两项全局设置基线，通过设置开启欢迎语并选简洁高效。\n2. 正常发起80项清单任务，以50ms记录真实Loading出现及欢迎语文本/透明度。\n3. 检查前四秒隐藏、约四秒首次显示、约十秒非重复轮换与过渡。\n4. 前Session确认完成并归档日志Trace后创建新Session，切为亲和友好，再发任务核对词表。\n5. 正常/异常/强停恢复原设置。",
         "expected": "计时从真实Loading出现开始；首条不提前，轮换非重复且有过渡；新Session无需重启即跟随语调。",
         "assertions": "真实DOM连续时间线、竖线几何、文本所属语调词表、透明度过渡、两阶段独立Session及设置UI持久化回读。短任务缺少时间窗口记REVIEW。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "ad67d02d-e642-47b5-98f6-967b29786429",
+          "jobId": "21807a28-01f7-4e87-a7ad-c6b660873b2b",
+          "result": "FAIL",
+          "startedAt": "2026-11-02T13:33:24.939Z",
+          "endedAt": "2026-11-02T13:35:30.175Z",
+          "assertions": {
+            "passed": 14,
+            "total": 15
+          },
+          "report": "runs/1102-2133-欢迎语轮换-第01次/执行报告.md"
+        },
+        {
+          "batchId": "37f27d1d-5a28-43ba-92df-0d7946e989de",
+          "jobId": "e0f90807-ce6c-40f6-8789-4d5a3f41f6ef",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T13:58:34.560Z",
+          "endedAt": "2026-11-02T14:04:15.101Z",
+          "assertions": {
+            "passed": 20,
+            "total": 20
+          },
+          "report": "runs/1102-2158-欢迎语轮换-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 45,
@@ -2341,19 +2853,63 @@
         "总体预期结果": "欢迎语可关闭、关闭后不再展示，可重新开启。"
       },
       "script": "scripts/run-client-case044.mjs",
-      "coverage": "部分覆盖，待复核",
-      "execution": "FAIL",
+      "coverage": "真实悬停关闭、设置同步、关闭后新Session及重新开启后的新Session均通过。",
+      "execution": "PASS",
       "evidence": [
-        "runs/1101-0303-欢迎语关闭-第01次/执行报告.md"
+        "runs/1101-0303-欢迎语关闭-第01次/执行报告.md",
+        "runs/1102-2204-欢迎语关闭-第01次/执行报告.md",
+        "runs/1102-2204-欢迎语关闭-第01次/执行结果.json",
+        "runs/1102-2204-欢迎语关闭-第01次/执行日志.txt",
+        "tmp/home-round11-20261102.json",
+        "tmp/home-round11-final-20261102.json",
+        "tmp/home-round11-original-hashes-20261102.json",
+        "tmp/home-round11-archive-notes-20261102.json",
+        "runs/1102-2204-欢迎语关闭-第01次/1102-2205-04-欢迎语悬停关闭入口.png",
+        "runs/1102-2204-欢迎语关闭-第01次/1102-2205-05-异常现场.png",
+        "runs/1102-2219-欢迎语关闭-第01次/执行报告.md",
+        "runs/1102-2219-欢迎语关闭-第01次/执行结果.json",
+        "runs/1102-2219-欢迎语关闭-第01次/执行日志.txt",
+        "tmp/home-round12-20261102.json",
+        "tmp/home-round12-final-20261102.json",
+        "tmp/home-round12-original-hashes-20261102.json",
+        "tmp/home-round12-archive-notes-20261102.json",
+        "runs/1102-2219-欢迎语关闭-第01次/1102-2220-05-欢迎语立即消失.png",
+        "runs/1102-2219-欢迎语关闭-第01次/1102-2225-09-设置同步关闭.png"
       ],
-      "notes": "三个独立Session已执行：悬停关闭、当前消失、第二Session至少五秒Loading不再显示、设置关闭同步及第三Session欢迎语恢复取得证据。原脚本额外套用了043四秒计时断言，首捕获后3732ms显示造成FAIL；已让044只验证其恢复目的，保留原FAIL，修正未复跑。三阶段日志/Trace和原设置恢复已留证；不能据此判定产品提前展示。",
+      "notes": "8/8记录断言通过；三个真实Session分别核对关闭、持久化和恢复展示，录像完成，收尾完成。",
       "optimized": {
         "goal": "验证欢迎语悬停关闭、当前立即消失、后续新Session保持关闭、设置同步及重新开启。",
         "precondition": "已登录；自动模型；真实Loading能显示欢迎语；每条用例独立登记原设置。",
         "operations": "1. 登记并开启欢迎语，发起长任务。\n2. 欢迎语出现后真实悬停，点击不再显示，确认当前消失及持久化关闭。\n3. 第一阶段完成留证后新建独立Session，任务Loading均不显示欢迎语。\n4. 打开个性化回读开关，再开启并新建第三Session验证恢复。\n5. 恢复本条开始时配置，强停走公共恢复。",
         "expected": "悬停有关闭入口；当前立即消失；关闭跨新Session保持；设置状态同步且能重新开启。",
         "assertions": "真实hover及button、即时消失、openwork.preferences两项非敏感回读、独立Session日志及时间线、重新开启后可见。未捕获Loading不冒充通过。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "37f27d1d-5a28-43ba-92df-0d7946e989de",
+          "jobId": "76387142-2458-4e50-afcd-d203a91f03df",
+          "result": "FAIL",
+          "startedAt": "2026-11-02T14:04:23.528Z",
+          "endedAt": "2026-11-02T14:05:37.133Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1102-2204-欢迎语关闭-第01次/执行报告.md"
+        },
+        {
+          "batchId": "0b843ae2-53ce-4b77-aee6-1e5719bb21b2",
+          "jobId": "0b64bb46-56ed-4a78-825c-1e58299ffb62",
+          "result": "PASS",
+          "startedAt": "2026-11-02T14:19:58.275Z",
+          "endedAt": "2026-11-02T14:28:05.487Z",
+          "assertions": {
+            "passed": 8,
+            "total": 8
+          },
+          "report": "runs/1102-2219-欢迎语关闭-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 46,
@@ -2775,16 +3331,25 @@
         "总体预期结果": "文件树汇聚全部产物，点击新开标签预览正常。"
       },
       "script": "scripts/run-client-case058.mjs",
-      "coverage": "部分覆盖，全域文件树待复核",
+      "coverage": "三类产物内容、目录、标签及切换通过；工作空间全域层级文件树未取得证据。",
       "execution": "REVIEW",
       "evidence": [
         "runs/1101-0436-文件目录多标签-第01次/执行报告.md",
         "runs/1102-0112-文件目录多标签-第01次/执行报告.md",
         "runs/1102-0112-文件目录多标签-第01次/执行结果.json",
         "runs/1102-0112-文件目录多标签-第01次/ses_e67e6bf24ffefZo6ZfUIQDM5iq-session-log.json",
-        "runs/1102-0112-文件目录多标签-第01次/trace.json"
+        "runs/1102-0112-文件目录多标签-第01次/trace.json",
+        "runs/1102-2228-文件目录多标签-第01次/执行报告.md",
+        "runs/1102-2228-文件目录多标签-第01次/执行结果.json",
+        "runs/1102-2228-文件目录多标签-第01次/执行日志.txt",
+        "tmp/home-round12-20261102.json",
+        "tmp/home-round12-final-20261102.json",
+        "tmp/home-round12-original-hashes-20261102.json",
+        "tmp/home-round12-archive-notes-20261102.json",
+        "runs/1102-2228-文件目录多标签-第01次/1102-2229-12-文件预览-目录核验.csv.png",
+        "runs/1102-2228-文件目录多标签-第01次/1102-2229-15-切换已有标签-目录核验.txt.png"
       ],
-      "notes": "正式批次0c402c4d-4456-48b1-82da-2a2fd8be1c1a；录像COMPLETED。正式REVIEW，12/12项已记录断言通过：TXT/Markdown/CSV真实内容、产物目录完整三项、逐一点击对应正文（CSV读取单元格value）、三个标签同时存在、已有标签往返内容及正常收尾均通过。原表工作空间全域层级文件树仍未取得证据，当前扁平产物菜单不能代替该目标；remaining仅工作空间全域文件树，保留REVIEW及旧失败历史，不把12/12当全部验收。",
+      "notes": "12/12记录断言通过；真实TXT、Markdown、CSV文件预览和三个已有标签往返通过，扁平产物菜单不能替代全域文件树。录像完成。",
       "optimized": {
         "goal": "验证本轮多格式产物目录、真实预览与多标签切换；全域层级文件树单独留证。",
         "precondition": "18888串行、自动模型；独立Session实际生成TXT、Markdown、CSV三个合成文件。",
@@ -2804,6 +3369,18 @@
             "total": 12
           },
           "report": "runs/1102-0112-文件目录多标签-第01次/执行报告.md"
+        },
+        {
+          "batchId": "0b843ae2-53ce-4b77-aee6-1e5719bb21b2",
+          "jobId": "32cccbfb-f5f1-4a8f-afc3-7157bb66f09c",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T14:28:09.351Z",
+          "endedAt": "2026-11-02T14:29:33.406Z",
+          "assertions": {
+            "passed": 12,
+            "total": 12
+          },
+          "report": "runs/1102-2228-文件目录多标签-第01次/执行报告.md"
         }
       ]
     },
@@ -3289,12 +3866,13 @@
         "总体预期结果": "创建工作空间成功，默认展开"
       },
       "script": "scripts/run-client-case074.mjs",
-      "coverage": "已编写，阻塞待验证",
-      "execution": "BLOCKED",
+      "coverage": "实机通过：默认路径创建及默认展开",
+      "execution": "PASS",
       "evidence": [
-        "runs/1101-0624-默认路径新空间-第01次/执行报告.md"
+        "runs/1101-0624-默认路径新空间-第01次/执行报告.md",
+        "runs/1103-0104-默认路径新空间-第01次/执行报告.md"
       ],
-      "notes": "通过真实默认存储空间创建界面输入本轮唯一名称，核对实际默认根目录下的注册路径和侧栏默认展开。纯界面验证不发送无关模型消息。创建前登记唯一目标与基线，统一收尾仅移除本轮注册并保留目录。 本轮断言0/0；原因：默认存储空间创建后未出现在工作空间列表；本轮草稿清理归属未确认；未完成：真实新增空间及注册、新增空间默认展开；详见 runs/1101-0624-默认路径新空间-第01次/执行报告.md",
+      "notes": "01:04真实复验PASS，3/3断言：默认根目录下注册及默认展开通过，录像和正常收尾完成。此前创建阻塞的报告保留；强停收尾未在本次验证。",
       "optimized": {
         "goal": "通过默认路径创建独立空间并验证默认展开。",
         "precondition": "已登录、默认存储目录可用；登记创建前基线与唯一目标名称。",
@@ -3320,12 +3898,14 @@
         "总体预期结果": "创建工作空间成功，默认展开"
       },
       "script": "scripts/run-client-case075.mjs",
-      "coverage": "已编写，阻塞待验证",
-      "execution": "BLOCKED",
+      "coverage": "实机通过：本地目录创建及默认展开",
+      "execution": "PASS",
       "evidence": [
-        "runs/1101-0631-本地目录新空间-第01次/执行报告.md"
+        "runs/1101-0631-本地目录新空间-第01次/执行报告.md",
+        "runs/1103-0105-本地目录新空间-第01次/执行报告.md",
+        "runs/1103-0105-本地目录新空间-第01次/原生文件夹选择器.json"
       ],
-      "notes": "本轮报告目录准备隔离文件夹，产品触发Windows原生选择器后按CDP客户端PID和真实Edit/Button识别；路径回读、确认关闭、产品精确路径注册和默认展开均须核对。复用019/026共用原生模块，未知窗口保留阻塞。 本轮断言0/0；原因：输入区资源页面归属不匹配；本轮草稿清理归属未确认；未完成：真实新增空间及注册、原生窗口目录选择及产品接收、新增空间默认展开；详见 runs/1101-0631-本地目录新空间-第01次/执行报告.md",
+      "notes": "01:05真实复验PASS，4/4断言：原生目录框回读关闭、精确路径注册及默认展开通过，录像和正常收尾完成。此前页面归属阻塞的报告保留；强停收尾未在本次验证。",
       "optimized": {
         "goal": "通过Windows原生文件夹窗口创建本地空间并验证默认展开。",
         "precondition": "本轮报告下合成隔离目录；Python及pywin32；当前客户端无未知原生选择器。",
@@ -3351,12 +3931,14 @@
         "总体预期结果": "默认新建工作任务在工作空间“a”下"
       },
       "script": "scripts/run-client-case076.mjs",
-      "coverage": "已编写，阻塞待验证",
-      "execution": "BLOCKED",
+      "coverage": "实机通过：空间行新建任务、Session与产物归属",
+      "execution": "PASS",
       "evidence": [
-        "runs/1101-0633-空间下新建任务-第01次/执行报告.md"
+        "runs/1101-0633-空间下新建任务-第01次/执行报告.md",
+        "runs/1103-0110-空间下新建任务-第01次/执行报告.md",
+        "runs/1103-0110-空间下新建任务-第01次/trace.json"
       ],
-      "notes": "先真实创建本轮唯一空间，再从该空间行新建任务入口操作，核对输入区默认空间、实际Session路由及任务目录归属、本轮真实文本产物与侧栏任务行；不从首页选择空间冒充空间行入口。保存日志Trace后恢复原空间并仅移除本轮注册，保留任务材料。 本轮断言0/0；原因：默认存储空间创建后尚未出现在工作空间列表；本轮草稿清理归属未确认；未完成：独立测试空间前置、空间行入口创建任务、Session目录及真实产物归属、侧栏任务实际归属；详见 runs/1101-0633-空间下新建任务-第01次/执行报告.md",
+      "notes": "01:10真实复验PASS，8/8断言：空间行新建入口、Session及目录归属、真实产物和侧栏任务通过；Trace、录像及正常收尾完成。此前空间创建阻塞的报告保留。",
       "optimized": {
         "goal": "从空间行入口创建真实工作任务并验证归属。",
         "precondition": "先独立创建唯一测试空间，自动模型；不依赖上条空间。",
@@ -3911,9 +4493,11 @@
         "总体预期结果": "支持对桌面应用操作的录制，生成对应的skill并进行回放"
       },
       "script": "scripts/run-client-case087.mjs",
-      "coverage": "已实机执行，前置阻塞",
+      "coverage": "已实机启录，计算器输入焦点阻塞",
       "execution": "BLOCKED",
       "evidence": [
+        "runs/1103-0204-计算器录制生成回放-第01次/执行报告.md",
+        "runs/1103-0204-计算器录制生成回放-第01次/执行结果.json",
         "runs/1102-0333-计算器录制生成回放-第01次/执行报告.md",
         "runs/1102-0333-计算器录制生成回放-第01次/执行结果.json",
         "runs/1102-0339-计算器录制生成回放-第01次/执行报告.md",
@@ -3923,9 +4507,12 @@
         "tmp/recording-round3-live-observation-20261102.json",
         "runs/1102-0333-计算器录制生成回放-第01次/录制运行库定位依据.json",
         "runs/1102-0339-计算器录制生成回放-第01次/1102-0339-03-流程录制专家实际安装完成.json",
-        "runs/1102-0339-计算器录制生成回放-第01次/录制运行库定位依据.json"
+        "runs/1102-0339-计算器录制生成回放-第01次/录制运行库定位依据.json",
+        "runs/1103-0231-计算器录制生成回放-第01次/执行报告.md",
+        "runs/1103-0231-计算器录制生成回放-第01次/执行结果.json",
+        "runs/1103-0231-计算器录制生成回放-第01次/执行日志.txt"
       ],
-      "notes": "正式批次d63ac4d9-939d-4aaa-9c79-bcc8b7496a44；录像COMPLETED。本轮两次正式尝试均未创建Session、未启录。首次批次190aa954-1915-4c86-83c0-cd87e68c5a2f正式FAIL，1/1仅收尾：实际安装目录先出现但市场卡仍安装中，旧10秒等待已安装文字超时；修正后复跑正式BLOCKED，0/0，实际安装完成截图已保存，召唤后的精确预填与登记合同不符，原草稿清理错误保留。server于03:40:16完成恢复，03:40:23实际CDP核对原空间空Session首页、无弹框/cards且worker已退出；03:41:37两次均FINISHED、收尾完成、hold=false，无Session、pending、SOP/原生/专家/多根等登记资源。首次handoff字段未记录，不补写；当前复跑handoff ready。不得以收尾通过算录制业务通过；真实事件、生成Skill及独立回放仍全部待验。已接入calc.exe+Win32键盘的优化实现，原开始菜单/鼠标路径未覆盖；后续手动精确预填交接修正本轮不再追加实机。",
+      "notes": "2026-11-03 实际召唤专家并启录；计算器前台焦点未取得，2/2已记录断言通过，真实计算、生成和回放未完成。录制器、计算器和会话随后结束，交接完成；焦点失败原因待查，录像完成。",
       "optimized": {
         "module": "流程录制专家/桌面计算器",
         "goal": "真实录制桌面计算器操作，生成本轮Skill并完整路径回放，验证真实计算结果。",
@@ -3960,6 +4547,32 @@
           },
           "report": "runs/1102-0339-计算器录制生成回放-第01次/执行报告.md",
           "note": "BLOCKED，0/0；实际安装完成，专家召唤精确预填交接不符，未创建Session、未启录；原报告草稿清理错误保留，server后续恢复及03:40:23实际CDP事实另存，不倒改结果。"
+        },
+        {
+          "batchId": "52070c7d-1050-420e-b4a8-24bc8b63eb49",
+          "jobId": "626b7327-4a24-491d-8343-064742b2dd22",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T18:04:48.915Z",
+          "endedAt": "2026-11-02T18:07:19.600Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1103-0204-计算器录制生成回放-第01次/执行报告.md",
+          "note": "实际启录；计算器按键脚本类型错误导致中断，生成和回放未执行。录制续轮事后完成，页面交接恢复；原结果保留。"
+        },
+        {
+          "batchId": "7914e7dc-d191-4e21-8592-1aff511aec0a",
+          "jobId": "181080b3-493a-4da0-b90c-72c10e8f01f1",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T18:31:53.564Z",
+          "endedAt": "2026-11-02T18:33:37.829Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1103-0231-计算器录制生成回放-第01次/执行报告.md",
+          "note": "2026-11-03 实际召唤专家并启录；计算器前台焦点未取得，2/2已记录断言通过，真实计算、生成和回放未完成。录制器、计算器和会话随后结束，交接完成；焦点失败原因待查，录像完成。"
         }
       ]
     },
@@ -5504,9 +6117,15 @@
         "runs/1101-1606-知识库本地五类来源-第01次/执行报告.md",
         "runs/1101-1606-知识库本地五类来源-第01次/执行结果.json",
         "runs/1101-1616-知识库本地五类来源-第01次/执行报告.md",
-        "runs/1101-1616-知识库本地五类来源-第01次/执行结果.json"
+        "runs/1101-1616-知识库本地五类来源-第01次/执行结果.json",
+        "runs/1103-0323-知识库本地五类来源-第01次/执行报告.md",
+        "runs/1103-0323-知识库本地五类来源-第01次/执行结果.json",
+        "runs/1103-0323-知识库本地五类来源-第01次/执行日志.txt",
+        "runs/1103-0319-知识库本地五类来源-第01次/执行报告.md",
+        "runs/1103-0319-知识库本地五类来源-第01次/执行结果.json",
+        "runs/1103-0319-知识库本地五类来源-第01次/执行日志.txt"
       ],
-      "notes": "2026-11-01最新真实18888 PASS 8/8，之前两次FAIL/BLOCKED保留。真实4步创建引导完成且未勾不再提示；源目录与精确Wiki标题的两个Win32原生框均选择成功并在网页回显。真实outer创建、唯一ID/关联路径/初始化目录/默认定时关闭、docx/xlsx/pptx/pdf/md源树与UI五项、原文件哈希未变通过。只移除本轮注册，材料保留、原有四库不变，网页/原生弹框和队列无残留。未进行全文解析，原生窗口阻断的负向分支未单独测试。",
+      "notes": "11-03 03:23 实机 PASS 8/8：源目录和 Wiki 两次选择及表单回填均完成，各自控件证据独立保存；本轮注册清理完成，录像完成，调度锁已释放。确认期间强停待验证。",
       "optimized": {
         "module": "知识中心/本地源目录关联创建",
         "goal": "验证本地文件夹及独立Wiki路径通过真实原生控件关联，五种受支持文档作为原始知识来源完整列出。",
@@ -5554,6 +6173,32 @@
             "total": 8
           },
           "report": "runs/1101-1616-知识库本地五类来源-第01次/执行报告.md"
+        },
+        {
+          "batchId": "d892e0a3-d1fd-4a10-b9ea-4a0f8f0d3ae2",
+          "jobId": "59de14d1-7c7c-47d5-ab06-9319407ff63b",
+          "result": "PASS",
+          "businessResult": "PASS",
+          "startedAt": "2026-11-02T19:19:32.121Z",
+          "endedAt": "2026-11-02T19:19:52.960Z",
+          "assertions": {
+            "passed": 8,
+            "total": 8
+          },
+          "report": "runs/1103-0319-知识库本地五类来源-第01次/执行报告.md"
+        },
+        {
+          "batchId": "a38bb364-06f7-4be0-b082-d5a6158779a1",
+          "jobId": "7ee7adb1-0140-458c-b205-1cece7ea7a2e",
+          "result": "PASS",
+          "businessResult": "PASS",
+          "startedAt": "2026-11-02T19:23:26.197Z",
+          "endedAt": "2026-11-02T19:23:45.726Z",
+          "assertions": {
+            "passed": 8,
+            "total": 8
+          },
+          "report": "runs/1103-0323-知识库本地五类来源-第01次/执行报告.md"
         }
       ]
     },
@@ -6175,9 +6820,12 @@
         "runs/1101-1644-源目录原生选择关联-第01次/执行报告.md",
         "runs/1101-1644-源目录原生选择关联-第01次/执行结果.json",
         "runs/1101-1648-源目录原生选择关联-第01次/执行报告.md",
-        "runs/1101-1648-源目录原生选择关联-第01次/执行结果.json"
+        "runs/1101-1648-源目录原生选择关联-第01次/执行结果.json",
+        "runs/1103-0313-源目录原生选择关联-第01次/执行报告.md",
+        "runs/1103-0313-源目录原生选择关联-第01次/执行结果.json",
+        "runs/1103-0313-源目录原生选择关联-第01次/真实添加源目录请求.json"
       ],
-      "notes": "2026-11-01首次FAIL保留；全量重载引出延迟引擎确认，目录点击等待期间10秒响应监听先超时，未取得添加响应。共用源入口在创建列表已就绪时直接进入目标库，避免多余整页重载；本轮原生选择与响应等待均结束后才进入收尾，响应期限覆盖真实原生操作。复跑PASS 10/10。同PID真实Windows控件、目录回读/确认关闭、实际add_source、本轮目录原名/全部嵌套路径及UI、原文件SHA256不变均通过。 仅移除本轮库注册，外部源及用户四库保留，无原生窗口残留，旧报告不改写。",
+      "notes": "2026-11-03 03:13正式实机PASS 10/10：真实目录选择、添加请求、源目录与嵌套文件及原字节保护通过，录像及收尾完成；确认后强停尚未实机验证。2026-11-01首次FAIL及后续PASS历史保留。",
       "optimized": {
         "module": "知识中心/源文档与生成",
         "goal": "验证新增文件夹是否成功",
@@ -6212,6 +6860,18 @@
             "total": 10
           },
           "report": "runs/1101-1648-源目录原生选择关联-第01次/执行报告.md"
+        },
+        {
+          "batchId": "4612479f-8350-40b7-9b64-256bb246569a",
+          "jobId": "75abd489-3d27-4c8a-a7df-43e0a75f3a8b",
+          "result": "PASS",
+          "startedAt": "2026-11-02T19:13:30.159Z",
+          "endedAt": "2026-11-02T19:13:50.830Z",
+          "assertions": {
+            "passed": 10,
+            "total": 10
+          },
+          "report": "runs/1103-0313-源目录原生选择关联-第01次/执行报告.md"
         }
       ]
     },
@@ -6874,10 +7534,16 @@
         "总体预期结果": "系统默认每日02:00自动更新知识库内容；支持手动更改更新时间；支持设定每天xx点生成一次"
       },
       "script": "scripts/run-client-case140.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01按原表顺序核对，依据123真实解析诊断document_parser_runtime_unavailable（0xc0000135）暂缓。每日定时真实触发、解析终态及Wiki随机事实尚未实机验收；不能预制Wiki/卡片/图谱或以配置保存代替真实业务。本轮未启动、不生成正式BLOCKED，缺环境先跳过后续集中确认。 真实定时执行同样需要解析运行时，不单独启动会留下后台计划的部分流程。",
+      "coverage": "真实新建知识库并验证默认时刻和关闭状态；自动更新设置请求成功后即时回显断言失败，定时触发及产物尚未验收。",
+      "execution": "FAIL",
+      "evidence": [
+        "runs/1102-2258-每日自动更新真实到点执行-第01次/执行报告.md",
+        "runs/1102-2258-每日自动更新真实到点执行-第01次/执行结果.json",
+        "runs/1102-2258-每日自动更新真实到点执行-第01次/执行日志.txt",
+        "runs/1102-2258-每日自动更新真实到点执行-第01次/设置保存-自动更新-true.json",
+        "runs/1102-2258-每日自动更新真实到点执行-第01次/1102-2258-03-异常现场.png"
+      ],
+      "notes": "2026-11-02实机FAIL，10/11项断言通过。设置请求返回成功，异常截图同时显示成功提示和关闭状态；回显时序或产品保存原因尚待核实。未完成定时触发与Wiki验证；收尾完成。录像首帧超时。",
       "optimized": {
         "module": "知识中心/图谱与设置",
         "goal": "验证知识库更新逻辑是否正确",
@@ -6885,7 +7551,21 @@
         "operations": "1.独立UI新库，两份真实未解析源，核对默认每日02:00且默认关闭。\n2.真实定时框修改为未来两分钟的每日时刻，启用更新、经openSettings(...,{reload:true})/reloadOwnedModule真实归属重载回读；启用前登记本轮计划。\n3.仅等待产品真实到点触发，持续保存真实进度，不发手动解析请求。\n4.核对本轮真实终态、两源success和含随机事实的真实Wiki。\n5.关闭本轮每日计划，正常/异常/强停统一收尾；期限未观测完整则REVIEW。",
         "expected": "系统默认每日02:00自动更新知识库内容；支持手动更改更新时间；支持设定每天xx点生成一次",
         "assertions": "默认每日02:00及默认未启用；真实UI新时刻和开关持久；仅产品定时触发；真实本轮进度终态与两源success；实际Wiki随机事实；计划启用前归属及统一关闭；观察不全REVIEW。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c287a1e1-ca94-4a08-b67e-1cebed22d473",
+          "jobId": "6513e7c1-d23e-4de4-a4f1-d2c33e61af41",
+          "result": "FAIL",
+          "startedAt": "2026-11-02T14:58:03.288Z",
+          "endedAt": "2026-11-02T14:58:55.683Z",
+          "assertions": {
+            "passed": 10,
+            "total": 11
+          },
+          "report": "runs/1102-2258-每日自动更新真实到点执行-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 142,
@@ -6909,9 +7589,12 @@
       "evidence": [
         "runs/1101-1659-Wiki路径原生选择及完整迁移-第01次/执行报告.md",
         "runs/1101-1659-Wiki路径原生选择及完整迁移-第01次/执行结果.json",
-        "runs/1101-1659-Wiki路径原生选择及完整迁移-第01次/本组诊断.md"
+        "runs/1101-1659-Wiki路径原生选择及完整迁移-第01次/本组诊断.md",
+        "runs/1103-0314-Wiki路径原生选择及完整迁移-第01次/执行报告.md",
+        "runs/1103-0314-Wiki路径原生选择及完整迁移-第01次/执行结果.json",
+        "runs/1103-0314-Wiki路径原生选择及完整迁移-第01次/目录迁移完整文件及原位置保护.json"
       ],
-      "notes": "2026-11-01真实18888首页→功能用例→执行序号141-141→执行范围，自动模型/CDP19223/严格串行，PASS 14/14。独立UI新库及未解析合成源，设置旧路径、独立空目标、同PID Win32目录识别及路径回读确认、真实change_storage请求同ID、新storage/wiki/内部source重定位均通过。原目录与新目录完整清单及逐文件SHA256一致，旧目录保留；真实设置新路径回显、共用归属整页重载及API/UI持久通过。原生动作与响应监听全部结束后才收尾，迁移确认前登记归属，正常收尾仅移除本轮库注册。原有四库登记不变，临时注册/弹框/草稿选择无残留，active/queued/held=0；未解析、不宣称Wiki正文解析或Agent引用通过。",
+      "notes": "2026-11-03 03:14正式实机PASS 14/14：真实原生迁移请求、同库storage/wiki/source路径、完整文件字节及旧目录保护、重载持久通过；录像与收尾完成。确认后强停尚未实机验证；未解析，不宣称Wiki正文解析或Agent引用通过。历史报告保留。",
       "optimized": {
         "module": "知识中心/图谱与设置",
         "goal": "验证wiki存储路径是否更改成功",
@@ -6933,6 +7616,18 @@
             "total": 14
           },
           "report": "runs/1101-1659-Wiki路径原生选择及完整迁移-第01次/执行报告.md"
+        },
+        {
+          "batchId": "c5c87a40-d5fe-4732-bceb-8474dc0fa47d",
+          "jobId": "3f731967-bb44-4006-8a00-a70c62461a92",
+          "result": "PASS",
+          "startedAt": "2026-11-02T19:14:09.590Z",
+          "endedAt": "2026-11-02T19:14:46.080Z",
+          "assertions": {
+            "passed": 14,
+            "total": 14
+          },
+          "report": "runs/1103-0314-Wiki路径原生选择及完整迁移-第01次/执行报告.md"
         }
       ]
     },
@@ -6953,10 +7648,19 @@
         "总体预期结果": "打开本地文件夹选择弹窗添加文件；"
       },
       "script": "scripts/run-client-case142.mjs",
-      "coverage": "已编写；同解析运行时依赖未启动暂缓",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "2026-11-01核对原表描述包含新增源进入解析列表并成功解析，依赖123已证故障的document_parser_runtime_unavailable（0xc0000135），未启动暂缓，不生成正式BLOCKED。不把143新增引用前置通过冒充142解析通过。142/143共用原生监听等待与真实归属重载已适配，解析恢复后完整验收。",
+      "coverage": "真实原生目录添加、重载持久、两个源文件解析成功及Wiki事实验证，17/17项断言通过。",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1102-2258-添加源路径及真实解析-第01次/执行报告.md",
+        "runs/1102-2258-添加源路径及真实解析-第01次/执行结果.json",
+        "runs/1102-2258-添加源路径及真实解析-第01次/执行日志.txt",
+        "runs/1102-2258-添加源路径及真实解析-第01次/原生文件夹控件识别.json",
+        "runs/1102-2258-添加源路径及真实解析-第01次/源路径真实添加请求.json",
+        "runs/1102-2258-添加源路径及真实解析-第01次/新增源实际解析状态.json",
+        "runs/1102-2258-添加源路径及真实解析-第01次/实际Wiki产物索引.json",
+        "runs/1102-2258-添加源路径及真实解析-第01次/1102-2306-05-新增引用源真实解析完成.png"
+      ],
+      "notes": "2026-11-02政企版实机PASS；真实目录选择、源路径追加及重载保留，两个新增源均success，生成Wiki并核对合成事实；原始源字节保留。录像及收尾完成。",
       "optimized": {
         "module": "知识中心/设置",
         "goal": "验证是否新增原文件路径，新增源文件是否加入解析列表，解析是否成功",
@@ -6964,7 +7668,21 @@
         "operations": "1.真实UI创建独立默认库，准备外部合成源两份并记录SHA256。\n2.设置源目录添加触发原生框，核对PID/真实控件、填写回读路径并确认关闭。\n3.核对add_source请求、只追加本轮路径、设置回显及重载持久。\n4.真实源树新增两文件，产品实际解析至本轮终态，逐源success及Wiki随机事实预算。\n5.保护原文件字节，公共正常/异常/强停只移除本轮注册，原生未确认不放行。",
         "expected": "本轮源路径真实添加、重载保留、源进入列表并成功解析，Wiki包含实际事实；原文件保留。",
         "assertions": "原生真实PID/控件/路径回读/关闭；add_source同ID同路径且原引用保留；重载持久；新增文件真实源树及逐源success；Wiki实际随机事实预算；外部源字节保护；未知弹框不操作。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c287a1e1-ca94-4a08-b67e-1cebed22d473",
+          "jobId": "8ea1d902-a6e8-4ee3-9f0d-816868f5dfc9",
+          "result": "PASS",
+          "startedAt": "2026-11-02T14:58:58.129Z",
+          "endedAt": "2026-11-02T15:06:21.987Z",
+          "assertions": {
+            "passed": 17,
+            "total": 17
+          },
+          "report": "runs/1102-2258-添加源路径及真实解析-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 144,
@@ -8658,10 +9376,20 @@
         "总体预期结果": "默认工作空间存储路径更新成功并生效。"
       },
       "script": "scripts/run-client-case181.mjs",
-      "coverage": "已编写",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "当前产品创建新默认空间并将原空间改名为原默认，不迁移原数据；优化按真实流程，保留原表索引/自动化日志观察缺口REVIEW。未实机。",
+      "coverage": "新默认空间和真实任务产物已验证；索引及自动化日志的对象和触发条件待明确。",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1102-2313-默认空间路径原生更新及任务产物-第01次/执行报告.md",
+        "runs/1102-2313-默认空间路径原生更新及任务产物-第01次/执行结果.json",
+        "runs/1102-2313-默认空间路径原生更新及任务产物-第01次/执行日志.txt",
+        "runs/1103-0000-默认空间路径原生更新及任务产物-第01次/执行报告.md",
+        "runs/1103-0000-默认空间路径原生更新及任务产物-第01次/执行结果.json",
+        "runs/1103-0000-默认空间路径原生更新及任务产物-第01次/执行日志.txt",
+        "runs/1103-0328-默认空间路径原生更新及任务产物-第01次/执行报告.md",
+        "runs/1103-0328-默认空间路径原生更新及任务产物-第01次/执行结果.json",
+        "runs/1103-0328-默认空间路径原生更新及任务产物-第01次/执行日志.txt"
+      ],
+      "notes": "11-03 03:28 实机 BLOCKED：目录选择、二次确认和新路径显示已完成；新空间运行时不可达，未创建 Session，产物未验证。原默认空间与设置已恢复，临时注册已清理，调度锁已解除。历史 REVIEW 及报告保留。",
       "optimized": {
         "module": "个人设置",
         "goal": "验证真实更新默认空间路径、原生选择与确认、新默认空间身份及实际任务文件落盘，保留原空间与文件并恢复配置。",
@@ -8669,7 +9397,46 @@
         "operations": "1.提前记录原默认空间ID/路径/名称、scratchFolderPath及原空间侧栏/激活基线，登记本轮唯一目标目录。\n2.从真实系统设置更新路径触发原生Windows目录框，共用CDP PID/Win32控件识别、路径填写回读及确认关闭；识别本轮在新目录新建默认工作空间二次确认。\n3.提交前持久化阶段，真实点击新建默认空间，等待真实新空间ID与唯一default，设置显示新路径；不调用内部setter制造结果。\n4.真实选择该默认空间并按页面交接，统一send创建独立自动模型任务，核对本Session目录在新根下及真实随机标记文件，保留日志Trace与产物。\n5.收尾仅以正常本地API恢复原default及产品自动更改的原名称、恢复本轮改变的scratch偏好，随后统一workspace资源恢复侧栏/选择且只移除本轮注册，保留本地文件。提交未决或发现第三方默认/名称/偏好变更保留归属。\n6.原表索引/自动化日志范围未明确时保留REVIEW，不能将任务产物断言升级为全路径通过。",
         "expected": "验证真实更新默认空间路径、原生选择与确认、新默认空间身份及实际任务文件落盘，保留原空间与文件并恢复配置。；缺前置BLOCKED，关键观察/需求不明确REVIEW。",
         "assertions": "真实原生目录窗口及回读关闭；本轮新默认空间唯一ID/目录与设置显示；独立Session目录和真实文件归属新根；原default/名称/偏好恢复，原文件保留；索引/自动化日志另行判定。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c46984c5-7244-47d2-b64c-395e882f8e89",
+          "jobId": "c3accf00-795b-40d4-b471-802374c9791f",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T15:13:44.393Z",
+          "endedAt": "2026-11-02T15:16:27.070Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1102-2313-默认空间路径原生更新及任务产物-第01次/执行报告.md"
+        },
+        {
+          "batchId": "3bf8bb8f-c112-4111-b1b4-7c5d4c9a2c76",
+          "jobId": "bdb36f5b-ef51-4520-b49c-8c8f3e9433ef",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T16:00:29.141Z",
+          "endedAt": "2026-11-02T16:03:02.238Z",
+          "assertions": {
+            "passed": 3,
+            "total": 3
+          },
+          "report": "runs/1103-0000-默认空间路径原生更新及任务产物-第01次/执行报告.md"
+        },
+        {
+          "batchId": "1c72d351-5532-47a7-b3b1-2f7415f661f2",
+          "jobId": "55bbeb59-456c-4809-996c-562cde28f2e6",
+          "result": "BLOCKED",
+          "businessResult": "BLOCKED",
+          "startedAt": "2026-11-02T19:28:00.818Z",
+          "endedAt": "2026-11-02T19:28:59.971Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1103-0328-默认空间路径原生更新及任务产物-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 183,
@@ -8688,10 +9455,29 @@
         "总体预期结果": "非法路径被拦截并提示，不保存无效值。"
       },
       "script": "scripts/run-client-case182.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "不存在盘符和非法字符可能由Windows选择器拦截，与客户端拒绝分别记录；仅对本轮UUID目录设置当前用户拒写并恢复ACL，不改用户目录。未取得明确错误提示REVIEW，不能将选择框停留记为拒绝；未实机。 本组5项开发验证3 PASS/2 FAIL；ACL模块及fixture阶段错误已修正但未复验，正式MobileWork未执行，不代表业务通过。",
+      "coverage": "不存在盘符及Windows非法字符由原生选择器明确拒绝；不可写目录接口返回500且原设置未变化，未采集到明确界面错误提示。",
+      "execution": "REVIEW",
+      "evidence": [
+        "runs/1102-2325-非法存储路径三分支-第01次/执行报告.md",
+        "runs/1102-2325-非法存储路径三分支-第01次/执行结果.json",
+        "runs/1102-2325-非法存储路径三分支-第01次/执行日志.txt",
+        "runs/1103-0005-非法存储路径三分支-第01次/执行报告.md",
+        "runs/1103-0005-非法存储路径三分支-第01次/执行结果.json",
+        "runs/1103-0005-非法存储路径三分支-第01次/执行日志.txt",
+        "runs/1103-0012-非法存储路径三分支-第01次/执行报告.md",
+        "runs/1103-0012-非法存储路径三分支-第01次/执行结果.json",
+        "runs/1103-0012-非法存储路径三分支-第01次/执行日志.txt",
+        "runs/1103-0014-非法存储路径三分支-第01次/执行报告.md",
+        "runs/1103-0014-非法存储路径三分支-第01次/执行结果.json",
+        "runs/1103-0014-非法存储路径三分支-第01次/执行日志.txt",
+        "runs/1103-0032-非法存储路径三分支-第01次/执行报告.md",
+        "runs/1103-0032-非法存储路径三分支-第01次/执行结果.json",
+        "runs/1103-0032-非法存储路径三分支-第01次/执行日志.txt",
+        "runs/1103-0014-非法存储路径三分支-第01次/空间创建失败终态补证.json",
+        "runs/1103-0134-非法存储路径三分支-第01次/执行报告.md",
+        "runs/1103-0134-非法存储路径三分支-第01次/执行结果.json"
+      ],
+      "notes": "2026-11-03 01:34最新真实执行REVIEW，三分支均已执行；不存在盘符及非法字符明确拒绝，不可写目录仍缺明确界面提示，收尾完成且无调度锁。00:14的BLOCKED历史结果保留，已根据EPERM终态补证完成恢复。",
       "optimized": {
         "module": "系统设置",
         "goal": "验证三类真实非法/不可写路径明确拒绝且原默认空间、偏好与注册列表未接受无效值。",
@@ -8699,7 +9485,69 @@
         "operations": "保存原default ID/名/路径、scratch和空间选择；依次输入真实不存在盘符、独立已核验拒写的UUID目录、含<>非法字符目录。记录原生错误或实际新建默认空间失败提示；逐支核对原设置，统一关闭本轮框与恢复ACL。",
         "expected": "每类有明确错误且无效路径未保存、无异常退出；原默认和空间注册集合保持，拒写前置与恢复有真实证据。",
         "assertions": "三分支错误及拦截层；默认ID/default/名/路径、scratch与既有ID完整集合不变；恢复目录ACL并保留文件。无错误证据REVIEW，提交未决BLOCKED不放行。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c46984c5-7244-47d2-b64c-395e882f8e89",
+          "jobId": "e9b5a52e-425a-4571-a8aa-c94c5ad83e30",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T15:25:39.222Z",
+          "endedAt": "2026-11-02T15:26:25.435Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1102-2325-非法存储路径三分支-第01次/执行报告.md"
+        },
+        {
+          "batchId": "66cb6712-3123-4b6e-ad86-28fe04abb4d7",
+          "jobId": "9afc23a6-2b0c-47f3-9dd7-8348b883e9ba",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T16:05:32.502Z",
+          "endedAt": "2026-11-02T16:06:11.876Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1103-0005-非法存储路径三分支-第01次/执行报告.md"
+        },
+        {
+          "batchId": "a4935e7f-6701-4846-8d40-c45f335b0c54",
+          "jobId": "79dc788e-3cf4-4b11-b191-7c926fe5c7c7",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T16:12:02.549Z",
+          "endedAt": "2026-11-02T16:12:40.605Z",
+          "assertions": {
+            "passed": 1,
+            "total": 1
+          },
+          "report": "runs/1103-0012-非法存储路径三分支-第01次/执行报告.md"
+        },
+        {
+          "batchId": "305ae56d-f0d7-48c4-b13f-681c7710ee1d",
+          "jobId": "74b2e731-2e6e-49df-b034-10da2b6a567e",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T16:14:57.397Z",
+          "endedAt": "2026-11-02T16:16:49.231Z",
+          "assertions": {
+            "passed": 0,
+            "total": 0
+          },
+          "report": "runs/1103-0014-非法存储路径三分支-第01次/执行报告.md"
+        },
+        {
+          "batchId": "43bed02d-d656-4a28-af45-01cccfe9dcd9",
+          "jobId": "f6ac36f0-11d6-4079-a50c-a2b90ac7b1f7",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T16:32:27.667Z",
+          "endedAt": "2026-11-02T16:34:00.874Z",
+          "assertions": {
+            "passed": 3,
+            "total": 3
+          },
+          "report": "runs/1103-0032-非法存储路径三分支-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 184,
@@ -8718,10 +9566,14 @@
         "总体预期结果": "窗口关闭行为按配置执行，后台驻留符合预期。"
       },
       "script": "scripts/run-client-case183.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "真实点击唯一主窗口关闭按钮；按CDP PID及唯一真实HWND观察隐藏与后台驻留，再直接Win32恢复本轮窗口。不是点击最小化或只读偏好检查；未实机。 本组5项开发验证3 PASS/2 FAIL；ACL模块及fixture阶段错误已修正但未复验，正式MobileWork未执行，不代表业务通过。",
+      "coverage": "确认关闭后同一主窗口隐藏且进程保留；窗口恢复步骤未及时确认。",
+      "execution": "BLOCKED",
+      "evidence": [
+        "runs/1102-2329-关闭到托盘及偏好恢复-第01次/执行报告.md",
+        "runs/1102-2329-关闭到托盘及偏好恢复-第01次/执行结果.json",
+        "runs/1102-2329-关闭到托盘及偏好恢复-第01次/执行日志.txt"
+      ],
+      "notes": "2/2项已记录断言通过；本轮主窗口恢复显示未及时确认，后续交接完成；录像完成。",
       "optimized": {
         "module": "系统设置",
         "goal": "选择最小化到托盘后真实关闭窗口，验证原进程和窗口仍存在且隐藏，最后恢复。",
@@ -8729,7 +9581,21 @@
         "operations": "登记原偏好及PID/HWND；真实系统设置combobox读取全部选项并选择最小化到系统托盘；正常接口回读保存。关闭设置后点唯一关闭按钮，核对同PID/HWND隐藏且存在；直接ShowWindow恢复显示并恢复原偏好。",
         "expected": "两候选完整；保存为minimize；点击关闭后原进程驻留且同窗口隐藏；正常/异常/强停恢复原窗口可见与偏好。",
         "assertions": "实际候选含最小化到系统托盘/直接退出应用；真实保存回读；同PID/HWND存在且visible=false；恢复同窗口visible=true及原偏好。窗口不唯一BLOCKED，不猜句柄。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c46984c5-7244-47d2-b64c-395e882f8e89",
+          "jobId": "8756e332-b892-47fb-bcaf-45dbe9ffdf7a",
+          "result": "BLOCKED",
+          "startedAt": "2026-11-02T15:29:02.676Z",
+          "endedAt": "2026-11-02T15:29:34.288Z",
+          "assertions": {
+            "passed": 2,
+            "total": 2
+          },
+          "report": "runs/1102-2329-关闭到托盘及偏好恢复-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 185,
@@ -8748,10 +9614,14 @@
         "总体预期结果": "自动生成记忆默认开启并正确展示说明。"
       },
       "script": "scripts/run-client-case184.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "区分raw null默认true与已有显式设置，已有设置仅核对一致性并REVIEW首次默认分支；不删除账号配置伪造首次使用，不发送模型任务；未实机。 本组5项开发验证3 PASS/2 FAIL；ACL模块及fixture阶段错误已修正但未复验，正式MobileWork未执行，不代表业务通过。",
+      "coverage": "记忆开关、用途说明及未配置账号默认开启已核对，4/4断言通过。",
+      "execution": "PASS",
+      "evidence": [
+        "runs/1102-2329-自动记忆默认及说明只读-第01次/执行报告.md",
+        "runs/1102-2329-自动记忆默认及说明只读-第01次/执行结果.json",
+        "runs/1102-2329-自动记忆默认及说明只读-第01次/执行日志.txt"
+      ],
+      "notes": "真实客户端只读检查通过，未改账号记忆配置；录像及收尾完成。",
       "optimized": {
         "module": "记忆",
         "goal": "验证未显式配置时自动生成记忆默认开启，且记忆页用途说明可见。",
@@ -8759,7 +9629,21 @@
         "operations": "真实进入设置→记忆；读取自动生成记忆switch与账户scoped store实际值；核对开关说明。只读，不修改记忆或清配置；关闭本轮设置。",
         "expected": "UI与实际有效值一致，未配置值null时UI默认开启；展示多轮对话上下文用途说明。",
         "assertions": "switch aria-checked与实际有效配置一致；实际说明可见；rawEnabled===null时true。已有显式值不能声称首次默认，REVIEW并保留实际观察。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c46984c5-7244-47d2-b64c-395e882f8e89",
+          "jobId": "15262918-f60c-4029-a536-063b42a0d7c0",
+          "result": "PASS",
+          "startedAt": "2026-11-02T15:29:36.964Z",
+          "endedAt": "2026-11-02T15:29:50.736Z",
+          "assertions": {
+            "passed": 4,
+            "total": 4
+          },
+          "report": "runs/1102-2329-自动记忆默认及说明只读-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 186,
@@ -8868,10 +9752,14 @@
         "总体预期结果": "MAF防火墙默认开启并展示完整说明。"
       },
       "script": "scripts/run-client-case188.mjs",
-      "coverage": "已接入，待实机验证",
-      "execution": "未执行",
-      "evidence": [],
-      "notes": "官方总开关与自定义模型逐项防火墙不同，本条不重存模型列表或改自定义配置；未实机。 本组5项开发验证4 PASS/1 FAIL，记忆定位修正未复验；正式业务未执行。",
+      "coverage": "官方MAF开关与保存状态一致且说明完整；已有显式配置，首次默认未验证。",
+      "execution": "REVIEW",
+      "evidence": [
+        "runs/1102-2329-官方MAF默认状态和完整说明-第01次/执行报告.md",
+        "runs/1102-2329-官方MAF默认状态和完整说明-第01次/执行结果.json",
+        "runs/1102-2329-官方MAF默认状态和完整说明-第01次/执行日志.txt"
+      ],
+      "notes": "3/3项已记录断言通过；未删除账号配置来构造首次使用，录像及收尾完成。",
       "optimized": {
         "module": "模型",
         "goal": "核对官方MAF默认开启、实际配置一致及完整安全说明。",
@@ -8879,7 +9767,21 @@
         "operations": "真实模型页读取唯一官方MAF switch及完整说明；正常models:list仅返回布尔，真实配置文件只提取是否显式及布尔，不输出模型密钥；已有配置只核对一致性，关闭本轮面板。",
         "expected": "UI与真实官方总开关一致，完整显示安全校验、时延和关闭风险；未显式时默认true。",
         "assertions": "唯一官方switch、完整说明可见；raw无官方字段才判默认true；已有显式值REVIEW首次默认分支，不清配置制造首次使用。"
-      }
+      },
+      "executionHistory": [
+        {
+          "batchId": "c46984c5-7244-47d2-b64c-395e882f8e89",
+          "jobId": "35856043-a9a4-4ec0-90c9-50a630a84b19",
+          "result": "REVIEW",
+          "startedAt": "2026-11-02T15:29:53.833Z",
+          "endedAt": "2026-11-02T15:30:07.526Z",
+          "assertions": {
+            "passed": 3,
+            "total": 3
+          },
+          "report": "runs/1102-2329-官方MAF默认状态和完整说明-第01次/执行报告.md"
+        }
+      ]
     },
     {
       "row": 190,

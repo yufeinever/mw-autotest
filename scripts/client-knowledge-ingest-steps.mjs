@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {addOwnedKnowledgeSource} from './mobilework-knowledge-folder.mjs';
 import {parseOwnedKnowledge} from './mobilework-knowledge-parse.mjs';
 import {sameKnowledgePath} from './mobilework-knowledge-resources.mjs';
 import {flattenKnowledgeFiles,observeKnowledgeSourceRows,sourceToolbarControls} from './mobilework-knowledge-source-ui.mjs';
@@ -33,13 +33,8 @@ async function importFolder(context,call,created){
  const inputs=[path.join(folder,'项目报告.md'),path.join(child,'会议纪要.docx')],before=await Promise.all(inputs.map(async file=>({path:file,sha256:fingerprint(await fs.readFile(file))})));
  await save(dir,'导入目录原材料.json',before);await openSources(page,created,context);
  const {buttons}=await sourceToolbarControls(page);
- const selected=await Promise.allSettled([
-  page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/knowledge/add_source'&&r.request().postDataJSON().id===created.id,{timeout:60000}),
-  selectNativeFolder(page,{folder,dir,control,log,open:()=>buttons.nth(4).click()})
- ]);
- for(const item of selected)if(item.status==='rejected')throw item.reason;
- const response=selected[0].value;
- const body=await response.json(),request=response.request().postDataJSON();
+ const {response,body}=await addOwnedKnowledgeSource(context,call,created,folder,()=>buttons.nth(4).click());
+ const request=response.request().postDataJSON();
  await save(dir,'真实添加源目录请求.json',{request,httpStatus:response.status(),success:body.success});
  assert('原生选择目录经真实添加源目录请求被接受',response.ok()&&body.success==='true'&&sameKnowledgePath(request.source_dir,folder));remaining.delete('真实原生目录选择及添加请求');
  const actual=await call('/knowledge/'+created.id),tree=await call('/knowledge/'+created.id+'/source',{}),files=flattenKnowledgeFiles(tree);

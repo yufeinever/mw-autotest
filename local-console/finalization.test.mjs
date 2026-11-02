@@ -44,6 +44,105 @@ async function fixture(t,options={}){
  return {...app,read,post,script,run,job};
 }
 
+test('026 在创建前登记知识库基线并保持提交和实际 ID',async t=>{
+ const app=await fixture(t,{cooperativeDetector:()=>true,recovery:async()=>({ready:true})});
+ const script=await app.script('knowledge-create-ownership',`
+const call=async(body,ok=true)=>{const r=await fetch(process.env.MW_TASK_CONTROL_URL+'/checkpoint',{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify(body)});if(r.ok!==ok)throw Error('unexpected checkpoint status '+r.status);};
+const acquire=await fetch(process.env.MW_TASK_CONTROL_URL+'/acquire',{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify({phase:'PREPARING'})});if(!acquire.ok)throw Error('acquire failed');
+await call({protocol:2});
+const knowledge={name:'MW-Autotest-KB-123456',storageDir:'C:/fixture-kb',beforeIds:['old-id'],submitted:false};
+await call({knowledge});knowledge.submitted=true;await call({knowledge});knowledge.id='new-id';await call({knowledge});
+await call({knowledge:{...knowledge,id:'other-id'}},false);
+console.log('REGISTERED');await new Promise(resolve=>setTimeout(resolve,1000));await call({knowledge:null});
+`);
+ const run=await app.run(script);
+ const job=await until(async()=>{const current=await app.job(run.id);return current.log?.includes('REGISTERED')&&current;});
+ assert.deepEqual(job.knowledge,{name:'MW-Autotest-KB-123456',storageDir:'C:/fixture-kb',beforeIds:['old-id'],submitted:true,id:'new-id'});
+ const done=await until(async()=>{const current=await app.job(run.id);return current.phase==='FINISHED'&&current;});
+ assert.equal(done.knowledge,undefined);assert.equal(done.schedulingHold,false);
+});
+
+test('本地空间目录确认后保持归属，页面就绪才释放',async t=>{
+ const app=await fixture(t,{cooperativeDetector:()=>true,recovery:async()=>({ready:true})});
+ const script=await app.script('native-workspace-settlement',`
+const request=async(action,body)=>{const r=await fetch(process.env.MW_TASK_CONTROL_URL+'/'+action,{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());};
+const call=body=>request('checkpoint',body);
+await request('acquire',{phase:'PREPARING'});await call({protocol:2});
+const owned={pid:123,path:'C:/fixture',hwnd:456};
+await call({nativeFolder:{pid:123,path:'C:/fixture',phase:'opening'}});
+await call({nativeFolder:{...owned,phase:'opened'}});
+await call({nativeFolder:{...owned,phase:'confirming'}});
+await call({nativeFolder:{...owned,phase:'confirmed'}});
+console.log('CONFIRMED');await new Promise(resolve=>setTimeout(resolve,1000));
+await call({nativeFolder:{...owned,phase:'settled'}});
+`);
+ const run=await app.run(script);
+ const pending=await until(async()=>{const job=await app.job(run.id);return job.nativeFolder?.phase==='confirmed'&&job;});
+ assert.equal(pending.nativeFolder.hwnd,456);
+ const done=await until(async()=>{const job=await app.job(run.id);return job.phase==='FINISHED'&&job;});
+ assert.equal(done.nativeFolder,undefined);assert.equal(done.schedulingHold,false);
+});
+
+test('目录已确认后停止不等待原生窗口，缺业务归属时保留交接',async t=>{
+ const app=await fixture(t,{cooperativeDetector:()=>true,recovery:async()=>({ready:true})});
+ const script=await app.script('native-confirmed-stop',`
+const call=async(action,body)=>{const r=await fetch(process.env.MW_TASK_CONTROL_URL+'/'+action,{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());};
+const owned={pid:123,path:'C:/fixture',hwnd:456};
+await call('acquire',{phase:'PREPARING'});await call('checkpoint',{protocol:2});
+await call('checkpoint',{nativeFolder:{pid:123,path:'C:/fixture',phase:'opening'}});
+for(const phase of ['opened','confirming','confirmed'])await call('checkpoint',{nativeFolder:{...owned,phase}});
+await new Promise(()=>setInterval(()=>{},1000));
+`);
+ const run=await app.run(script);
+ await until(async()=>{const job=await app.job(run.id);return job.nativeFolder?.phase==='confirmed';});
+ const started=Date.now();await app.post('/api/jobs/'+run.id+'/stop');
+ const job=await app.job(run.id);
+ assert.ok(Date.now()-started<15000);assert.equal(job.schedulingHold,true);
+ assert.equal(job.nativeFolder.phase,'confirmed');assert.match(job.cleanupErrors.join('\n'),/业务终态尚未确认/);
+});
+
+test('知识库原生目录确认前取消时持久记录未提交，不能撤回终态',async t=>{
+ const app=await fixture(t,{cooperativeDetector:()=>true,recovery:async()=>({ready:true})});
+ const script=await app.script('knowledge-native-cancel',`
+const call=async(body,ok=true)=>{const r=await fetch(process.env.MW_TASK_CONTROL_URL+'/checkpoint',{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify(body)});if(r.ok!==ok)throw Error('unexpected checkpoint status '+r.status);};
+const acquire=await fetch(process.env.MW_TASK_CONTROL_URL+'/acquire',{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify({phase:'PREPARING'})});if(!acquire.ok)throw Error('acquire failed');
+await call({protocol:2});const url='mobilework-shell://app/index.html#/workspace/ws_fixture/session';
+await call({draft:{url,text:'',skills:[],selection:[]}});
+const sourceAdd={path:'C:/fixture-source',before:['C:/fixture-kb/information'],state:'picking'};
+const resources={url,attachments:[],queueTexts:[],restorePermission:false,moduleNavigation:{originUrl:url,targetHash:'#/knowledge'},knowledgeCreation:{name:'MW-Autotest-KB-142-01234567',beforeIds:[],id:'owned-id',storageDir:'C:/fixture-kb',sourceDir:null,submitted:true,sourceAdd}};
+await call({composerResources:resources});
+const native={pid:123,path:sourceAdd.path,hwnd:456};
+await call({nativeFolder:{pid:native.pid,path:native.path,phase:'opening'}});
+await call({nativeFolder:{...native,phase:'opened'}});
+await call({nativeFolder:{...native,phase:'confirming'}});
+sourceAdd.state='submitted';await call({composerResources:resources});
+await call({nativeFolder:{...native,phase:'cancelled'}});
+await call({composerResources:resources},false);
+console.log('CANCELLED');await new Promise(resolve=>setTimeout(resolve,1500));
+`);
+ const run=await app.run(script);
+ const job=await until(async()=>{const current=await app.job(run.id);return current.log?.includes('CANCELLED')&&current;});
+ assert.equal(job.nativeFolder,undefined);
+ assert.equal(job.composerResources.knowledgeCreation.sourceAdd.state,'rejected');
+});
+
+test('原生目录交接未决时不继续恢复输入区资源',async t=>{
+ let composerCalls=0;
+ const app=await fixture(t,{cooperativeDetector:()=>true,composerReleaser:async()=>{composerCalls++;},recovery:async()=>({ready:true})});
+ const script=await app.script('native-pending',`
+const call=async(action,body)=>{const response=await fetch(process.env.MW_TASK_CONTROL_URL+'/'+action,{method:'POST',headers:{'content-type':'application/json','x-task-token':process.env.MW_TASK_CONTROL_TOKEN},body:JSON.stringify(body)});if(!response.ok)throw Error(await response.text());};
+await call('acquire',{phase:'PREPARING'});await call('checkpoint',{protocol:2});
+await call('checkpoint',{draft:{url:'mobilework-shell://app/index.html#/workspace/ws_fixture/session',text:'',skills:[],selection:[]}});
+await call('checkpoint',{composerResources:{url:'mobilework-shell://app/index.html#/workspace/ws_fixture/session',attachments:[],queueTexts:[],restorePermission:false}});
+await call('checkpoint',{nativeFolder:{pid:123,path:'C:/fixture',phase:'opening'}});
+`);
+ const run=await app.run(script);
+ const job=await until(async()=>{const current=await app.job(run.id);return current.phase==='FINISHED'&&current;});
+ assert.equal(job.schedulingHold,true);
+ assert.match(job.cleanupErrors.join('\n'),/原生文件夹窗口.*尚未确认/);
+ assert.equal(composerCalls,0);
+});
+
 test('删除Session的停止收尾保留用户草稿，清空后解锁并执行下一条',async t=>{
  const engine=http.createServer((req,res)=>{res.writeHead(404,{'content-type':'application/json'});res.end('{}');});
  await new Promise(resolve=>engine.listen(0,'127.0.0.1',resolve));

@@ -1,6 +1,6 @@
 // Observe the real renderer. No DOM, network response or product state is changed.
-export async function startMessageObservation(page,owner){
- await page.evaluate(owner=>{
+export async function startMessageObservation(page,owner,{continuous=false}={}){
+ await page.evaluate(({owner,continuous})=>{
   if(window.__MW_MESSAGE_OBSERVER__)throw Error('本页面已有未结束的消息观察');
   const state={owner,startedAt:Date.now(),samples:[],elements:new WeakMap(),sequence:0};
   const sample=()=>{
@@ -20,10 +20,10 @@ export async function startMessageObservation(page,owner){
    const live=[...root.querySelectorAll('span')].filter(span=>!span.querySelector('span')&&/^\d+\.\d{2}(万token|t\/s)$/.test(span.textContent)&&!span.closest('.group\\/message-group')).map(span=>span.textContent);
    const value={at:Date.now(),rows,metrics,live};
    const previous=state.samples.at(-1);
-   if(!previous||JSON.stringify([previous.rows,previous.metrics,previous.live])!==JSON.stringify([rows,metrics,live]))state.samples.push(value);
+   if(continuous||!previous||JSON.stringify([previous.rows,previous.metrics,previous.live])!==JSON.stringify([rows,metrics,live]))state.samples.push(value);
   };
   state.timer=setInterval(sample,50);state.sample=sample;window.__MW_MESSAGE_OBSERVER__=state;sample();
- },owner);
+ },{owner,continuous});
 }
 
 export async function readMessageObservation(page,{stop=false,owner}={}){

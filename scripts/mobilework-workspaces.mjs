@@ -1,6 +1,9 @@
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {selectNativeFolder,completeNativeFolder} from './mobilework-native-folder.mjs';
 import {initializeTestPage} from './mobilework-initialize.mjs';
 import {snapshotDraft} from './mobilework-isolation.mjs';
+import {waitForReloadedShell} from './mobilework-skill-resources.mjs';
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 const visible=locator=>locator.filter({visible:true});
 const button=(page,name)=>visible(page.getByRole('button',{name,exact:true}));
@@ -41,13 +44,58 @@ async function openWorkspacePicker(page){
  await dialog.waitFor();
  return {dialog,items};
 }
-export async function chooseWorkspace(page,name){
+async function workspacePickerState(page){
+ const trigger=await workspaceTrigger(page);
+ return trigger.evaluate(el=>{
+  const host=el[Object.keys(el).find(key=>key.startsWith('__reactFiber$'))];
+  const queue=[host,host?.alternate].filter(Boolean).map(fiber=>[fiber]),seen=new Set();let chain;
+  while(queue.length){
+   const path=queue.shift(),fiber=path.at(-1);if(seen.has(fiber))continue;seen.add(fiber);
+   if(fiber.tag===3){if(fiber.stateNode.current===fiber){chain=path;break;}continue;}
+   for(const parent of [fiber.return,fiber.return?.alternate]){
+    if(!parent)continue;let child=parent.child;while(child&&child!==fiber)child=child.sibling;
+    if(child===fiber)queue.push([...path,parent]);
+   }
+  }
+  const props=chain?.find(fiber=>Array.isArray(fiber.memoizedProps?.workspaces)&&typeof fiber.memoizedProps?.selectedWorkspaceId==='string'&&typeof fiber.memoizedProps?.onSelectWorkspace==='function')?.memoizedProps;
+  return props&&{selectedId:props.selectedWorkspaceId,workspaces:props.workspaces.map(({id,name})=>({id,name}))};
+ });
+}
+function workspaceDisplayName(state,id){
+ const matches=state?.workspaces.filter(item=>item.id===id)||[];
+ if(matches.length!==1||!matches[0].name)throw blocked('工作空间显示入口与目标 ID 无法唯一对应：'+id);
+ return matches[0].name;
+}
+export async function createdWorkspaceReady(page,created){
+ const expected='/workspace/'+created.id+'/session';
+ if(!page.url().endsWith(expected))return false;
+ const selected=button(page.locator('main').last(),created.name);
+ const trigger=visible(page.locator('button[aria-label="权限"]').locator('xpath=preceding-sibling::button[@aria-haspopup="dialog"]'));
+ if(await trigger.count()!==1||await selected.count()!==1)return false;
+ const state=await workspacePickerState(page);
+ return state?.selectedId===created.id&&page.url().endsWith(expected);
+}
+async function waitForCreatedWorkspace(page,created){
+ const deadline=Date.now()+90000;
+ while(Date.now()<deadline){
+  if(await createdWorkspaceReady(page,created))return;
+  await page.waitForTimeout(200);
+ }
+ throw blocked('空间已注册，但目标空间路由与输入区选择未同时就绪；当前页面：'+page.url());
+}
+export async function chooseWorkspace(page,id){
+ const name=workspaceDisplayName(await workspacePickerState(page),id);
  const {dialog}=await openWorkspacePicker(page),search=visible(dialog.locator('input[placeholder="搜索工作空间"]'));
  if(await search.count())await search.fill(name);
+ if(workspaceDisplayName(await workspacePickerState(page),id)!==name)throw blocked('选择时工作空间显示入口已变化：'+id);
  const option=button(dialog,name);
- if(await option.count()!==1)throw blocked('工作空间列表中未找到唯一入口：'+name);
- await option.click();
+ const matches=await option.evaluateAll((nodes,id)=>nodes.flatMap((node,index)=>node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))]?.key===id?[index]:[]),id);
+ if(matches.length!==1)throw blocked('工作空间列表中未找到目标 ID 的唯一入口：'+id);
+ await option.nth(matches[0]).click();
+ await page.waitForURL(url=>url.toString().endsWith('/workspace/'+id+'/session'),{waitUntil:'commit'});
  await button(page.locator('main').last(),name).waitFor();
+ const state=await workspacePickerState(page);
+ if(state?.selectedId!==id)throw blocked('工作空间选择后身份不一致：'+id);
  return name;
 }
 export async function createDefaultWorkspace(page,name){
@@ -65,17 +113,26 @@ export async function createDefaultWorkspace(page,name){
   await page.waitForTimeout(200);
  }
  if(!created)throw blocked('默认存储空间创建后尚未出现在工作空间列表');
- await page.waitForURL(url=>url.toString().endsWith('/workspace/'+created.id+'/session'));
- await button(page.locator('main').last(),name).waitFor();
+ await waitForCreatedWorkspace(page,created);
  return created;
 }
 export async function createLocalWorkspace(page,folder,log,dir,control){
- const picker=await selectNativeFolder(page,{folder,dir,log,control,open:async()=>{
+ const navigation=[{time:new Date().toISOString(),event:'开始创建',url:page.url()}];
+ const observe=frame=>{if(frame===page.mainFrame())navigation.push({time:new Date().toISOString(),event:'页面导航',url:frame.url()});};
+ const matches=request=>request.method()==='POST'&&new URL(request.url()).pathname==='/workspaces/local'&&request.headers()['content-type']?.includes('application/json')&&pathKey(request.postDataJSON()?.folderPath)===pathKey(folder);
+ const onRequest=request=>{if(matches(request))navigation.push({time:new Date().toISOString(),event:'本轮空间创建请求',url:page.url()});};
+ const onResponse=response=>{if(matches(response.request()))navigation.push({time:new Date().toISOString(),event:'本轮空间创建响应',status:response.status(),url:page.url()});};
+ page.on('framenavigated',observe);
+ page.on('request',onRequest);
+ page.on('response',onResponse);
+ try{
+ const picker=await selectNativeFolder(page,{folder,dir,log,control,deferCompletion:true,open:async()=>{
   const header=page.locator('div[class*="workspace-header-title"]').first();
   if(await header.count())await header.hover();
   await button(page,'添加工作空间').click();
   await page.getByText('选择本地文件夹创建',{exact:true}).last().click();
  }});
+ navigation.push({time:new Date().toISOString(),event:'原生目录选择结束',url:page.url()});
  const deadline=Date.now()+90000;let created;
  while(Date.now()<deadline){
   const {items}=await workspaces(page);created=items.find(item=>String(item.path||item.directory||'').toLowerCase()===folder.toLowerCase());
@@ -83,9 +140,17 @@ export async function createLocalWorkspace(page,folder,log,dir,control){
   await page.waitForTimeout(500);
  }
  if(!created)throw blocked('本地文件夹已选择，但工作空间尚未出现在产品列表');
- await page.waitForURL(url=>url.toString().endsWith('/workspace/'+created.id+'/session'));
- await button(page.locator('main').last(),created.name).waitFor();
+ navigation.push({time:new Date().toISOString(),event:'空间已注册',url:page.url(),workspaceId:created.id});
+ await waitForCreatedWorkspace(page,created);
+ await completeNativeFolder(control,picker.ownership);
  return {...created,nativePicker:picker};
+ }finally{
+  page.off('framenavigated',observe);
+  page.off('request',onRequest);
+  page.off('response',onResponse);
+  navigation.push({time:new Date().toISOString(),event:'创建流程结束',url:page.url()});
+  await fs.writeFile(path.join(dir,'空间创建导航记录.json'),JSON.stringify(navigation,null,2));
+ }
 }
 export async function deleteWorkspace(page,id){
  const {api}=await workspaces(page),response=await fetch(api.base+'/workspaces/'+encodeURIComponent(id),{method:'DELETE',headers:api.headers});
@@ -146,10 +211,15 @@ export async function adoptWorkspacePage(page,resources){
  const created=matches.length===1&&page.url().endsWith('/workspace/'+matches[0].id+'/session');
  if(!created){
   const from=resources.url.match(/\/workspace\/([^/]+)\/session$/);
-  if(!from||owned.beforeIds.includes(from[1])||matches.length||items.length!==owned.beforeIds.length||!items.every(item=>owned.beforeIds.includes(item.id)))return null;
+  if(!from||owned.beforeIds.includes(from[1]))return null;
   if(page.url()!==resources.url.replace(/\/workspace\/[^/]+\/session$/,'/workspace/'+owned.previousId+'/session'))return null;
-  const restored=await page.evaluate(storage=>Object.entries(storage).every(([key,value])=>localStorage.getItem(key)===value),owned.storage);
-  if(!restored)return null;
+  if(matches.length===1&&matches[0].id===from[1]){
+   if(!owned.beforeIds.includes(owned.previousId)||!items.some(item=>item.id===owned.previousId))return null;
+  }else{
+   if(matches.length||items.length!==owned.beforeIds.length||!items.every(item=>owned.beforeIds.includes(item.id)))return null;
+   const restored=await page.evaluate(storage=>Object.entries(storage).every(([key,value])=>localStorage.getItem(key)===value),owned.storage);
+   if(!restored)return null;
+  }
  }
  const draft=await snapshotDraft(page);
  if(draft.text||draft.skills.length||draft.selection.length)return null;
@@ -177,7 +247,7 @@ export async function releaseWorkspaceResources(page,owned,config){
    await config.checkpointPage();
   }
   if(!page.url().endsWith('/workspace/'+original.id+'/session')){
-   await chooseWorkspace(page,original.name);
+   await chooseWorkspace(page,original.id);
    await page.waitForURL(url=>url.toString().endsWith('/workspace/'+original.id+'/session'));
    const current=await snapshotDraft(page);
    if(current.text||current.skills.length||current.selection.length)throw blocked('原工作空间出现未知草稿，保留现场');
@@ -191,7 +261,7 @@ export async function releaseWorkspaceResources(page,owned,config){
    const original=items.find(item=>item.id===owned.previousId);
    if(!original)throw blocked('原工作空间已不在，保留本轮空间');
    await initializeTestPage(page,{model:config.model||'自动',stepInterval:config.stepInterval,managedSession:true});
-   await chooseWorkspace(page,original.name);
+   await chooseWorkspace(page,original.id);
    await page.waitForURL(url=>url.toString().endsWith('/workspace/'+original.id+'/session'));
    await config.checkpointPage();
    await deleteWorkspace(page,candidates[0].id);
@@ -207,8 +277,10 @@ export async function releaseWorkspaceResources(page,owned,config){
  await page.evaluate(storage=>{for(const [key,value] of Object.entries(storage)){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}},owned.storage);
  // The custom shell can render the workspace while navigation lifecycle
  // events are still pending. Wait for the actual restored UI after commit.
- await page.reload({waitUntil:'commit'});await page.getByTestId('workspace-section-header').waitFor({timeout:60000});
- if(owned.existingTargetId){const current=await snapshotDraft(page);if(current.text||current.skills.length||current.selection.length)throw blocked('恢复后出现未知草稿，保留现场');}
+ const expectedUrl=page.url();await config.checkpointPage();
+ await page.reload({waitUntil:'commit'});await waitForReloadedShell(page,page.getByTestId('workspace-section-header'));
+ if(page.url()!==expectedUrl)throw blocked('空间恢复重载后页面归属已变化，保留本轮资源');
+ const current=await snapshotDraft(page);if(current.text||current.skills.length||current.selection.length)throw blocked('恢复后出现未知草稿，保留现场');
  await config.checkpointPage();
  const section=page.getByTestId('workspace-section-header').locator('button[aria-expanded]:not([aria-haspopup])');
  if(await section.getAttribute('aria-expanded')!=='true')await section.click();

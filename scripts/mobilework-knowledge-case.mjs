@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {parseOwnedKnowledge} from './mobilework-knowledge-parse.mjs';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {selectNativeFolder,completeNativeFolder} from './mobilework-native-folder.mjs';
 import {initializeTestPage} from './mobilework-initialize.mjs';
 import {knowledgeClient,removeOwnedKnowledge,closeKnowledgeSettings,openKnowledgeSettings} from './mobilework-knowledge-api.mjs';
 
@@ -19,7 +19,9 @@ export async function runKnowledgeLifecycle(page,{config,checks,capture,log,dir,
   if(!response.ok()||data.success!=='true')throw Error('知识库设置保存失败：HTTP '+response.status());
  };
  const before=await call('/knowledge/list'),name='MW-Autotest-KB-'+Date.now(),folder=path.join(dir,'隔离知识库');
- let created,owned,failure;
+ let created,failure;
+ const owned={name,storageDir:folder,beforeIds:before.map(item=>item.id),submitted:false};
+ await control.call('checkpoint',{knowledge:owned});
  const pending=new Set(['独立知识库及原生目录创建','全量解析及真实Wiki产物','更新设置保存与恢复','五个知识模块加载','首页引用开关','本轮知识库收尾']);
  try{
   await button(page,'知识库').click();
@@ -27,14 +29,16 @@ export async function runKnowledgeLifecycle(page,{config,checks,capture,log,dir,
   await button(page,'管理知识库').click();await page.waitForURL(/#\/knowledge$/);
   await button(page,'创建').click();
   await page.getByRole('textbox',{name:'知识库名称',exact:true}).fill(name);
-  await selectNativeFolder(page,{folder,dir,log,control,open:()=>button(page,'选择文件夹').click()});
+  const picked=await selectNativeFolder(page,{folder,dir,log,control,deferCompletion:true,open:()=>button(page,'选择文件夹').click()});
   // Native dismissal precedes the renderer's async pickDirectory result.
   await page.waitForFunction(expected=>{
    const field=document.querySelector('[data-knowledge-guide="storage"] p');
    return (field?.getAttribute('title')||field?.textContent||'').replaceAll('\\','/').toLowerCase()===expected;
   },folder.replaceAll('\\','/').toLowerCase(),{timeout:10000});
+  await completeNativeFolder(control,picked.ownership);
   await capture('知识库存储目录已回显');
   const create=page.locator('button[data-knowledge-guide="create"]');
+  owned.submitted=true;await control.call('checkpoint',{knowledge:owned});
   const [request]=await Promise.all([
    page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname==='/knowledge/create'),
    create.click()
@@ -49,8 +53,7 @@ export async function runKnowledgeLifecycle(page,{config,checks,capture,log,dir,
    await page.waitForTimeout(500);
   }
   assert(checks,'产品创建了本轮独立知识库',!!created&&!before.some(item=>item.id===created.id));
-  owned={id:created.id,name:created.name,storageDir:created.storage_dir};
-  await control.call('checkpoint',{knowledge:owned});
+  owned.id=created.id;await control.call('checkpoint',{knowledge:owned});
   assert(checks,'知识库使用原生选择的隔离目录',path.resolve(created.storage_dir).toLowerCase()===path.resolve(folder).toLowerCase(),created.storage_dir);
   for(const target of [created.source_dir[0],created.wiki_dir]){
    const relative=path.relative(folder,target);
@@ -114,7 +117,7 @@ export async function runKnowledgeLifecycle(page,{config,checks,capture,log,dir,
 
  }catch(error){failure=error;await capture('知识库操作异常现场').catch(()=>{});throw error;}
  finally{
-  if(owned){
+  if(created&&owned.id){
    try{
     await closeKnowledgeSettings(page,owned);
     await removeOwnedKnowledge(call,owned);

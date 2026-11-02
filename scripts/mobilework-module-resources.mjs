@@ -1,4 +1,6 @@
 import {createHash} from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import {readInstalledSkills,settleSkillReload} from './mobilework-skill-resources.mjs';
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
@@ -8,14 +10,34 @@ export async function readLocalSkill(page,projectDir,id){
  return page.evaluate(({projectDir,id})=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('readLocalSkill',projectDir,id),{projectDir,id});
 }
 
-export async function releaseManagedSkills(page,owned,{modelSettled=false}={}){
- await settleSkillReload(page);
- const installed=await readInstalledSkills(page,owned.projectDir),added=installed.filter(id=>!owned.installedBefore.includes(id));
+export async function releaseManagedSkills(page,owned,{modelSettled=false,checkpoint=async()=>{}}={}){
+ if(owned.pending&&owned.pendingKind==='import'&&owned.pickerToken&&new URL(page.url()).hash==='#/experts/skills'&&await page.locator('html').getAttribute('data-mw-skill-picker-document')===owned.pickerToken){
+  await settleSkillReload(page);
+  const heading=page.getByRole('heading',{name:'上传技能',exact:true}).filter({visible:true});
+  const installed=await readInstalledSkills(page,owned.projectDir);
+  const added=installed.filter(id=>!owned.installedBefore.includes(id));
+  if(!await heading.count()&&added.length===1&&added[0]===owned.ids[0]){
+   const skill=await readLocalSkill(page,owned.projectDir,owned.ids[0]);
+   const source=await fs.readFile(path.join(owned.importFolder,'SKILL.md'),'utf8');
+   if(skill.content?.includes(owned.marker)&&skill.content.replace(/\r\n/g,'\n')===source.replace(/\r\n/g,'\n')){
+    owned.pending=false;delete owned.pickerToken;delete owned.importFolder;await checkpoint();
+   }
+  }
+ }
  if(owned.pending&&!(owned.pendingKind==='create'&&modelSettled)){
-  // Returning to the composer hides the import modal; its absence does not
-  // prove that the asynchronous import has finished.
   throw blocked('本轮技能导入或创建尚未确认终态，保留归属等待收尾');
  }
+ if(owned.pickerToken){
+  if(new URL(page.url()).hash!=='#/experts/skills'||await page.locator('html').getAttribute('data-mw-skill-picker-document')!==owned.pickerToken)throw blocked('技能上传页面或文档归属已变化，保留现场');
+  const heading=page.locator('[data-mw-skill-picker="'+owned.pickerToken+'"]');
+  if(await heading.isVisible()){
+   const modal=heading.locator('xpath=ancestor::div[.//button[normalize-space()="取消"] and .//button[normalize-space()="导入"]][1]');
+   await modal.getByRole('button',{name:'取消',exact:true}).click();await heading.waitFor({state:'hidden'});
+  }else if(await page.getByRole('heading',{name:'上传技能',exact:true}).filter({visible:true}).count())throw blocked('技能上传窗口未完成归属，保留现场');
+  delete owned.pickerToken;delete owned.importFolder;
+ }
+ await settleSkillReload(page);
+ const installed=await readInstalledSkills(page,owned.projectDir),added=installed.filter(id=>!owned.installedBefore.includes(id));
  if(added.some(id=>!owned.ids.includes(id)))throw blocked('存在未匹配本轮目标的新增技能，保留现场，未移除未知目录');
  for(const id of added){
   const skill=await readLocalSkill(page,owned.projectDir,id);

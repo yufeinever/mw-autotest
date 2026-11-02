@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import {knowledgeClient} from './mobilework-knowledge-api.mjs';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {selectNativeFolder,completeNativeFolder} from './mobilework-native-folder.mjs';
 import {ownedKnowledgeCandidate,sameKnowledgePath} from './mobilework-knowledge-resources.mjs';
 import {reloadOwnedModule} from './mobilework-module-navigation.mjs';
 import {finishKnowledgeGuide} from './mobilework-knowledge-guide.mjs';
@@ -40,8 +40,9 @@ export async function createManagedKnowledge(context,{resourceKey='knowledgeCrea
  if(outer){
   for(const [field,folder] of [['source',fixture.source],['wiki',storageDir]]){
    const row=page.locator('[data-knowledge-guide="'+field+'"]');
-   await selectNativeFolder(page,{folder,dir,control,log,open:()=>row.getByRole('button').click()});
+   const picked=await selectNativeFolder(page,{folder,dir,control,log,deferCompletion:true,evidenceLabel:'-'+field,open:()=>row.getByRole('button').click()});
    await page.waitForFunction(({field,folder})=>[...document.querySelectorAll('[data-knowledge-guide="'+field+'"] [title]')].some(node=>node.title.replaceAll('\\','/').toLowerCase()===folder),{field,folder:folder.replaceAll('\\','/').toLowerCase()});
+   await completeNativeFolder(control,picked.ownership);
   }
  }else{
   const shown=page.locator('[data-knowledge-guide="storage"] p[title]');await shown.waitFor();

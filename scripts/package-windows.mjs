@@ -60,7 +60,7 @@ export async function selectedFiles(){
  selected.push('scripts/mobilework-knowledge-graph-settings.mjs','scripts/client-knowledge-graph-settings-steps.mjs');
  selected.push('scripts/mobilework-knowledge-reading.mjs','scripts/mobilework-knowledge-preview.mjs','scripts/client-knowledge-reading-steps.mjs');
  selected.push('scripts/mobilework-knowledge-ingest.mjs','scripts/client-knowledge-ingest-steps.mjs');
- selected.push('scripts/mobilework-knowledge-create.mjs','scripts/mobilework-knowledge-parse.mjs','scripts/mobilework-knowledge-source-ui.mjs','scripts/client-knowledge-source-steps.mjs');
+ selected.push('scripts/mobilework-knowledge-create.mjs','scripts/mobilework-knowledge-folder.mjs','scripts/mobilework-knowledge-parse.mjs','scripts/mobilework-knowledge-source-ui.mjs','scripts/client-knowledge-source-steps.mjs');
  selected.push('scripts/client-case-library-task-steps.mjs');
  selected.push('scripts/mobilework-root-session-group.mjs','scripts/client-case-multi-root-steps.mjs');
  selected.push('scripts/client-case-library-steps.mjs','scripts/mobilework-case-library.mjs');
@@ -72,8 +72,8 @@ export async function selectedFiles(){
  for(const file of await filesUnder(path.join(root,'scripts/fixtures/mindmap')))selected.push(path.relative(root,file).replaceAll('\\','/'));
  for(const file of await filesUnder(path.join(root,'scripts/fixtures/office-preview')))selected.push(path.relative(root,file).replaceAll('\\','/'));
  selected.push('scripts/client-loading-usage-steps.mjs','scripts/mobilework-personalization.mjs','scripts/mobilework-message-observer.mjs','scripts/fixtures/loading-greetings.json');
- selected.push('scripts/client-ui-case-runner.mjs','scripts/client-config-case-runner.mjs','scripts/mobilework-folder-picker.py','scripts/mobilework-native-folder.mjs','scripts/mobilework-knowledge-case.mjs','scripts/mobilework-knowledge-api.mjs','scripts/mobilework-expert-resources.mjs','scripts/mobilework-tool-resources.mjs','scripts/mobilework-skill-resources.mjs');
- selected.push('scripts/mobilework-permission-events.mjs','scripts/mobilework-permission-recovery.test.mjs');
+ selected.push('scripts/client-ui-case-runner.mjs','scripts/client-config-case-runner.mjs','scripts/mobilework-folder-picker.py','scripts/mobilework-folder-picker.test.py','scripts/mobilework-native-folder.mjs','scripts/mobilework-knowledge-case.mjs','scripts/mobilework-knowledge-api.mjs','scripts/mobilework-expert-resources.mjs','scripts/mobilework-tool-resources.mjs','scripts/mobilework-skill-resources.mjs');
+ selected.push('scripts/mobilework-permission-events.mjs','scripts/mobilework-permission-recovery.test.mjs','scripts/mobilework-permission-turn.mjs','scripts/mobilework-permission-turn.test.mjs','scripts/mobilework-welcome-rotation.mjs');
  selected.push('scripts/mobilework-model-selection.test.mjs');
  selected.push('scripts/mobilework-task-control.mjs','scripts/mobilework-task-control.test.mjs','scripts/mobilework-question-no-send.test.mjs','scripts/mobilework-isolation.mjs','scripts/mobilework-standalone.mjs','scripts/mobilework-isolation.test.mjs','scripts/mobilework-full-access.test.mjs');
  selected.push(...['client-case-catalog.mjs','client-case-inputs.mjs','client-case-runner.mjs','client-case-checks.mjs','client-case-preview.mjs','client-cases.test.mjs','mobilework-run-policy.mjs','mobilework-run-policy.test.mjs','mobilework-composer.mjs','mobilework-evidence.mjs','mobilework-trace.mjs','case002-meeting-data.mjs','case002-meeting.test.mjs','build-console-app.mjs','node-runner.cmd','check-package.mjs','package-windows.mjs'].map(s=>'scripts/'+s));

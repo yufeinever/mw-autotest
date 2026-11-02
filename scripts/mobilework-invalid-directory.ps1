@@ -22,8 +22,13 @@ if ($Action -eq 'Deny') {
  if (-not $denied) {[IO.File]::Delete($probe);throw '未形成真实不可写前置'}
  @{path=$directory;writeDenied=$true}|ConvertTo-Json -Compress
 } else {
- $acl.SetSecurityDescriptorSddlForm($Sddl)
+ $acl.SetSecurityDescriptorSddlForm($Sddl,[Security.AccessControl.AccessControlSections]::Access)
  $info.SetAccessControl($acl)
- if (($info.GetAccessControl()).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All) -ne $Sddl) {throw '原目录ACL恢复未确认'}
+ $expected=[Security.AccessControl.RawSecurityDescriptor]::new($Sddl)
+ $actual=[Security.AccessControl.RawSecurityDescriptor]::new(($info.GetAccessControl()).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All))
+ $inherited=[Security.AccessControl.ControlFlags]::DiscretionaryAclAutoInherited
+ $expected.SetFlags([Security.AccessControl.ControlFlags]($expected.ControlFlags -band (-bnot [int]$inherited)))
+ $actual.SetFlags([Security.AccessControl.ControlFlags]($actual.ControlFlags -band (-bnot [int]$inherited)))
+ if ($actual.GetSddlForm('All') -ne $expected.GetSddlForm('All')) {throw '原目录ACL恢复未确认'}
  @{restored=$true}|ConvertTo-Json -Compress
 }

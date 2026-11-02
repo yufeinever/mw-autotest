@@ -88,7 +88,7 @@ export async function runCalculatorRecordingSteps(context){
   const observe=()=>control.withUI(page,'VERIFYING',async()=>{
    const {binding}=await refreshRecordingBinding(page,owned,{checkpoint});
    if(binding&&owned.startOutcome==='started'){
-    await observeRecordingSettlement(owned);await checkpoint();
+    await observeRecordingSettlement(page,owned);await checkpoint();
    }
   });
   await control.wait(page,config,{timeoutMs:context.definition.timeoutMs,capture,observe});
@@ -103,7 +103,7 @@ export async function runCalculatorRecordingSteps(context){
   await send('请结束当前录制并等待真实步骤处理结束。先不要生成、安装、覆盖或回放Skill；我要先核对本轮真实录制步骤是否完整。不得创建任何技能目录。',{continuing:true,waitOptions:{observe}});
   await control.acquire(page,'VERIFYING');
   await refreshRecordingBinding(page,owned,{checkpoint});
-  const settlement=await observeRecordingSettlement(owned);await checkpoint();
+  const settlement=await observeRecordingSettlement(page,owned);await checkpoint();
   assert('录制产物及本Session续轮均真实完成',settlement.artifactSettled&&settlement.continuationSettled);
   const artifactBytes=await fs.readFile(owned.recording.stepInfoFilePath),artifact=JSON.parse(artifactBytes.toString('utf8'));
   await save('实际录制步骤.json',{sourcePath:owned.recording.stepInfoFilePath,sourceSha256:createHash('sha256').update(artifactBytes).digest('hex'),artifact:redactTrace(artifact)});

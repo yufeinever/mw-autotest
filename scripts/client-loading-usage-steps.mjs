@@ -3,6 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {readPersonalization,setPersonalization,openPersonalization,closePersonalization} from './mobilework-personalization.mjs';
 import {startMessageObservation,readMessageObservation} from './mobilework-message-observer.mjs';
+import {inspectWelcomeRotation} from './mobilework-welcome-rotation.mjs';
 
 const review=message=>Object.assign(Error(message),{review:true});
 const messages=page=>page.locator('[data-session-messages="true"]:not([aria-hidden="true"])');
@@ -57,7 +58,7 @@ export async function runLoadingUsageSteps(context){
  const save=(name,value)=>fs.writeFile(path.join(dir,name),JSON.stringify(value,null,2));
  async function observedSend(text,{label,waitOptions={},...options}){
   const owner=randomUUID();
-  await ui(async()=>{resources.messageObservation=owner;await checkpointResources();await startMessageObservation(page,owner);});
+  await ui(async()=>{resources.messageObservation=owner;await checkpointResources();await startMessageObservation(page,owner,{continuous:number===43});});
   try{return await send(text,{...options,waitOptions});}
   finally{await ui(async()=>{const observation=await readMessageObservation(page,{stop:true,owner});await save(label+'.json',observation);delete resources.messageObservation;await checkpointResources();});}
  }
@@ -83,14 +84,24 @@ export async function runLoadingUsageSteps(context){
   assert('欢迎语没有在四秒前提前显示',!premature.length,{elapsed,premature});
   assert('四秒后首次显示欢迎语',elapsed>=3850&&elapsed<=4900,{elapsedMs:elapsed});
   finish('前四秒隐藏及首次欢迎语');
-  const changes=[];
-  for(const row of episode.rows.filter(row=>row.welcome&&row.opacity>=0.9))if(changes.at(-1)?.welcome!==row.welcome)changes.push(row);
-  if(changes.length<2)throw review('真实Loading没有持续到第二条欢迎语，十秒轮换尚未覆盖');
-  for(let index=1;index<changes.length;index++){
-   const interval=changes[index].at-changes[index-1].at;
-   assert('欢迎语约十秒轮换且不连续重复',interval>=9500&&interval<=11500&&changes[index].welcome!==changes[index-1].welcome,{intervalMs:interval,previous:changes[index-1].welcome,current:changes[index].welcome});
+  const rotationFacts=inspectWelcomeRotation(episode.rows);
+  await save(file+'轮换分析.json',rotationFacts);
+  if(!rotationFacts.intervals.length)throw review('真实Loading没有捕获完整的欢迎语轮换');
+  let incomplete=rotationFacts.maxGap>300||rotationFacts.missingFade;
+  for(const interval of rotationFacts.intervals){
+   if(!interval.fadeObserved){incomplete=true;continue;}
+   assert('连续欢迎语不重复',interval.previous!==interval.current,interval);
+   if(interval.minMs===null||interval.maxMs===null){incomplete=true;continue;}
+   const within=interval.minMs>=9500&&interval.maxMs<=11500;
+   const outside=interval.maxMs<9500||interval.minMs>11500;
+   if(!within&&!outside){incomplete=true;continue;}
+   if(outside&&rotationFacts.maxGap>300){incomplete=true;continue;}
+   assert('欢迎语约十秒轮换',within,interval);
   }
-  assert('欢迎语轮换捕获真实淡入淡出',episode.rows.some(row=>row.opacity>0&&row.opacity<0.9&&parseFloat(row.transition)>0));
+  const transitionObserved=episode.rows.some(row=>row.opacity>0&&row.opacity<0.9&&parseFloat(row.transition)>0);
+  if(!transitionObserved&&rotationFacts.maxGap>300)throw review('采样缺口过大，未能确认淡入淡出');
+  assert('欢迎语轮换捕获真实淡入淡出',transitionObserved);
+  if(incomplete)throw review('采样缺口或轮换边界不完整，无法确认全部轮换时序及连续重复');
   finish('十秒轮换与淡入淡出');
  }
  async function checkUsage(label,data){
@@ -133,12 +144,20 @@ export async function runLoadingUsageSteps(context){
  }else if(number===43){
   await preferences({showLoadingTips:true,agentTone:'concise'});finish('开启及基础语调设置');
   await observedSend(longTask,{label:'基础语调欢迎语时间线'});
-  // Do not skip the second tone when the first task completed too quickly.
-  let missing;
-  try{await validateWelcome('基础语调欢迎语时间线','concise',{rotation:true});}catch(error){if(!error.review)throw error;missing=error.message;log('基础语调覆盖缺口',missing);}
+  const issues=[];
+  async function validateStage(file,tone,options){
+   try{await validateWelcome(file,tone,options);}
+   catch(error){
+    if(!error.review&&!error.message.startsWith('断言失败：'))throw error;
+    issues.push(error);log('欢迎语阶段结果',error.message);
+   }
+  }
+  await validateStage('基础语调欢迎语时间线','concise',{rotation:true});
   await newSession();await preferences({showLoadingTips:true,agentTone:'friendly'});
-  await observedSend(longTask,{label:'友好语调新Session时间线'});await validateWelcome('友好语调新Session时间线','friendly');finish('新Session友好语调跟随');
-  if(missing)throw review(missing);
+  await observedSend(longTask,{label:'友好语调新Session时间线'});
+  const before=issues.length;await validateStage('友好语调新Session时间线','friendly');
+  if(issues.length===before)finish('新Session友好语调跟随');
+  if(issues.length)throw issues.find(error=>!error.review)||issues[0];
  }else if(number===44){
   await preferences({showLoadingTips:true,agentTone:'friendly'});
   let dismissed=false;
@@ -148,6 +167,9 @@ export async function runLoadingUsageSteps(context){
    if(!await welcome.count())return;
    await ui(async()=>{
     await welcome.hover();const dismiss=welcome.getByRole('button',{name:'不再显示',exact:true});await dismiss.waitFor();await capture('欢迎语悬停关闭入口');
+    if(!await welcome.isVisible())throw review('截图后Loading已结束，未能点击欢迎语关闭入口');
+    await welcome.hover();
+    if(!await dismiss.isVisible())throw review('截图后未能重新显示欢迎语关闭入口');
     await dismiss.click();await welcome.waitFor({state:'hidden'});
     assert('不再显示立即关闭且持久化开关为关闭',(await readPersonalization(page)).showLoadingTips===false);dismissed=true;finish('悬停与即时关闭');await capture('欢迎语立即消失');
    });

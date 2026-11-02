@@ -1,6 +1,7 @@
 import {setTimeout as delay} from 'node:timers/promises';
 import {readSessionLog} from '../local-console/session-log.mjs';
-import {handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
+import {handleConfiguredDialog,visiblePermissionIdentity,waitStep} from './mobilework-run-policy.mjs';
+import {PermissionTurn} from './mobilework-permission-turn.mjs';
 import {PermissionEvents} from './mobilework-permission-events.mjs';
 import {initializeTestPage} from './mobilework-initialize.mjs';
 import {composerFieldOf} from './mobilework-isolation.mjs';
@@ -127,8 +128,8 @@ export class TaskControl {
   catch(error){
    if(!error?.patchPermissionError)throw error;
    permissions=this.permissionEvents?.snapshot();
-   // An empty event cache cannot prove that an unreadable listing is empty.
-   if(!permissions?.length)throw error;
+   // snapshot() is null until a healthy event stream has an HTTP baseline.
+   if(!permissions)throw error;
    permissionApiUnavailable=true;
   }
   if(!Array.isArray(questions)||!Array.isArray(permissions))throw blocked('引擎待处理交互格式不支持，保留会话');
@@ -140,16 +141,24 @@ export class TaskControl {
   result.permissionApiUnavailable=permissionApiUnavailable;
   return result;
  }
- async handlePendingInteractions(page,config,{capture,log=this.log,observed,reconcile,interactionHandler,onQuestion=()=>{},interactionTimeoutMs=15000}){
+ async handlePendingInteractions(page,config,{capture,log=this.log,observed,reconcile,permissionTurn,interactionHandler,onQuestion=()=>{},interactionTimeoutMs=15000,now=Date.now}){
   await this.withUI(page,'INTERACTING',async()=>{
      // A request may resolve while acquiring/focusing the shared page. Never
      // treat the pre-acquire API snapshot as proof that a DOM control exists.
      const current=await this.pendingInteractions(page);reconcile(current);
      if(!current.length)return;
      const kind=current.some(q=>q.kind==='permission')?'permission':'question';
-     const targets=current.filter(q=>q.kind===kind);
+     let targets=current.filter(q=>q.kind===kind);
+     if(kind==='permission'){
+      const turn=permissionTurn.update(targets,await visiblePermissionIdentity(page),now());
+      if(turn.reason==='unidentified-timeout')throw blocked('本会话待处理审批无法唯一关联可见卡片，保留现场');
+      if(turn.reason==='active-timeout'){
+       const state=observed.get(turn.blocked);
+       throw blocked(`本会话交互持续未解决：${turn.blocked}；${state?.clicked?'已点击但引擎尚未确认':'限时内未完成对应审批'}，保留现场`);
+      }
+      targets=turn.selected?[turn.selected]:[];
+     }
      let eventFallback=targets.some(q=>q.permissionEventFallback);
-     if(eventFallback&&targets.length!==1)throw blocked('审批列表异常且本会话有多个审批，无法唯一匹配页面，保留现场');
      const expected=targets.flatMap(q=>q.questions||[]).map(q=>q.question).filter(Boolean);
      if(kind==='question'&&!expected.length)throw blocked('待回答问题缺少可核对正文');
      const canAct=async()=>{
@@ -164,17 +173,18 @@ export class TaskControl {
      // Successful permissions are not clicked again while engine state settles.
      // Questions may contain several cards under one request ID.
      let handled=false;
-     if(!targets.some(q=>observed.get(q.key)?.clicked)){
+     if(targets.length&&!targets.some(q=>observed.get(q.key)?.clicked)){
       handled=interactionHandler?await interactionHandler({page,targets,kind,canAct,config}):undefined;
       if(handled===undefined)handled=await handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions:expected,canAct,
-       expectedPermission:()=>eventFallback?{id:targets[0].id,sessionID:this.sessionId}:undefined});
+       expectedPermission:kind==='permission'?{id:targets[0].id,sessionID:this.sessionId}:undefined,
+       consentCheckpoint:kind==='permission'&&config.approval==='full'?phase=>this.call('checkpoint',{approvalConsent:phase==='closed'?null:{id:targets[0].id,sessionId:this.sessionId,directory:this.directory,url:this.sessionUrl,phase}}):undefined});
       if(handled&&kind==='question')onQuestion(targets);
-      if(handled)for(const q of targets){const state=observed.get(q.key);if(state){state.since=Date.now();state.clicked=kind==='permission';}log('交互已点击，等待引擎确认',q.key);}
+      if(handled)for(const q of targets){const state=observed.get(q.key);if(state){state.since=now();state.clicked=kind==='permission';if(state.clicked)permissionTurn.confirmedClick(q.key,now());log('交互已点击，等待引擎确认',q.key);}}
      }
      const latest=await this.pendingInteractions(page);reconcile(latest);
-     for(const q of latest){
+     for(const q of latest.filter(q=>kind==='question'&&!latest.some(item=>item.kind==='permission')&&q.kind==='question')){
       const state=observed.get(q.key);
-      if(Date.now()-state.since>=interactionTimeoutMs)throw blocked(`本会话交互持续未解决：${q.key}；${state.clicked?'已点击但引擎尚未确认':'限时重试后仍未识别对应控件'}，保留现场`);
+      if(now()-state.since>=interactionTimeoutMs)throw blocked(`本会话交互持续未解决：${q.key}；${state.clicked?'已点击但引擎尚未确认':'限时重试后仍未识别对应控件'}，保留现场`);
       if(!handled&&!state.logged){log('交互尚未同步，交还页面后重试',q.key);state.logged=true;}
      }
     });
@@ -185,11 +195,16 @@ export class TaskControl {
    const ready=await this.permissionEvents.start();
    log('审批事件订阅',ready?'已连接本会话引擎；等待审批列表建立基线':'不可用，继续使用审批列表；不使用过期事件');
   }
-  const deadline=Date.now()+timeoutMs,observed=new Map();let lastLog=0,permissionErrorSince=null;
+  const deadline=Date.now()+timeoutMs,observed=new Map(),permissionTurn=new PermissionTurn(interactionTimeoutMs);let lastLog=0,permissionErrorSince=null,questionsPaused=false;
   const reconcile=pending=>{
    const keys=new Set(pending.map(q=>q.key));
    for(const key of observed.keys())if(!keys.has(key)){log('交互请求已消失，继续等待模型',key);observed.delete(key);}
    for(const q of pending)if(!observed.has(q.key)){observed.set(q.key,{since:Date.now(),clicked:false});log('发现本会话待处理交互',q.key);}
+   if(pending.some(q=>q.kind==='permission'))questionsPaused=true;
+   else{
+    permissionTurn.update([],null);
+    if(questionsPaused){for(const q of pending.filter(q=>q.kind==='question'))observed.get(q.key).since=Date.now();questionsPaused=false;}
+   }
   };
   while(Date.now()<deadline){
    try{
@@ -198,7 +213,7 @@ export class TaskControl {
    if(pending.permissionApiUnavailable&&!this.permissionFallbackLogged){log('审批列表400，使用本会话实时审批事件','已核对有效基线与连续连接；仍按真实请求ID和原DOM审批');this.permissionFallbackLogged=true;}
    reconcile(pending);
    if(pending.length){
-    await this.handlePendingInteractions(page,config,{capture,log,observed,reconcile,interactionHandler,onQuestion,interactionTimeoutMs});
+    await this.handlePendingInteractions(page,config,{capture,log,observed,reconcile,permissionTurn,interactionHandler,onQuestion,interactionTimeoutMs});
    }else if((states[this.sessionId]?.type||'idle')==='idle'){
     const data=await this.readLog(),last=data.messages.at(-1);
     const boundary=afterMessageId?data.messages.findIndex(m=>m.info?.id===afterMessageId):-1;

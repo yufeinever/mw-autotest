@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {TaskControl} from './mobilework-task-control.mjs';
 import {PermissionEvents} from './mobilework-permission-events.mjs';
+import {PermissionTurn} from './mobilework-permission-turn.mjs';
 import {readEngineConnection} from '../local-console/engine-client.mjs';
 import {readSessionLog} from '../local-console/session-log.mjs';
 import {snapshotDraft,editorOf,clearOwnedDraft,inspectPageHandoff,modalDialogs} from './mobilework-isolation.mjs';
@@ -130,7 +131,7 @@ export class RootSessionGroup {
    const root={key:pending.key,id:route[2],url:control.sessionUrl,workspaceId:pending.workspaceId,directory:control.directory,
     submissionId:pending.id,submittedText:pending.draft.text,firstUserMessageId:user.info.id,source:pending.source,evidence:'任务-'+pending.key,
     resources:localResources({...pending.resources,url:control.sessionUrl}),control,data:null,result:null,error:null,completed:false,
-    observed:new Map(),permissionErrorSince:null};
+    observed:new Map(),permissionTurn:new PermissionTurn(15000),questionsPaused:false,permissionErrorSince:null,interactionTime:0,interactionStartedAt:null};
    for(const key of ['caseTask','caseReplay','moduleNavigation'])delete root.resources[key];
    await fs.mkdir(path.join(this.dir,root.evidence),{recursive:true});
    const {key,id,url,directory,submissionId,firstUserMessageId,evidence,resources}=root;
@@ -198,25 +199,35 @@ export class RootSessionGroup {
    return {root,state:'unknown',pending:[],startedAt,endedAt:new Date().toISOString()};
   }
  }
+ _interactionNow(root){return root.interactionTime+(root.interactionStartedAt===null?0:Date.now()-root.interactionStartedAt);}
  _reconcile(root,pending){
   const keys=new Set(pending.map(item=>item.key));
   for(const key of root.observed.keys())if(!keys.has(key))root.observed.delete(key);
-  for(const item of pending)if(!root.observed.has(item.key))root.observed.set(item.key,{since:Date.now(),clicked:false});
+  for(const item of pending)if(!root.observed.has(item.key))root.observed.set(item.key,{since:this._interactionNow(root),clicked:false});
+  if(pending.some(item=>item.kind==='permission'))root.questionsPaused=true;
+  else{
+   root.permissionTurn.update([],null,this._interactionNow(root));
+   if(root.questionsPaused){for(const item of pending.filter(item=>item.kind==='question'))root.observed.get(item.key).since=this._interactionNow(root);root.questionsPaused=false;}
+  }
  }
  async wait({timeoutMs,advance,onSample=async()=>{},onRootComplete=async()=>{}}){
   const deadline=Date.now()+timeoutMs;let preparationDone=!advance;
   while(Date.now()<deadline){
    await this.observePending();
    const samples=await Promise.all(this.tasks.filter(root=>!root.completed).map(root=>this._sample(root)));
+   for(const {root,state,pending} of samples)if(state!=='unknown')this._reconcile(root,pending);
    await onSample({at:new Date().toISOString(),roots:samples.map(({root,state,pending,startedAt,endedAt})=>({key:root.key,id:root.id,directory:root.directory,state,startedAt,endedAt,pending:pending.map(({kind,id})=>({kind,id}))}))});
    const requests=samples.filter(sample=>sample.pending.length);
-   let handled=false;
+   let handled=false,handledRoot=null;
    if(requests.length&&await this._suspendPending()){
     const sample=requests[this.rotation++%requests.length],{root,pending}=sample;
-    this._reconcile(root,pending);
-    await this.withRootUI(root.key,'INTERACTING',control=>control.handlePendingInteractions(this.page,this.config,{
-     capture:step=>this.capture(step,root.key),log:this.log,observed:root.observed,reconcile:latest=>this._reconcile(root,latest)}));
-    handled=true;
+    await this.withRootUI(root.key,'INTERACTING',async control=>{
+     root.interactionStartedAt=Date.now();
+     try{return await control.handlePendingInteractions(this.page,this.config,{
+      capture:step=>this.capture(step,root.key),log:this.log,observed:root.observed,permissionTurn:root.permissionTurn,reconcile:latest=>this._reconcile(root,latest),now:()=>this._interactionNow(root)});}
+     finally{root.interactionTime=this._interactionNow(root);root.interactionStartedAt=null;}
+    });
+    handled=true;handledRoot=root;
    }
    for(const {root,state,pending} of samples){
     if(state!=='idle'||pending.length)continue;
@@ -228,7 +239,8 @@ export class RootSessionGroup {
    }
    if(!handled&&!preparationDone)preparationDone=await advance();
    if(preparationDone&&!this.pending&&this.tasks.length&&this.tasks.every(root=>root.completed))return this.tasks;
-   await delay(1000);
+   const waitStarted=Date.now();await delay(1000);
+   if(handledRoot)handledRoot.interactionTime+=Date.now()-waitStarted;
   }
   throw blocked('本用例多根任务等待超时；保留所有根及待提交归属供统一停止');
  }

@@ -41,8 +41,10 @@ export async function selectWorkbench(page,config,mode,capture){
   const expected=new URL('overlay.html',page.url());expected.hash='';expected.search='';
   const menus=menuBrowser.contexts().flatMap(context=>context.pages()).filter(item=>item.url()===expected.href);
   if(menus.length!==1)throw Error('菜单页面不唯一');
-  const menu=menus[0];await menu.getByRole('menuitem',{name:mode,exact:true}).waitFor();
-  await menu.getByRole('menuitem',{name:mode,exact:true}).click();
+  const menu=menus[0],item=menu.getByRole('menuitem',{name:mode,exact:true});
+  await item.waitFor();
+  await item.press('Enter');
+  await page.locator('button[aria-label="切换面板功能"][aria-expanded="false"]').waitFor();
  }finally{
   if(menuBrowser)await menuBrowser.close();
   if(page.url()===url&&await trigger.getAttribute('aria-expanded')==='true')await trigger.press('Enter');
@@ -58,10 +60,16 @@ export async function openArtifactMenu(page){
   throw Object.assign(Error('当前Session的产物目录尚未提供真实入口；磁盘文件存在不能代替客户端产物登记',{cause:error}),{review:true});
  }
  await trigger.click();
- const menuId=await trigger.getAttribute('aria-controls');
- if(!menuId)throw Error('产物菜单触发器未提供aria-controls，无法确认菜单归属');
- const menu=page.getByRole('menu').and(page.locator('[id='+JSON.stringify(menuId)+']'));
- await menu.waitFor();return menu;
+ try{
+  await trigger.and(page.locator('[aria-expanded="true"][aria-controls]')).waitFor();
+  const menuId=await trigger.getAttribute('aria-controls');
+  if(!menuId)throw Error('产物菜单触发器未提供aria-controls，无法确认菜单归属');
+  const menu=page.getByRole('menu').and(page.locator('[id='+JSON.stringify(menuId)+']'));
+  await menu.waitFor();return menu;
+ }catch(error){
+  await closeArtifactMenu(page);
+  throw error;
+ }
 }
 
 export async function closeArtifactMenu(page){

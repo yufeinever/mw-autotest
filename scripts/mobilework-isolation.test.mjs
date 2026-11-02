@@ -4,7 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import {chromium} from 'playwright-core';
 import {appendComposerText,readComposerState} from './mobilework-composer.mjs';
-import {snapshotDraft,inspectPageHandoff} from './mobilework-isolation.mjs';
+import {snapshotDraft,inspectPageHandoff,clearSubmittedSelection} from './mobilework-isolation.mjs';
 import {TaskScheduler} from '../local-console/task-scheduler.mjs';
 import {recoverJobPage,adoptOwnedSession} from '../local-console/task-recovery.mjs';
 import {dispatchStandalone} from './mobilework-standalone.mjs';
@@ -12,6 +12,16 @@ import {dispatchStandalone} from './mobilework-standalone.mjs';
 const fixture='<style>.chip:hover [data-skill-chip-icon]{display:none}</style><div contenteditable="true"><span contenteditable="false" class="chip"><span data-skill-chip-icon>S</span><button data-skill-remove="sdd">×</button><span data-skill-chip-label>sdd</span></span> 帮我实现需求。</div>';
 async function setup(t){const browser=await chromium.launch({channel:'chrome',headless:true});t.after(()=>browser.close());const page=await browser.newPage();await page.setContent(fixture);return page;}
 const config={cdpPort:9223,executionStrategy:'serial',maxParallel:3};
+
+test('已提交专家选择只清理同一会话的空输入和原选择',async t=>{
+ const page=await setup(t);
+ await page.route('http://isolated.local/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:'<div data-composer-toolbar-item="expert"><button role="button" aria-label="退出「测试专家」" onclick="this.parentElement.remove()">退出</button></div><div contenteditable="true"></div>'}));
+ await page.goto('http://isolated.local/#/workspace/test/session/ses_done');
+ const owned={sessionId:'ses_done',sessionUrl:page.url(),selection:[{item:'expert',exit:'退出「测试专家」'}]};
+ await page.locator('[contenteditable]').fill('用户草稿');assert.equal(await clearSubmittedSelection(page,owned,{stepInterval:0.1}),false);
+ await page.locator('[contenteditable]').fill('');assert.equal(await clearSubmittedSelection(page,{...owned,sessionId:'ses_other'},{stepInterval:0.1}),false);
+ assert.equal(await clearSubmittedSelection(page,owned,{stepInterval:0.1}),true);assert.equal(await page.locator('[data-composer-toolbar-item]').count(),0);
+});
 
 test('恢复时按同一工作区和完整草稿内容补登记漏读的Session',async()=>{
  const page={url:()=> 'mobilework-shell://app/index.html#/workspace/ws_test/session/ses_recovered',locator:()=>({innerText:async()=> '历史提问\n完整的本次自动化输入\n\n已完成'})};

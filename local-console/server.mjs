@@ -35,7 +35,7 @@ import {readSessionLogFromPage} from './session-log.mjs';
 import {readCdpConfig,enableCdpConfig} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {discoverClientCdpPort} from './cdp-port.mjs';
-import {killScript,stopSession,releaseOwnedLock,releaseNativeFolder,releaseKnowledge,releaseExpert,releaseTool,releaseSkill,releaseComposer,releaseSopRecording} from './stop-job.mjs';
+import {killScript,stopSession,releaseOwnedLock,releaseNativeFolder,releaseKnowledge,releaseExpert,releaseTool,releaseSkill,releaseComposer,releaseSopRecording,releaseApprovalConsent} from './stop-job.mjs';
 import {canStopJob} from './stop-all.mjs';
 import {startRecording} from './recording.mjs';
 import {recordingLocation,recordingLocations,openWindowsFolder} from './recording-storage.mjs';
@@ -171,7 +171,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   if(!result.ready)throw Error(result.reason);
   return result;
  };
- const resourceCleanupNames=['确认SOP录制及所属会话收尾','确认全部根任务及各自资源结束','关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
+ const resourceCleanupNames=['取消本轮完全访问确认','确认SOP录制及所属会话收尾','确认全部根任务及各自资源结束','关闭本轮原生文件夹窗口','核对并移除本轮知识库注册','恢复本轮专家资源与历史','恢复本轮工具配置','移除本轮新增技能','恢复本轮附件、排队消息与权限'];
  const canRecoverCleanup=job=>!(job.cleanupErrors||[]).some(error=>!resourceCleanupNames.some(name=>error.startsWith(name+'：')));
  const reconcileHandoff=async(job,{allowAbort=false}={})=>{
   if(unlocking)return false;
@@ -184,6 +184,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   try{
    if(job.recoveryConnection)await verifyRestartPort(job,job.recoveryConnection.port);
    const target=job.recoveryConnection?new Proxy(job,{get:(object,key)=>key==='config'?{...object.config,cdpPort:object.recoveryConnection.port}:object[key]}):job;
+   await releaseApprovalConsent(target,{checkpoint:()=>writeJob(job)});
    await releaseSopRecording(target,{allowAbort,checkpoint:()=>writeJob(job)});
    if(isRootSessionJob(job))await settleRoots(target,allowAbort);
    await releaseNativeFolder(target);
@@ -216,7 +217,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   recovering.set(job.id,pending);return pending;
  };
  // Rebuild holds after a restart without resuming or rewriting historical runs.
- for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.recordingResources||j.status==='INTERRUPTED'&&(hasUnresolvedRoots(j)||j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
+ for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.approvalConsent||j.recordingResources||j.status==='INTERRUPTED'&&(hasUnresolvedRoots(j)||j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
   if(editingCdp)return;
   for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&canRecoverCleanup(j))){
@@ -246,6 +247,13 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    };
    const stopWorker=async()=>{
     if(job.pid&&!job.processExited){
+     // Let the native picker finish its ownership checkpoint or cancel itself
+     // before terminating the worker. An unresolved opening remains a hold.
+     const nativeInFlight=()=>job.nativeFolder?.phase&&!['confirmed','settled'].includes(job.nativeFolder.phase);
+     if(job.stopRequested&&(nativeInFlight()||job.approvalConsent)){
+      const deadline=Date.now()+(nativeInFlight()?75000:15000);
+      while((nativeInFlight()||job.approvalConsent)&&!job.processExited&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+     }
      await killScript(job);
      const worker=workers.get(job.id);
      if(worker)await worker.closed;
@@ -256,10 +264,15 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     stopHandled=true;job.phase='STOPPING';
     if(!await step('结束脚本进程',stopWorker))return false;
     try{
+     await releaseApprovalConsent(job,{allowAbort:true,checkpoint:()=>writeJob(job)});
      await releaseSopRecording(job,{allowAbort:true,checkpoint:()=>writeJob(job)});
      if(isRootSessionJob(job)){await settleRoots(job,true);stopMessage='本用例全部根任务已确认结束';}
-     else stopMessage=job.modelCompleted||job.sessionSettled?'本条会话已结束，核对页面交接':await sessionStopper(job,{connection:taskRuntimes.get(job.id)});
-     if(job.sessionId&&!job.modelCompleted&&!job.sessionSettled)job.abortAcknowledged=true;
+     else if(job.modelCompleted||job.sessionSettled)stopMessage='本条会话已结束，核对页面交接';
+     else if(job.recoveryAbortAttempted||job.abortAcknowledged)stopMessage=job.abortAcknowledged?'已确认停止请求，等待会话结束':'停止请求结果待确认';
+     else{
+      stopMessage=await sessionStopper(job,{connection:taskRuntimes.get(job.id),checkpoint:()=>writeJob(job)});
+      if(job.sessionId&&!job.sessionSettled)job.abortAcknowledged=true;
+     }
     }catch(error){stopMessage='会话停止未确认：'+error.message;return false;}
     const hasClientState=Boolean(job.recordingResources||hasUnresolvedRoots(job)||job.sessionId||job.ownedDraft||job.submissionPending);
     if(job.cooperative&&hasClientState){
@@ -282,15 +295,18 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }
      job.sessionId??=jobSessionId(job);
     });
-    const sopReady=await step('确认SOP录制及所属会话收尾',()=>releaseSopRecording(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+    const consentReady=await step('取消本轮完全访问确认',()=>releaseApprovalConsent(job,{allowAbort:job.stopRequested,checkpoint:()=>writeJob(job)}));
+    const sopReady=consentReady&&await step('确认SOP录制及所属会话收尾',()=>releaseSopRecording(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
     const rootsReady=sopReady&&(!isRootSessionJob(job)||await step('确认全部根任务及各自资源结束',()=>settleRoots(job,job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome))));
     if(rootsReady){
-    await step('关闭本轮原生文件夹窗口',()=>releaseNativeFolder(job));
-    await step('核对并移除本轮知识库注册',()=>releaseKnowledge(job));
-    const expertsReady=await step('恢复本轮专家资源与历史',()=>releaseExpert(job,{checkpoint:()=>writeJob(job)}));
-    await step('恢复本轮工具配置',()=>releaseTool(job));
-    await step('移除本轮新增技能',()=>releaseSkill(job));
-    if(expertsReady)await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+    const nativeReady=await step('关闭本轮原生文件夹窗口',()=>releaseNativeFolder(job));
+    if(nativeReady){
+     await step('核对并移除本轮知识库注册',()=>releaseKnowledge(job));
+     const expertsReady=await step('恢复本轮专家资源与历史',()=>releaseExpert(job,{checkpoint:()=>writeJob(job)}));
+     await step('恢复本轮工具配置',()=>releaseTool(job));
+     await step('移除本轮新增技能',()=>releaseSkill(job));
+     if(expertsReady)await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+    }
     }
     await step('保存录像并断开录制连接',()=>finishRecording(job,job.stopRequested?'stopped':'completed'));
     if(job.stopRequested)confirmed=await stopClient();
@@ -380,7 +396,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    }
    if(req.method==='POST'&&controlMatch){
     const id=controlMatch[1],action=controlMatch[2],job=jobs.find(j=>j.id===id);
-    if(!job||job.stopRequested||job.finalizing||job.status!=='RUNNING')return send(409,{error:'任务已结束或正在收尾'});
+    const nativeCheckpoint=job?.nativeFolder?.phase&&action==='checkpoint'&&Object.hasOwn(body,'nativeFolder')&&Object.keys(body).every(key=>key==='nativeFolder'||key==='rootKey');
+    const consentCheckpoint=job?.approvalConsent&&action==='checkpoint'&&Object.hasOwn(body,'approvalConsent')&&Object.keys(body).every(key=>key==='approvalConsent'||key==='rootKey');
+    if(!job||job.status!=='RUNNING'||(job.stopRequested||job.finalizing)&&!nativeCheckpoint&&!consentCheckpoint)return send(409,{error:'任务已结束或正在收尾'});
     if(action==='acquire')return send(200,scheduler.acquire(id,body.phase,{rootKey:body.rootKey,currentUrl:body.currentUrl}));
     if(action==='release'){
      if(isRootSessionJob(job)&&body.runtime){
@@ -483,7 +501,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
        }
        for(const resourceKey of ['knowledgeCreation','knowledgeSecondaryCreation'])if(owned[resourceKey]){
         const value=owned[resourceKey],previous=job.composerResources?.[resourceKey];
-        if(owned.moduleNavigation?.targetHash!=='#/knowledge'&&!owned.knowledgeSelection||typeof value.name!=='string'||!/^MW-Autotest-KB-(114|115|116|117|118|119|120|122|123|124|125|126|127|128|129|130|131|132|133|134|135|136|137|138|139|140|141|142|143|144)-[a-f0-9]{8}$/.test(value.name)||!Array.isArray(value.beforeIds)||value.beforeIds.some(id=>typeof id!=='string')||typeof value.storageDir!=='string'||!path.isAbsolute(value.storageDir)||value.sourceDir!==null&&(typeof value.sourceDir!=='string'||!path.isAbsolute(value.sourceDir))||typeof value.submitted!=='boolean'||value.renamedName!==undefined&&value.renamedName!==value.name+'-改名'||value.id!==undefined&&value.id!==null&&(typeof value.id!=='string'||value.beforeIds.includes(value.id))||value.removing!==undefined&&typeof value.removing!=='boolean'||value.previewTitle!==undefined&&(typeof value.previewTitle!=='string'||!value.previewTitle.trim())||value.dialogToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.dialogToken)||value.removing&&!value.id||Object.keys(value).some(key=>!['name','beforeIds','storageDir','sourceDir','submitted','renamedName','id','removing','dialogToken','previewTitle','previewWikiId','previewToken','graphToken','scheduleTime','storageMove','modelMenuToken'].includes(key)))throw Error('知识库创建前归属无效');
+        if(owned.moduleNavigation?.targetHash!=='#/knowledge'&&!owned.knowledgeSelection||typeof value.name!=='string'||!/^MW-Autotest-KB-(114|115|116|117|118|119|120|122|123|124|125|126|127|128|129|130|131|132|133|134|135|136|137|138|139|140|141|142|143|144)-[a-f0-9]{8}$/.test(value.name)||!Array.isArray(value.beforeIds)||value.beforeIds.some(id=>typeof id!=='string')||typeof value.storageDir!=='string'||!path.isAbsolute(value.storageDir)||value.sourceDir!==null&&(typeof value.sourceDir!=='string'||!path.isAbsolute(value.sourceDir))||typeof value.submitted!=='boolean'||value.renamedName!==undefined&&value.renamedName!==value.name+'-改名'||value.id!==undefined&&value.id!==null&&(typeof value.id!=='string'||value.beforeIds.includes(value.id))||value.removing!==undefined&&typeof value.removing!=='boolean'||value.previewTitle!==undefined&&(typeof value.previewTitle!=='string'||!value.previewTitle.trim())||value.dialogToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.dialogToken)||value.removing&&!value.id||Object.keys(value).some(key=>!['name','beforeIds','storageDir','sourceDir','submitted','renamedName','id','removing','dialogToken','previewTitle','previewWikiId','previewToken','graphToken','scheduleTime','storageMove','sourceAdd','modelMenuToken'].includes(key)))throw Error('知识库创建前归属无效');
         if(value.previewWikiId!==undefined||value.previewToken!==undefined){
          if(typeof value.id!=='string'||!value.id||typeof value.previewWikiId!=='string'||!value.previewWikiId.trim()||!(/^[a-f0-9-]{36}$/).test(value.previewToken))throw Error('Wiki预览缺少本轮知识库ID或目标/token归属');
          if(previous?.previewWikiId&&(previous.previewWikiId!==value.previewWikiId||previous.previewToken!==value.previewToken))throw Error('不能替换未收尾的本轮Wiki预览归属');
@@ -491,6 +509,11 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
         if(value.modelMenuToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.modelMenuToken))throw Error('解析模型菜单归属无效');
         if(value.graphToken!==undefined&&!/^[a-f0-9-]{36}$/.test(value.graphToken)||value.scheduleTime!==undefined&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(value.scheduleTime))throw Error('本轮图谱或更新计划归属无效');
         if(previous?.graphToken&&value.graphToken&&previous.graphToken!==value.graphToken||previous?.scheduleTime&&value.scheduleTime&&previous.scheduleTime!==value.scheduleTime)throw Error('不能替换本轮图谱或计划归属');
+        if(value.sourceAdd){
+         const addition=value.sourceAdd,old=previous?.sourceAdd;
+         if(!value.id||!/^MW-Autotest-KB-(128|142|143)-/.test(value.name)||typeof addition.path!=='string'||!path.isAbsolute(addition.path)||!Array.isArray(addition.before)||addition.before.some(p=>typeof p!=='string'||!path.isAbsolute(p)||path.resolve(p).toLowerCase()===path.resolve(addition.path).toLowerCase())||!['picking','submitted','completed','rejected'].includes(addition.state)||Object.keys(addition).some(key=>!['path','before','state'].includes(key)))throw Error('本轮源目录添加归属无效');
+         if(old&&(old.path!==addition.path||JSON.stringify(old.before)!==JSON.stringify(addition.before)||old.state!=='picking'&&addition.state==='picking'||['completed','rejected'].includes(old.state)&&old.state!==addition.state))throw Error('不能替换本轮源目录添加归属或撤回终态');
+        }else if(previous?.sourceAdd)throw Error('不能丢弃本轮源目录添加归属');
         if(value.storageMove){
          const move=value.storageMove,old=previous?.storageMove,relative=typeof move.to==='string'?path.relative(value.storageDir,move.to):'';
          if(!value.id||value.sourceDir!==null||!value.name.startsWith('MW-Autotest-KB-141-')||move.from!==value.storageDir||typeof move.to!=='string'||!path.isAbsolute(move.to)||!relative||!relative.startsWith('..')&&!path.isAbsolute(relative)||!['picking','submitted','completed','rejected'].includes(move.state)||Object.keys(move).some(key=>!['from','to','state'].includes(key)))throw Error('本轮存储迁移归属无效');
@@ -515,7 +538,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
         if(typeof value.accountId!=='string'||!Array.isArray(value.beforeIds)||value.beforeIds.some(id=>typeof id!=='string')||!Array.isArray(value.hashes)||value.hashes.some(item=>typeof item.id!=='string'||!/^[a-f0-9]{64}$/.test(item.hash))||!Array.isArray(value.names)||value.names.length!==2||value.names.some(name=>!/^MW-AUTOTEST-(098|099|100|101|102|103)-[a-f0-9]{8}(-改名)?$/.test(name))||!isClientPageUrl(value.originUrl)||value.id!==null&&typeof value.id!=='string'||typeof value.creating!=='boolean'||typeof value.runPending!=='boolean'||!Array.isArray(value.beforeSessions)||value.beforeSessions.some(id=>!/^ses_[A-Za-z0-9]+$/.test(id))||!Number.isFinite(value.runStartedAt)||Object.keys(value).some(key=>!['accountId','beforeIds','hashes','names','originUrl','id','creating','runPending','beforeSessions','runStartedAt'].includes(key)))throw Error('自动化计划恢复归属无效');
         if(previous&&(['accountId','beforeIds','hashes','names','originUrl'].some(key=>JSON.stringify(value[key])!==JSON.stringify(previous[key]))||previous.id&&previous.id!==value.id||previous.runStartedAt&&previous.runStartedAt!==value.runStartedAt))throw Error('不能替换本轮自动化基线或运行归属');
        }
-       if(owned.managedSkills){const value=owned.managedSkills;if(typeof value.projectDir!=='string'||!path.isAbsolute(value.projectDir)||!Array.isArray(value.installedBefore)||!Array.isArray(value.ids)||value.ids.length!==2||value.ids.some(id=>typeof id!=='string'||!/^mw-autotest-(?:import|created)-[a-z0-9-]+$/.test(id))||typeof value.marker!=='string'||!/^MW-AUTOTEST-093-[a-z0-9-]+$/.test(value.marker)||typeof value.pending!=='boolean'||!['import','create'].includes(value.pendingKind))throw Error('本轮合成技能归属无效');const before=job.composerResources?.managedSkills;if(before&&(before.projectDir!==value.projectDir||before.marker!==value.marker||JSON.stringify(before.installedBefore)!==JSON.stringify(value.installedBefore)||JSON.stringify(before.ids)!==JSON.stringify(value.ids)))throw Error('不能替换本轮合成技能基线');}
+       if(owned.managedSkills){const value=owned.managedSkills;if(typeof value.projectDir!=='string'||!path.isAbsolute(value.projectDir)||!Array.isArray(value.installedBefore)||!Array.isArray(value.ids)||value.ids.length!==2||value.ids.some(id=>typeof id!=='string'||!/^mw-autotest-(?:import|created)-[a-z0-9-]+$/.test(id))||typeof value.marker!=='string'||!/^MW-AUTOTEST-093-[a-z0-9-]+$/.test(value.marker)||typeof value.pending!=='boolean'||!['import','create'].includes(value.pendingKind))throw Error('本轮合成技能归属无效');
+        if(value.pickerToken!==undefined||value.importFolder!==undefined){const relative=typeof value.importFolder==='string'?path.relative(path.join(projectRoot,'runs'),value.importFolder):'';if(!/^[a-f0-9-]{36}$/.test(value.pickerToken||'')||!relative||relative.startsWith('..')||path.isAbsolute(relative)||path.basename(value.importFolder)!==value.ids[0]||value.pendingKind!=='import')throw Error('技能导入目录归属无效');}
+        const before=job.composerResources?.managedSkills;if(before&&(before.projectDir!==value.projectDir||before.marker!==value.marker||JSON.stringify(before.installedBefore)!==JSON.stringify(value.installedBefore)||JSON.stringify(before.ids)!==JSON.stringify(value.ids)||before.pickerToken&&value.pickerToken&&before.pickerToken!==value.pickerToken||before.importFolder&&value.importFolder&&before.importFolder!==value.importFolder))throw Error('不能替换本轮合成技能基线');}
        if(owned.customTool){const value=owned.customTool;if(typeof value.projectDir!=='string'||!path.isAbsolute(value.projectDir)||typeof value.workspaceId!=='string'||!value.workspaceId||typeof value.accountId!=='string'||!/^MW-AUTOTEST-095-[a-z0-9-]+$/.test(value.name)||value.renamed!==value.name+'-改名'||value.url!=='http://127.0.0.1:9/mw-autotest'||value.id!==null&&typeof value.id!=='string'||!value.accountHashes||!value.globalHashes||[...Object.values(value.accountHashes),...Object.values(value.globalHashes)].some(hash=>!/^[a-f0-9]{64}$/.test(hash)))throw Error('本轮自定义工具归属无效');const before=job.composerResources?.customTool;if(before&&(before.name!==value.name||before.workspaceId!==value.workspaceId||before.accountId!==value.accountId||JSON.stringify(before.accountHashes)!==JSON.stringify(value.accountHashes)||JSON.stringify(before.globalHashes)!==JSON.stringify(value.globalHashes)))throw Error('不能替换本轮自定义工具基线');}
        if(owned.toolSelection&&(owned.toolSelection.name!=='腾讯文档'||typeof owned.toolSelection.baseline!=='boolean'||job.composerResources?.toolSelection&&job.composerResources.toolSelection.baseline!==owned.toolSelection.baseline))throw Error('工具任务选择恢复基线无效');
        if(owned.workspaceResources){const value=owned.workspaceResources;if(!Array.isArray(value.beforeIds)||typeof value.previousId!=='string'||!Array.isArray(value.sidebar)||typeof value.sectionExpanded!=='boolean'||!value.storage||Object.keys(value.storage).some(key=>!['openwork.react.workspaceOrder','openwork.react.activeWorkspace','openwork.react.newTaskDraftWorkspace','openwork.react.newTaskHomepageWorkspace'].includes(key))||value.target&&(typeof value.target.name!=='string'||!value.target.name||value.target.path&&!path.isAbsolute(value.target.path))||value.existingTargetId&&(!value.beforeIds.includes(value.existingTargetId)||value.target)||value.beforeSessionIds&&(!value.existingTargetId||!Array.isArray(value.beforeSessionIds)||value.beforeSessionIds.some(id=>typeof id!=='string'||!/^ses_[A-Za-z0-9]+$/.test(id))))throw Error('工作空间恢复归属无效');if(job.composerResources?.workspaceResources&&JSON.stringify(job.composerResources.workspaceResources)!==JSON.stringify(value))throw Error('不能替换本轮空间恢复基线');}
@@ -525,21 +550,59 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       }
      }
      if(Object.hasOwn(body,'nativeFolder')){
-      const native=body.nativeFolder;
-      if(native===null)delete job.nativeFolder;
+      const native=body.nativeFolder,previous=job.nativeFolder;
+      if(native===null){
+       if(job.stopRequested&&previous?.phase==='confirming')previous.phase='confirmed';
+       else delete job.nativeFolder;
+      }
       else{
-       if(!Number.isInteger(native.pid)||native.pid<=0||!Number.isInteger(native.hwnd)||native.hwnd<=0||typeof native.path!=='string'||!path.isAbsolute(native.path))throw Error('原生窗口归属格式无效');
-       if(job.nativeFolder)throw Error('本任务已有未收尾的原生窗口');
-       job.nativeFolder={pid:native.pid,hwnd:native.hwnd,path:native.path};
+       if(!Number.isInteger(native.pid)||native.pid<=0||typeof native.path!=='string'||!path.isAbsolute(native.path))throw Error('原生窗口归属格式无效');
+       if(native.phase==='opening'){
+        if(previous||Object.hasOwn(native,'hwnd'))throw Error('本任务已有未收尾的原生窗口');
+        job.nativeFolder={pid:native.pid,path:native.path,phase:'opening'};
+       }else if(native.phase==='confirmed'||native.phase==='settled'){
+        if(!previous||previous.pid!==native.pid||previous.path!==native.path||previous.hwnd!==native.hwnd||
+          (native.phase==='confirmed'?previous.phase!=='confirming':previous.phase!=='confirmed'))throw Error('原生目录提交归属阶段不匹配');
+        if(native.phase==='confirmed')previous.phase='confirmed';else delete job.nativeFolder;
+       }else if(native.phase==='cancelled'){
+        if(!previous||!['opened','confirming'].includes(previous.phase)||previous.pid!==native.pid||previous.path!==native.path||previous.hwnd!==native.hwnd)throw Error('原生窗口取消归属不匹配');
+        for(const library of [job.composerResources?.knowledgeCreation,job.composerResources?.knowledgeSecondaryCreation].filter(Boolean))for(const operation of [library.sourceAdd,library.storageMove]){
+         if(operation&&['picking','submitted'].includes(operation.state)&&path.resolve(operation.path||operation.to).toLowerCase()===path.resolve(native.path).toLowerCase())operation.state='rejected';
+        }
+        delete job.nativeFolder;
+       }else if(native.phase==='opened'||native.phase==='confirming'){
+        if(!Number.isInteger(native.hwnd)||native.hwnd<=0||!previous||previous.pid!==native.pid||previous.path!==native.path||
+          (native.phase==='opened'?previous.phase!=='opening':previous.phase!=='opened'||previous.hwnd!==native.hwnd))throw Error('原生窗口归属阶段不匹配');
+        if(!(native.phase==='confirming'&&job.stopRequested))job.nativeFolder={pid:native.pid,hwnd:native.hwnd,path:native.path,phase:native.phase};
+       }else{
+        if(previous||native.phase!==undefined||!Number.isInteger(native.hwnd)||native.hwnd<=0)throw Error('本任务已有未收尾的原生窗口');
+        job.nativeFolder={pid:native.pid,hwnd:native.hwnd,path:native.path};
+       }
+      }
+     }
+     if(Object.hasOwn(body,'approvalConsent')){
+      const consent=body.approvalConsent,previous=job.approvalConsent;
+      if(consent===null){
+       if(!previous||(previous.rootKey||undefined)!==body.rootKey)throw Error('完全访问确认归属不匹配');
+       delete job.approvalConsent;
+      }else{
+       const root=isRootSessionJob(job)?rootSession(job,body.rootKey):null;
+       const sessionId=root?.id||job.sessionId,sessionUrl=root?.url||job.sessionUrl;
+       if(typeof consent.id!=='string'||!consent.id||consent.sessionId!==sessionId||consent.url!==sessionUrl||!sessionUrl?.endsWith('/session/'+sessionId)||!path.isAbsolute(consent.directory||'')||root&&root.directory!==consent.directory||!['prepared','opening','confirming'].includes(consent.phase))throw Error('完全访问确认的Session或审批归属无效');
+       const owned={id:consent.id,sessionId,directory:consent.directory,url:sessionUrl,phase:consent.phase,...root?{rootKey:root.key}:{}};
+       if(previous&&(previous.id!==owned.id||previous.sessionId!==owned.sessionId||previous.directory!==owned.directory||previous.url!==owned.url||previous.rootKey!==owned.rootKey||['prepared','opening','confirming'].indexOf(owned.phase)<['prepared','opening','confirming'].indexOf(previous.phase)))throw Error('不能替换待处理的完全访问确认');
+       if(!previous&&owned.phase!=='prepared')throw Error('完全访问确认须先登记准备阶段');
+       job.approvalConsent=owned;
       }
      }
      if(Object.hasOwn(body,'knowledge')){
       const knowledge=body.knowledge;
       if(knowledge===null)delete job.knowledge;
       else{
-       if(typeof knowledge.id!=='string'||!knowledge.id||typeof knowledge.name!=='string'||!knowledge.name.startsWith('MW-Autotest-KB-')||typeof knowledge.storageDir!=='string'||!path.isAbsolute(knowledge.storageDir))throw Error('知识库归属格式无效');
-       if(job.knowledge)throw Error('本任务已有未收尾的知识库');
-       job.knowledge={id:knowledge.id,name:knowledge.name,storageDir:knowledge.storageDir};
+       const previous=job.knowledge;
+       if(!/^MW-Autotest-KB-\d+$/.test(knowledge.name)||!path.isAbsolute(knowledge.storageDir)||!Array.isArray(knowledge.beforeIds)||knowledge.beforeIds.some(id=>typeof id!=='string')||typeof knowledge.submitted!=='boolean'||knowledge.id!==undefined&&(typeof knowledge.id!=='string'||!knowledge.id||knowledge.beforeIds.includes(knowledge.id))||Object.keys(knowledge).some(key=>!['id','name','storageDir','beforeIds','submitted'].includes(key)))throw Error('知识库归属格式无效');
+       if(previous&&(previous.name!==knowledge.name||previous.storageDir!==knowledge.storageDir||JSON.stringify(previous.beforeIds)!==JSON.stringify(knowledge.beforeIds)||previous.submitted&&!knowledge.submitted||previous.id&&previous.id!==knowledge.id))throw Error('不能替换本轮知识库归属');
+       job.knowledge={...knowledge};
       }
      }
      if(Object.hasOwn(body,'skillResources')){
@@ -579,7 +642,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       if(job.recordingResources&&!canAdvanceRecordingSession(job.recordingResources))throw Error('本轮SOP录制、续轮或技能生成尚未确认完成，不能新建回放会话');
       // The immutable workspace baseline belongs to the whole case; completed
       // stage Sessions can share its isolated workspace until final cleanup.
-      if(!job.sessionId||!job.modelCompleted||job.submissionPending||job.ownedDraft||job.composerResources?.attachments.length||job.composerResources?.queueTexts.length||job.composerResources?.restorePermission||['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','clientRestart','homeModel','taskPin','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].some(key=>job.composerResources?.[key]))throw Error('上一阶段会话或输入区资源未完成，不能新建阶段会话');
+      if(!job.sessionId||!job.modelCompleted||job.submissionPending||job.ownedDraft||job.approvalConsent||job.composerResources?.attachments.length||job.composerResources?.queueTexts.length||job.composerResources?.restorePermission||['accountMenuToken','accountObservation','accountNetwork','accountExternal','accountLogout','settingsPanel','systemSettings','systemStorage','windowClose','invalidDirectory','clientRestart','homeModel','taskPin','messageObservation','clipboardOwner','subSessionView','todoObservation','workbenchFilter','explorerWindow','previewFullscreen','workbenchLayout','previewZoom','moduleNavigation','managedSkills','customTool','toolSelection','automation','caseReplay','caseTask','caseFavorites','knowledgeCreation','knowledgeSecondaryCreation','knowledgeSelection','kanban'].some(key=>job.composerResources?.[key]))throw Error('上一阶段会话或输入区资源未完成，不能新建阶段会话');
       (job.completedSessions||=[]).push({id:job.sessionId,url:job.sessionUrl,completedAt:new Date().toISOString()});
       delete job.sessionId;delete job.sessionUrl;delete job.submittedSelection;
       job.modelCompleted=false;job.sessionSettled=false;taskRuntimes.delete(job.id);
@@ -590,7 +653,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       if(job.pendingSubmission?.key===body.rootKey)job.pendingSubmission.resources=structuredClone(local);
       else if(body.rootKey)rootSession(job,body.rootKey).resources=structuredClone(local);
      }
-     await writeJob(job);return send(200,{ok:true});
+     await writeJob(job);return send(200,{ok:true,stopRequested:Boolean(job.stopRequested)});
     }
     return send(200,{managed:jobs.some(j=>j.config.cdpPort===job.config.cdpPort&&(j.sessionUrl===body.url||j.rootSessions?.some(root=>root.url===body.url)))});
    }

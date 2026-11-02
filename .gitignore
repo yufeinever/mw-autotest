@@ -127,7 +127,11 @@
 !/scripts/mobilework-run-policy.test.mjs
 !/scripts/mobilework-model-selection.test.mjs
 !/scripts/mobilework-permission-events.mjs
+!/scripts/mobilework-permission-turn.mjs
+!/scripts/mobilework-permission-turn.test.mjs
+!/scripts/mobilework-welcome-rotation.mjs
 !/scripts/mobilework-permission-recovery.test.mjs
+!/scripts/mobilework-module-resources.test.mjs
 !/scripts/mobilework-task-control.mjs
 !/scripts/mobilework-root-session-group.mjs
 !/scripts/client-case-multi-root-steps.mjs
@@ -183,6 +187,7 @@
 !/scripts/client-ui-case-runner.mjs
 !/scripts/client-config-case-runner.mjs
 !/scripts/mobilework-folder-picker.py
+!/scripts/mobilework-folder-picker.test.py
 !/scripts/mobilework-native-folder.mjs
 !/scripts/mobilework-knowledge-case.mjs
 !/scripts/mobilework-knowledge-api.mjs
@@ -330,6 +335,7 @@
 !/scripts/run-client-case13[7-9].mjs
 !/scripts/run-client-case14[0-1].mjs
 !/scripts/mobilework-knowledge-graph-settings.mjs
+!/scripts/mobilework-knowledge-folder.mjs
 !/scripts/mobilework-knowledge-graph-settings.test.mjs
 !/scripts/client-knowledge-graph-settings-steps.mjs
 

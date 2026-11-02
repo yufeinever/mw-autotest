@@ -44,3 +44,45 @@ test('旧式发送与新式输入后才出现发送均可提交',()=>withPage(as
  assert.equal(await handleConfiguredDialog(page,{...config,question:'custom'},async()=>{},()=>{}),true);
  assert.equal(await page.evaluate(()=>window.custom),'通用安排');
 }));
+
+test('等待期间替换问题卡不点击新卡',()=>withPage(async page=>{
+ const content='<p>相同问题</p><button onclick="window.choice=(window.choice||0)+1"><span>1</span>第一项</button>';
+ await page.setContent(`<div id="questions">${shell(content)}</div>`);
+ const capture=async()=>page.evaluate(html=>setTimeout(()=>{document.querySelector('#questions').innerHTML=html;},50),shell(content));
+ assert.equal(await handleConfiguredDialog(page,{...config,stepInterval:0.1},capture,()=>{},{kind:'question',expectedQuestions:['相同问题']}),false);
+ assert.equal(await page.evaluate(()=>window.choice||0),0);
+}));
+
+test('自定义输入后替换问题卡不发送新卡',()=>withPage(async page=>{
+ const content='<p>相同问题</p><input placeholder="请输入其他补充...">';
+ await page.setContent(`<div id="questions">${shell(content)}</div>`);
+ await page.locator('input').evaluate((input,html)=>{input.oninput=()=>setTimeout(()=>{document.querySelector('#questions').innerHTML=html;},20);},shell(content+'<button onclick="window.sent=true">发送</button>'));
+ assert.equal(await handleConfiguredDialog(page,{...config,question:'custom',stepInterval:0.1},async()=>{},()=>{},{kind:'question',expectedQuestions:['相同问题']}),false);
+ assert.equal(await page.evaluate(()=>!!window.sent),false);
+}));
+
+test('多选问题按真实选项选择第二项并发送',()=>withPage(async page=>{
+ await page.setContent(shell('<p>选择方案</p><button id="a">方案甲</button><button id="b">方案乙</button><button id="send" disabled>发送</button>'));
+ await page.locator('div[class*="mw-question-panel-border"]').evaluate(card=>{
+  const root={stateNode:{}};root.stateNode.current=root;
+  card.__reactFiber$fixture={memoizedProps:{questions:[{question:'选择方案',multiple:true,options:[{label:'方案甲'},{label:'方案乙'}]}],onReply:()=>{}},memoizedState:{memoizedState:{currentIndex:0}},return:root};
+  card.querySelector('#a').onclick=()=>{window.choice='甲';card.querySelector('#send').disabled=false;};
+  card.querySelector('#b').onclick=()=>{window.choice='乙';card.querySelector('#send').disabled=false;};
+  card.querySelector('#send').onclick=()=>{window.sent=window.choice;};
+ });
+ assert.equal(await handleConfiguredDialog(page,{...config,question:'second',stepInterval:0.1},async()=>{},()=>{},{kind:'question',expectedQuestions:['选择方案']}),true);
+ assert.equal(await page.evaluate(()=>window.sent),'乙');
+}));
+
+test('同节点同题干切换题目后不发送自定义答案',()=>withPage(async page=>{
+ await page.setContent(shell('<p>相同题干</p><input placeholder="请输入其他补充..."><button id="send">发送</button>'));
+ await page.locator('div[class*="mw-question-panel-border"]').evaluate(card=>{
+  const root={stateNode:{}};root.stateNode.current=root;
+  const fiber={memoizedProps:{questions:[{question:'相同题干',options:[]},{question:'相同题干',options:[]}],onReply:()=>{}},memoizedState:{memoizedState:{currentIndex:0}},return:root};
+  card.__reactFiber$fixture=fiber;
+  card.querySelector('input').oninput=()=>{fiber.memoizedState.memoizedState.currentIndex=1;};
+  card.querySelector('#send').onclick=()=>{window.sent=true;};
+ });
+ assert.equal(await handleConfiguredDialog(page,{...config,question:'custom',stepInterval:0.1},async()=>{},()=>{},{kind:'question',expectedQuestions:['相同题干']}),false);
+ assert.equal(await page.evaluate(()=>!!window.sent),false);
+}));

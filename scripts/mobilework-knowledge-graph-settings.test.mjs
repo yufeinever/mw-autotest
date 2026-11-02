@@ -42,6 +42,20 @@ test('存储迁移收尾只接管登记同ID新路径、提交未决不放行',(
  assert.throws(()=>ownedKnowledgeCandidate([{...item,storage_dir:path.resolve('tmp/用户资料')}],owned),/路径不符合/);
 });
 
+test('源目录添加未决时保留本轮库，仅按完整基线和目标确认',()=>{
+ const storage=path.resolve('tmp/库'),before=[path.join(storage,'information'),path.join(storage,'resource')],folder=path.resolve('tmp/本轮外部源');
+ const owned={name:'MW-Autotest-KB-142-01234567',id:'new-id',beforeIds:['user-id'],storageDir:storage,sourceDir:null,submitted:true,sourceAdd:{path:folder,before,state:'picking'}};
+ const item={id:'new-id',name:owned.name,storage_dir:storage,wiki_dir:path.join(storage,'knowledge'),source_dir:before};
+ assert.throws(()=>ownedKnowledgeCandidate([item],owned),/尚未完成交接/);
+ owned.sourceAdd.state='submitted';
+ assert.throws(()=>ownedKnowledgeCandidate([item],owned),/添加结果仍未确认/);
+ assert.throws(()=>ownedKnowledgeCandidate([{...item,source_dir:[before[0],folder]}],owned),/添加结果仍未确认/);
+ assert.equal(ownedKnowledgeCandidate([{...item,source_dir:[...before,folder]}],owned).id,'new-id');
+ assert.throws(()=>ownedKnowledgeCandidate([{...item,id:'another-id',source_dir:[...before,folder]}],owned),/实际ID/);
+ owned.sourceAdd.state='completed';
+ assert.equal(ownedKnowledgeCandidate([item],owned).id,'new-id');
+});
+
 test('异常收尾先关闭本轮定时计划再移除注册，图谱仅按归属退出',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-kb-release-')),events=[],oldFetch=globalThis.fetch;
  try{

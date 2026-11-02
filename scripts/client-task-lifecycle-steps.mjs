@@ -133,8 +133,14 @@ export async function runTaskLifecycleSteps(context){
    if(pending.length||states[getSessionId()]?.type!=='busy')return;
    const todos=await control.get('/session/'+getSessionId()+'/todo');
    if(!seen.todosDuring&&todos.some(item=>item.status==='in_progress')){
-    await fs.writeFile(path.join(dir,'执行中待办.json'),JSON.stringify(todos,null,2));
-    await ui(async()=>{await selectWorkbench(page,config,'待办',capture);assert('执行中真实待办与界面节点一致',await page.getByText(todos.find(item=>item.status==='in_progress').content,{exact:true}).count()>0);});seen.todosDuring=true;
+    await ui(async()=>{
+     const panel=page.getByTestId('session-workbench-panel');
+     if(await panel.getByText('浏览器',{exact:true}).isVisible())return;
+     if(!await panel.getByRole('button',{name:'筛选待办',exact:true}).isVisible())await selectWorkbench(page,config,'待办',capture);
+     await fs.writeFile(path.join(dir,'执行中待办.json'),JSON.stringify(todos,null,2));
+     assert('执行中真实待办与界面节点一致',await panel.getByText(todos.find(item=>item.status==='in_progress').content,{exact:true}).count()>0);
+     await capture('工作台-待办');seen.todosDuring=true;
+    });
    }
    if(sales&&!seen.intermediateBeforeFinal){
     const files=await fs.readdir(control.directory);

@@ -67,6 +67,12 @@ export async function clearOwnedDraft(page,owned,{stepInterval=0.5}={}){
  await clearComposerText(editor,{stepInterval});
  return true;
 }
+export async function clearSubmittedSelection(page,{sessionId,sessionUrl,selection},config){
+ if(!sessionId||page.url()!==sessionUrl||!sessionUrl.endsWith('/session/'+sessionId)||!selection?.length)return false;
+ const actual=await snapshotDraft(page);
+ if(actual.text||actual.skills.length||JSON.stringify(actual.selection)!==JSON.stringify(selection))return false;
+ return clearOwnedDraft(page,{...actual,selection,previousSelection:[]},config);
+}
 export async function inspectPageHandoff(page,{owned,allowRunning=false,allowedSelection=[],stepInterval=0.5}={}){
  const native=await inspectClientNativeFolders(page);
  if(native.dialogs.length)return {ready:false,reason:'客户端仍有原生文件夹弹框，未交接下一条'};

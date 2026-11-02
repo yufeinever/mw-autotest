@@ -94,7 +94,7 @@ if($Action -eq 'CalculateKeys'){
  $keys=@(@{key='Escape';vk=0x1b},@{key='1';vk=0x31},@{key='2';vk=0x32},@{key='3';vk=0x33},@{key='4';vk=0x34},@{key='5';vk=0x35},@{key='6';vk=0x36},@{key='7';vk=0x37},@{key='8';vk=0x38},@{key='9';vk=0x39},@{key='Subtract';vk=0x6d},@{key='1';vk=0x31},@{key='Enter';vk=0x0d})
  foreach($key in $keys){
   if([MobileWorkCalculatorWindow]::GetForegroundWindow() -ne [IntPtr]$Hwnd -or [Windows.Automation.AutomationElement]::FocusedElement.Current.ProcessId -ne $PidValue){throw 'Calculator lost keyboard ownership; no further keys sent'}
-  if(-not [MobileWorkCalculatorWindow]::Key([ushort]$key.vk)){throw 'Win32 did not accept the Calculator key event'}
+  if(-not [MobileWorkCalculatorWindow]::Key([System.UInt16]$key.vk)){throw 'Win32 did not accept the Calculator key event'}
   $steps+=@{key=$key.key;method='Win32.SendInput'}
  }
 }

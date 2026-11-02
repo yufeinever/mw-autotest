@@ -4,6 +4,10 @@ import {knowledgeClient,removeOwnedKnowledge,closeKnowledgeSettings} from './mob
 
 const blocked=message=>Object.assign(Error(message),{blocked:true});
 export const sameKnowledgePath=(left,right)=>path.resolve(left).toLowerCase()===path.resolve(right).toLowerCase();
+export function sourceAdditionApplied(item,addition){
+ const expected=[...addition.before,addition.path];
+ return Array.isArray(item.source_dir)&&item.source_dir.length===expected.length&&expected.every(value=>item.source_dir.filter(actual=>sameKnowledgePath(actual,value)).length===1);
+}
 export function ownedKnowledgeCandidate(items,owned){
  const matches=items.filter(item=>!owned.beforeIds.includes(item.id)&&[owned.name,owned.renamedName].includes(item.name));
  if(matches.length>1)throw blocked('本轮知识库名称对应多个新ID，未移除注册');
@@ -13,7 +17,9 @@ export function ownedKnowledgeCandidate(items,owned){
  const storageDir=migrated?move.to:owned.storageDir;
  if(!sameKnowledgePath(item.storage_dir,storageDir)||!sameKnowledgePath(item.wiki_dir,path.join(storageDir,'knowledge'))||owned.sourceDir&&(item.source_dir.length!==1||!sameKnowledgePath(item.source_dir[0],owned.sourceDir)))throw blocked('新知识库路径不符合创建前归属，保留现场');
  if(migrated&&!owned.sourceDir&&(item.source_dir.length!==2||!['information','resource'].every(name=>item.source_dir.some(dir=>sameKnowledgePath(dir,path.join(storageDir,name))))))throw blocked('迁移后的源目录未对应本轮内部源，保留现场');
+ if(move?.state==='picking'||owned.sourceAdd?.state==='picking')throw blocked('本轮原生目录选择尚未完成交接，保留本轮注册');
  if(move?.state==='submitted'&&!migrated)throw blocked('原生目录已确认但存储迁移请求结果仍未确认，保留本轮注册，未放行下一条');
+ if(owned.sourceAdd?.state==='submitted'&&!sourceAdditionApplied(item,owned.sourceAdd))throw blocked('原生目录已确认但源目录添加结果仍未确认，保留本轮注册');
  return item;
 }
 

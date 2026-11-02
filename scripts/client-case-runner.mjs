@@ -10,7 +10,8 @@ import {saveRunTrace} from './mobilework-trace.mjs';
 import {testEnvironment} from '../local-console/environment.mjs';
 import {selectModel,handleConfiguredDialog,waitStep} from './mobilework-run-policy.mjs';
 import {appendComposerText,containsComposerText,readComposerState} from './mobilework-composer.mjs';
-import {clearOwnedDraft,selectionState,resetComposerPermission} from './mobilework-isolation.mjs';
+import {clearOwnedDraft,selectionState,resetComposerPermission,snapshotDraft} from './mobilework-isolation.mjs';
+import {workspaces,workspaceSessions,chooseWorkspace,prepareWorkspaceResources} from './mobilework-workspaces.mjs';
 import {dispatchStandalone} from './mobilework-standalone.mjs';
 import {getClientCase,caseSheet,caseWorkbook} from './client-case-catalog.mjs';
 import {clientCaseInput} from './client-case-inputs.mjs';
@@ -79,24 +80,12 @@ export async function ensureIdleComposer(page){
  if(await editor.count()&&((await editor.innerText()).trim()||await editor.locator('[data-skill-remove]').count()))throw blocked('当前有未发送草稿或技能，保留草稿');
  if((await selectionState(page)).length)throw blocked('当前输入区已有选中的专家或团队，保留用户选择');
 }
-export async function selectTestWorkspace(page,config={}){
- const main=page.locator('main').last(),selected=main.getByRole('button',{name:'默认工作空间',exact:true}).filter({visible:true});
- if(await selected.count()===1)return;
- const trigger=main.getByRole('button',{name:'Mobilework-test',exact:true}).filter({visible:true});
- if(await trigger.count()!==1)throw blocked('请在客户端选择默认工作空间；无法确认当前工作空间选择器');
- await waitStep(page,config);await trigger.click();
- // 弹出列表位于侧栏之后，排除侧栏自带的同名空间按钮。
- const options=button(page,'默认工作空间');
- if(await options.count()!==1){await waitStep(page,config);await page.keyboard.press('Escape');throw blocked('工作空间列表中没有唯一的默认工作空间入口');}
- await waitStep(page,config);await options.click();await selected.waitFor({timeout:5000});
-}
 // 返回的签名只用于清理本次生成、且从未被其他人改动的预览草稿。
 export async function fillScenario(page,definition,config,{capture=async()=>{},log=()=>{},assert=()=>{},onDraft=()=>{}}={}){
  await ensureIdleComposer(page);
  const previousSelection=await selectionState(page);
  // TaskControl.begin has already initialized the fresh composer once.
  await button(page,definition.category).first().waitFor();
- await selectTestWorkspace(page,config);
  await resetComposerPermission(page,config);
  const url=page.url();
  if(config.model){await selectModel(page,config.model,{stepInterval:config.stepInterval});log('模型已回读核对',config.model);}
@@ -163,7 +152,7 @@ export async function runScenarioCase(number,inputConfig){
  const config=normalizeConfig(inputConfig||{cdpPort:process.env.MW_CDP_PORT||9223}),safeConfig=structuredClone(config);delete safeConfig.provider.key;
  if(await dispatchStandalone({number,args,config:inputConfig}))return;
  const started=new Date(),dir=await createRunDirectory(path.join(projectRoot,'runs'),definition.label+(checkOnly?'预检':fillOnly?'填充检查':''),started);
- const checks=[],events=[],outputs=[];let browser,page,sessionId=resumeId,result='BLOCKED',errorText='',owned,submitted=false,environment;
+ const checks=[],events=[],outputs=[];let browser,page,sessionId=resumeId,result='BLOCKED',errorText='',owned,environment,resources,defaultWorkspace;
  const log=(step,detail='')=>{const now=new Date();events.push({time:now.toISOString(),step,detail});console.log('['+beijingLogTime(now)+'] '+step+' '+detail);};
  const taskControl=createTaskControl({log});
  const recorder=createEvidenceRecorder(dir,log),captureRaw=async step=>{
@@ -202,6 +191,19 @@ export async function runScenarioCase(number,inputConfig){
     if(expectedArtifacts[number])throw blocked('文件产物用例请通过默认入口新建执行；续跑不能重用其他运行目录的产物');
     log('续跑既有会话',sessionId);
    }else{
+    const defaults=(await workspaces(page)).items.filter(item=>item.isDefault);
+    if(defaults.length!==1||!path.isAbsolute(defaults[0].path||''))throw blocked('无法唯一确认默认工作空间及实际路径');
+    defaultWorkspace=defaults[0];
+    const beforeSessionIds=(await workspaceSessions(page,defaultWorkspace.id)).map(session=>session.id);
+    resources={url:page.url(),attachments:[],queueTexts:[],restorePermission:false,workspaceResources:await prepareWorkspaceResources(page,{existingTargetId:defaultWorkspace.id,beforeSessionIds})};
+    const initialDraft=await snapshotDraft(page);
+    if(initialDraft.text||initialDraft.skills.length||initialDraft.selection.length)throw blocked('新任务页包含未登记的草稿或选择，保留现场');
+    await taskControl.call('checkpoint',{draft:initialDraft,composerResources:resources});
+    await chooseWorkspace(page,defaultWorkspace.id);
+    const draft=await snapshotDraft(page);
+    if(draft.text||draft.skills.length||draft.selection.length)throw blocked('目标工作空间包含未登记的草稿或选择，保留现场');
+    resources.url=draft.url;
+    await taskControl.call('checkpoint',{draft,composerResources:resources});
     owned=await fillScenario(page,definition,config,{capture,log,assert,onDraft:async value=>{owned=value;await taskControl?.checkpointDraft(owned);}});
     await fs.mkdir(outputDir);
     const input=clientCaseInput(number,{outputDir,asOfDate:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(started)});
@@ -211,20 +213,24 @@ export async function runScenarioCase(number,inputConfig){
     await capture('完整测试材料');
     if(fillOnly){
      if(!await clearOwnedDraft(page,owned,{stepInterval:config.stepInterval}))throw blocked('填充检查结束时草稿已变化，保留现场');
-     owned=null;result='CHECKED';log('自动填充与材料检查通过','已清理本次草稿；没有发送任务');
+     owned=null;await taskControl.call('checkpoint',{draft:null});result='CHECKED';log('自动填充与材料检查通过','已清理本次草稿；没有发送任务');
     }else{
      await waitStep(page,config);await guardDialogs(page);
      if(page.url()!==owned.url||(await readComposerState(owned.editor)).text!==owned.text)throw blocked('发送前页面或草稿已变化，停止发送');
      await taskControl?.markSubmitting();
-     await button(page,'运行任务').click();submitted=true;
-     sessionId=await waitCreatedSession(page,owned.url,{timeoutMs:Math.min(timeoutMs,180000),log});
-     await taskControl?.registerSession(page,sessionId);
+     await button(page,'运行任务').click();
+     const createdId=await waitCreatedSession(page,owned.url,{timeoutMs:Math.min(timeoutMs,180000),log});
+     if(beforeSessionIds.includes(createdId)||!page.url().endsWith('/workspace/'+defaultWorkspace.id+'/session/'+createdId))throw blocked('新Session与本轮工作空间或提交前基线不符');
+     await taskControl?.registerSession(page,createdId);
+     sessionId=createdId;
+     owned=null;resources.url=page.url();await taskControl.call('checkpoint',{composerResources:resources});
      assert('创建本次独立会话',Boolean(sessionId),sessionId);log('任务已发送',sessionId);await capture('发送成功');
      const receipt=await waitSentInput(page,sessionId,input),sent=receipt.data;
      await fs.writeFile(path.join(dir,'发送核对-session-log.json'),JSON.stringify(sent,null,2));
      environment.sessionDirectory=sent.session.directory;
      await fs.writeFile(path.join(dir,'环境.json'),JSON.stringify(environment,null,2));
-     assert('Session返回本次默认任务空间的实际目录',path.isAbsolute(sent.session.directory||'')&&path.resolve(sent.session.directory).toLowerCase().startsWith(path.resolve(testEnvironment.taskRoot).toLowerCase()+path.sep),sent.session.directory);
+     const relative=path.relative(defaultWorkspace.path,sent.session.directory||'');
+     assert('Session返回本次默认任务空间的实际目录',path.isAbsolute(sent.session.directory||'')&&Boolean(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep)&&!path.isAbsolute(relative),sent.session.directory);
      const users=sent.messages.filter(m=>m.info?.role==='user');
      assert('Session实际用户消息包含完整材料',receipt.complete);
      assert('Session未使用输入附件',!users.some(m=>(m.parts||[]).some(p=>p.type==='file'||p.type==='text'&&/^\[附件文件:[^\r\n]+\]/m.test(p.text||''))));
@@ -251,7 +257,6 @@ export async function runScenarioCase(number,inputConfig){
  }catch(e){
   errorText=e.message;result=e.blocked||(!sessionId&&!checks.some(c=>!c.pass))?'BLOCKED':'FAIL';log(result,errorText);
   if(page)await capture('异常现场').catch(e=>log('异常截图未完成',e.message));
-  if(!submitted&&owned&&await clearOwnedDraft(page,owned,{stepInterval:config.stepInterval}).catch(()=>false))log('已清理本次未发送草稿','原有用户草稿不会进入本步骤');
  }finally{
   const trace=page&&sessionId?await saveRunTrace({page,sessionId,number,dir,checks,log,...(taskControl?.connection?{readLog:children=>taskControl.readLog(children)}:{})}):null;
   if(['PASS','RESUMED'].includes(result)&&checks.some(c=>!c.pass)){result='FAIL';errorText='Skill 实际调用或 Trace 证据断言失败，请查看 Trace 记录';log('用例失败',errorText);}

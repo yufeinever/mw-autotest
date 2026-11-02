@@ -139,6 +139,11 @@ export async function selectModel(page,name,{stepInterval=0.5,expectedIdentity,c
    selectedValue=await snapshot.evaluate((s,name)=>s.models.find(m=>m.name===name)?.value,name);
    selectedIdentity=await snapshot.evaluate((s,name)=>s.models.find(m=>m.name===name)?.identity,name);
    if(expectedIdentity&&JSON.stringify(selectedIdentity)!==JSON.stringify(expectedIdentity))throw Error('目标模型身份已变化，未切换：'+name);
+   const selected=await snapshot.evaluate((s,name)=>s.models.find(m=>m.name===name)?.selected,name);
+   if(selected&&(selectedIdentity||selectedValue!==null)){
+    await page.keyboard.press('Escape');
+    return name;
+   }
    try{await chosen.asElement().click({timeout:Math.max(1,deadline-Date.now())});clicked=true;}
    catch(error){
     if(!/Element is not attached|Element is not connected/i.test(error.message))throw error;
@@ -149,7 +154,9 @@ export async function selectModel(page,name,{stepInterval=0.5,expectedIdentity,c
  await page.getByRole('listbox').filter({visible:true}).waitFor({state:'hidden',timeout:5000});
  const verify=await readModelOptions(page,{stepInterval,clientEdition});
  const matches=verify.models.filter(m=>m.name===name);
- if(matches.length!==1||!matches[0].selected||(selectedValue!==null&&matches[0].value!==selectedValue)||(selectedIdentity&&JSON.stringify(matches[0].identity)!==JSON.stringify(selectedIdentity)))throw Error('模型切换未生效或目标已变化：'+name);
+ const sameValue=selectedValue===null||matches[0]?.value===selectedValue;
+ const sameIdentity=!selectedIdentity||JSON.stringify(matches[0]?.identity)===JSON.stringify(selectedIdentity);
+ if(matches.length!==1||!matches[0].selected||!sameValue||!sameIdentity)throw Error('模型切换未生效或目标已变化：'+name+'；候选数='+matches.length+'，已选中='+Boolean(matches[0]?.selected)+'，值一致='+sameValue+'，身份一致='+sameIdentity);
  return name;
 }
 
@@ -178,11 +185,33 @@ function sendButton(panel){
 }
 const questionSignature=element=>String(element.textContent??'').replace(/\s+/g,' ').trim();
 
+async function questionIdentity(card){
+ return card.evaluate(element=>{
+  for(let host=element;host;host=host.parentElement){
+   const key=Object.keys(host).find(k=>k.startsWith('__reactFiber$'));
+   let fiber=key&&host[key];if(!fiber)continue;
+   let root=fiber;while(root.return)root=root.return;
+   if(root.stateNode?.current!==root){fiber=fiber.alternate;if(!fiber)continue;}
+   for(let depth=0;fiber&&depth<80;fiber=fiber.return,depth++){
+    const props=fiber.memoizedProps;
+    if(!Array.isArray(props?.questions)||typeof props.onReply!=='function')continue;
+    for(let hook=fiber.memoizedState;hook;hook=hook.next){
+     const index=hook.memoizedState?.currentIndex;
+     if(!Number.isInteger(index)||!props.questions[index])continue;
+     const question=props.questions[index];
+     return {index,question:question.question,options:(question.options||[]).map(option=>option.label),multiple:question.multiple===true};
+    }
+   }
+  }
+  return null;
+ });
+}
+
 // Click timeouts describe the CDP command, not whether Electron accepted it.
 // A DOM replacement alone does not prove acceptance: require the original
 // request to disappear, or the original full-access consent to become ready.
 export async function clickApproval({page,button,canAct,checkReload,originUrl,log,timeoutMs,recoveryMs,consentReady}){
- try{await button.click({timeout:timeoutMs});return;}
+ try{await button.click({timeout:timeoutMs});return 'clicked';}
  catch(error){
   if(error?.name!=='TimeoutError')throw error;
  }
@@ -192,8 +221,8 @@ export async function clickApproval({page,button,canAct,checkReload,originUrl,lo
   await checkReload();
   if(page.url()!==originUrl)throw Object.assign(Error('审批点击后页面已离开本任务会话，无法确认结果'),{blocked:true});
   try{
-   if(!await canAct()){log('原审批请求已消失','点击超时未作为执行失败；继续等待模型');return;}
-   if(consentReady&&await consentReady()){log('完全访问二次确认已显示','首级点击超时，继续处理确认弹窗');return;}
+   if(!await canAct()){log('原审批请求已消失','点击超时未作为执行失败；继续等待模型');return 'resolved';}
+   if(consentReady&&await consentReady()){log('完全访问二次确认已显示','首级点击超时，继续处理确认弹窗');return 'consent';}
   }catch(error){if(!error?.patchPermissionError)throw error;}
   await page.waitForTimeout(150);
  }
@@ -207,8 +236,10 @@ export async function questionPanel(page){
  const candidates=[];
  for(let i=0;i<await cards.count();i++){
   const card=cards.nth(i);
-  if(await card.locator('button[aria-label="关闭"]').count()===1&&
-   (await questionOptions(card).count()||await card.locator('input[placeholder="请输入其他补充..."]').count()))candidates.push(card);
+  if(await card.locator('button[aria-label="关闭"]').count()!==1)continue;
+  if(await questionOptions(card).count()||await card.locator('input[placeholder="请输入其他补充..."]').count()){candidates.push(card);continue;}
+  const handle=await card.elementHandle();
+  try{if((await questionIdentity(handle))?.multiple)candidates.push(card);}finally{await handle.dispose();}
  }
  if(candidates.length>1)throw Error('识别到多个提问面板，不能确定当前问题，保留现场');
  if(candidates.length===1)return candidates[0];
@@ -222,7 +253,48 @@ export async function questionPanel(page){
  }
  return null;
 }
-export async function handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions=[],expectedPermission,canAct=async()=>true,clickTimeoutMs=2000,clickRecoveryMs=5000}={}){
+async function permissionPanel(page){
+ const approve=page.getByRole('button',{name:'允许一次',exact:true}).filter({visible:true});
+ if(await approve.count()!==1)return null;
+ let panel=approve;
+ for(let i=0;i<10;i++){
+  panel=panel.locator('..');
+  if(await panel.getByRole('button',{name:'拒绝',exact:true}).count()&&await panel.getByRole('button',{name:'开启完全访问权限',exact:true}).count())return panel;
+ }
+ return null;
+}
+
+async function permissionIdentity(card){
+ return card.evaluate(element=>{
+  for(let host=element;host;host=host.parentElement){
+   const key=Object.keys(host).find(k=>k.startsWith('__reactFiber$'));
+   let fiber=key&&host[key];if(!fiber)continue;
+   let root=fiber;while(root.return)root=root.return;
+   if(root.stateNode?.current!==root){fiber=fiber.alternate;if(!fiber)continue;}
+   for(let depth=0;fiber&&depth<80;fiber=fiber.return,depth++){
+    const props=fiber.memoizedProps,p=props?.permission;
+    if(p&&typeof props.respondPermission==='function')return {id:p.id,sessionID:p.sessionID};
+   }
+  }
+  return null;
+ });
+}
+
+export async function visiblePermissionIdentity(page){
+ const panel=await permissionPanel(page);if(!panel)return null;
+ const card=await panel.elementHandle();if(!card)return null;
+ try{return await permissionIdentity(card);}finally{await card.dispose();}
+}
+export async function hasPermissionIdentity(page,expected){
+ const buttons=page.locator('button').filter({hasText:/^\s*允许一次\s*$/});let matches=0;
+ for(let i=0;i<await buttons.count();i++){
+  const button=await buttons.nth(i).elementHandle();
+  try{const actual=await permissionIdentity(button);if(actual?.id===expected.id&&actual.sessionID===expected.sessionId)matches++;}
+  finally{await button?.dispose();}
+ }
+ return matches===1;
+}
+export async function handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions=[],expectedPermission,canAct=async()=>true,consentCheckpoint,clickTimeoutMs=2000,clickRecoveryMs=5000}={}){
  if(config.clientEdition)await assertClientEdition(page,config.clientEdition);
  const originUrl=page.url();
  const fail=message=>{throw Object.assign(Error(message),{blocked:true});};
@@ -231,11 +303,10 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   if(await modal.count())throw Object.assign(Error('客户端配置要求重新加载引擎，审批被弹窗遮挡；未点击立即终止并生效，保留现场'),{blocked:true});
  };
  await checkReload();
- const approve=page.getByRole('button',{name:'允许一次',exact:true}).filter({visible:true});
- if(kind!=='question'&&await approve.count()){
-  if(await approve.count()!==1)throw Error('存在多个审批面板，不能确定本次审批');
-  let panel=approve;
-  for(let i=0;i<10;i++){panel=panel.locator('..');if(await panel.getByRole('button',{name:'拒绝',exact:true}).count()&&await panel.getByRole('button',{name:'开启完全访问权限',exact:true}).count())break;}
+ const approvalPanel=kind==='question'?null:await permissionPanel(page);
+ if(kind!=='question'&&await page.getByRole('button',{name:'允许一次',exact:true}).filter({visible:true}).count()>1)throw Error('存在多个审批面板，不能确定本次审批');
+ if(approvalPanel){
+  const panel=approvalPanel;
   const profile=editionProfiles[config.clientEdition||'enterprise'];
   const aliases=config.approval==='session'?profile.sessionActions:[approvalLabels[config.approval]];
   let target;
@@ -251,19 +322,9 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
    // an ID from text. Unknown renderer versions remain blocked.
    const matchesPermission=async()=>{
     const expected=typeof expectedPermission==='function'?expectedPermission():expectedPermission;
-    return !expected||await card.evaluate((element,expected)=>{
-    for(let host=element;host;host=host.parentElement){
-     const key=Object.keys(host).find(k=>k.startsWith('__reactFiber$'));
-     let fiber=key&&host[key];if(!fiber)continue;
-     let root=fiber;while(root.return)root=root.return;
-     if(root.stateNode?.current!==root){fiber=fiber.alternate;if(!fiber)continue;}
-     for(let depth=0;fiber&&depth<80;fiber=fiber.return,depth++){
-      const props=fiber.memoizedProps,p=props?.permission;
-      if(p&&typeof props.respondPermission==='function')return p.id===expected.id&&p.sessionID===expected.sessionID;
-     }
-    }
-    return false;
-    },expected);
+    if(!expected)return true;
+    const actual=await permissionIdentity(card);
+    return actual?.id===expected.id&&actual.sessionID===expected.sessionID;
    };
    const unchanged=async()=>await card.evaluate((e,s)=>e.isConnected&&String(e.textContent??'').replace(/\s+/g,' ').trim()===s,signature)&&await button.isVisible()&&await matchesPermission();
    await waitStep(page,config);
@@ -273,14 +334,29 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
    if(config.approval==='full'&&await page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true}).count())fail('开启完全访问前存在其他弹窗，不能确认归属，保留现场');
    const consent=page.locator('[role="dialog"],[role="alertdialog"]').filter({visible:true})
     .filter({has:page.getByRole('heading',{name:'确认开启完全访问权限',exact:true})});
-   await clickApproval({page,button,canAct,checkReload,originUrl,log,timeoutMs:clickTimeoutMs,recoveryMs:clickRecoveryMs,
+   if(config.approval==='full'&&consentCheckpoint){
+    const state=await consentCheckpoint('prepared');
+    if(state.stopRequested){await consentCheckpoint('closed');fail('任务已停止，未打开完全访问确认');}
+    if(!await canAct()||!await unchanged()){await consentCheckpoint('closed');return false;}
+    if((await consentCheckpoint('opening')).stopRequested){await consentCheckpoint('closed');fail('任务已停止，未打开完全访问确认');}
+   }
+   const clickResult=await clickApproval({page,button,canAct,checkReload,originUrl,log,timeoutMs:clickTimeoutMs,recoveryMs:clickRecoveryMs,
     consentReady:config.approval==='full'?async()=>await consent.count()===1:undefined});
    if(config.approval==='full'){
+    if(clickResult==='resolved'){
+     if(await consent.count())fail('原审批已消失但完全访问确认仍显示，保留现场');
+     if(consentCheckpoint)await consentCheckpoint('closed');
+     return false;
+    }
     // This click only opens consent in MobileWork; the permission request is
     // not answered until the second button is pressed. Keep the UI lease and
     // original request throughout both steps, including delayed rendering.
     try{await consent.waitFor({state:'visible',timeout:5000});}
-    catch{await checkReload();fail('开启完全访问后二次确认未唯一显示，未将审批标记为已处理，保留现场');}
+    catch{
+     await checkReload();
+     if(page.url()===originUrl&&!await canAct()&&!await consent.count()){if(consentCheckpoint)await consentCheckpoint('closed');return false;}
+     fail('开启完全访问后二次确认未唯一显示，未将审批标记为已处理，保留现场');
+    }
     const confirm=consent.getByRole('button',{name:'同意并开启',exact:true});
     if(await confirm.count()!==1||await consent.getByRole('button',{name:'取消',exact:true}).count()!==1)fail('完全访问二次确认控件不完整，保留现场');
     const modal=await consent.elementHandle(),ok=await confirm.elementHandle();
@@ -296,11 +372,18 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
      await verify();
      await capture('完全访问权限-二次确认前');
      await verify();
+     if(consentCheckpoint&&(await consentCheckpoint('confirming')).stopRequested){
+      await consent.getByRole('button',{name:'取消',exact:true}).click();
+      await modal.waitForElementState('hidden',{timeout:5000});
+      await consentCheckpoint('closed');
+      fail('任务已停止，本轮完全访问确认已取消');
+     }
      await clickApproval({page,button:ok,canAct,checkReload,originUrl,log,timeoutMs:clickTimeoutMs,recoveryMs:clickRecoveryMs});
      try{await ok.waitForElementState('hidden',{timeout:5000});}
      catch{fail('已点击同意并开启，但二次确认未关闭，保留现场');}
      await checkReload();
      if(page.url()!==originUrl)fail('完全访问确认后页面已离开本任务会话，保留现场');
+     if(consentCheckpoint)await consentCheckpoint('closed');
      await capture('完全访问权限-二次确认后');
      log('完全访问权限二次确认完成','已点击同意并开启；继续等待本会话引擎确认');
     }finally{await modal?.dispose();await ok?.dispose();}
@@ -309,47 +392,80 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   }finally{await card?.dispose();await button?.dispose();}
  }
  if(kind==='permission')return false;
- let panel=await questionPanel(page);
+ const panel=await questionPanel(page);
  if(!panel)return false;
- await waitStep(page,config);
- panel=await questionPanel(page);
- if(!panel)return false;
- const matches=async()=>!expectedQuestions.length||expectedQuestions.some(q=>panelText.includes(q.replace(/\s+/g,' ').trim()));
- let panelText=(await panel.innerText()).replace(/\s+/g,' ').trim();
- if(!await canAct()||!await matches())return false;
- await capture('选项弹窗');
- panel=await questionPanel(page);if(!panel||!await canAct())return false;
- panelText=(await panel.innerText()).replace(/\s+/g,' ').trim();
- if(!await matches())return false;
- if(config.question==='custom'){
-  let field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
-  if(!await field.count()){
-   const custom=panel.getByRole('button',{name:/自定义|其他/}).filter({visible:true});
-   if(await custom.count()===1){await waitStep(page,config);await custom.click();}
-   field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
-  }
-  if(await field.count()!==1)throw Error('当前提问没有唯一的自定义回答输入框');
-  await waitStep(page,config);await field.fill(config.customText);
-  await waitStep(page,config);await sendButton(panel).click();
- }else{
-  const options=questionOptions(panel);
-  const index=config.question==='first'?0:1;
-  if(await options.count()<=index)throw Error('当前问题没有'+(index+1)+'个选项（实际识别到'+await options.count()+'项）');
-  // Keep handles to this question. A locator based on Send can resolve to the
-  // next question after the renderer advances, and must never submit that one.
-  const card=await panel.elementHandle();
-  const sends=sendButton(panel),send=await sends.count()===1?await sends.elementHandle():null;
-  try{
-   const before=await card.evaluate(questionSignature);
-   await waitStep(page,config);await options.nth(index).click();
-   // New cards advance/submit immediately. Legacy cards keep the same question
-   // and enable Send; only submit if these exact controls still belong to it.
+ const card=await panel.elementHandle();
+ const before=await card.evaluate(questionSignature);
+ const identity=await questionIdentity(card);
+ const stableText=await card.evaluate(element=>{
+  const copy=element.cloneNode(true);copy.querySelectorAll('button,input,textarea,[contenteditable="true"]').forEach(node=>node.remove());
+  return String(copy.textContent??'').replace(/\s+/g,' ').trim();
+ });
+ const valid=async(target,signature)=>{
+  if(page.url()!==originUrl||!await canAct())return false;
+  const actual=await card.evaluate((element,{signature,questions,stableText})=>{
+   const text=String(element.textContent??'').replace(/\s+/g,' ').trim();
+   const copy=element.cloneNode(true);copy.querySelectorAll('button,input,textarea,[contenteditable="true"]').forEach(node=>node.remove());
+   return element.isConnected&&(!signature||text===signature)&&String(copy.textContent??'').replace(/\s+/g,' ').trim()===stableText&&(!questions.length||questions.some(q=>text.includes(q.replace(/\s+/g,' ').trim())));
+  },{signature,questions:expectedQuestions,stableText});
+  if(!actual)return false;
+  if(identity&&JSON.stringify(await questionIdentity(card))!==JSON.stringify(identity))return false;
+  return !target||await target.evaluate((element,parent)=>element.isConnected&&parent.contains(element),card);
+ };
+ try{
+  await waitStep(page,config);
+  if(!await valid(null,before))return false;
+  await capture('选项弹窗');
+  if(!await valid(null,before))return false;
+  if(config.question==='custom'){
+   let field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
+   if(!await field.count()){
+    const custom=panel.getByRole('button',{name:/自定义|其他/}).filter({visible:true});
+    if(await custom.count()===1){
+     const button=await custom.elementHandle();
+     try{await waitStep(page,config);if(!await valid(button,before))return false;await button.click();}
+     finally{await button.dispose();}
+    }
+    if(!await valid())return false;
+    field=panel.locator('textarea,input[type="text"],input:not([type]),[contenteditable="true"]').filter({visible:true});
+   }
+   if(await field.count()!==1)throw Error('当前提问没有唯一的自定义回答输入框');
+   const input=await field.elementHandle();
+   try{await waitStep(page,config);if(!await valid(input))return false;await input.fill(config.customText);}
+   finally{await input.dispose();}
    await waitStep(page,config);
-   const unchanged=await card.evaluate((element,signature)=>element.isConnected&&String(element.textContent??'').replace(/\s+/g,' ').trim()===signature,before);
-   if(unchanged&&send&&await send.evaluate(element=>element.isConnected&&!element.disabled)&&await send.isVisible())await send.click({timeout:2000});
-   if(unchanged&&!send)await page.waitForFunction(({element,signature})=>!element.isConnected||String(element.textContent??'').replace(/\s+/g,' ').trim()!==signature,{element:card,signature:before},{timeout:5000}).catch(()=>{throw Error('已点击所选编号，但提问卡片未推进或关闭，保留现场');});
-  }finally{await card?.dispose();await send?.dispose();}
- }
+   if(!await valid())return false;
+   const sends=sendButton(panel);
+   if(await sends.count()!==1)throw Error('当前提问没有唯一的发送按钮');
+   const send=await sends.elementHandle();
+   try{if(!await valid(send))return false;await send.click();}finally{await send.dispose();}
+  }else{
+   const index=config.question==='first'?0:1;
+   const label=identity?.multiple?identity.options[index]:null;
+   const options=identity?.multiple?panel.locator('button').filter({visible:true}).filter({hasText:new RegExp('^\\s*'+String(label??'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$')}):questionOptions(panel);
+   if(identity?.multiple&&(!label||await options.count()!==1))throw Error('当前多选问题没有唯一的第'+(index+1)+'个选项');
+   if(!identity?.multiple&&await options.count()<=index)throw Error('当前问题没有'+(index+1)+'个选项（实际识别到'+await options.count()+'项）');
+   const option=await options.nth(identity?.multiple?0:index).elementHandle();
+   const sends=sendButton(panel),send=await sends.count()===1?await sends.elementHandle():null;
+   try{
+    await waitStep(page,config);
+    if(!await valid(option,before))return false;
+    await option.click();
+    await waitStep(page,config);
+    if(identity?.multiple){
+     if(!await valid())return false;
+     const buttons=sendButton(panel);
+     if(await buttons.count()!==1)throw Error('当前多选问题没有唯一的发送按钮');
+     const submit=await buttons.elementHandle();
+     try{if(!await valid(submit))return false;await submit.click({timeout:2000});}finally{await submit.dispose();}
+    }else{
+    const unchanged=await valid(null,before);
+    if(unchanged&&send&&await valid(send,before)&&await send.evaluate(element=>!element.disabled)&&await send.isVisible())await send.click({timeout:2000});
+    if(unchanged&&!send)await page.waitForFunction(({element,signature})=>!element.isConnected||String(element.textContent??'').replace(/\s+/g,' ').trim()!==signature,{element:card,signature:before},{timeout:5000}).catch(()=>{throw Error('已点击所选编号，但提问卡片未推进或关闭，保留现场');});
+    }
+   }finally{await option.dispose();await send?.dispose();}
+  }
+ }finally{await card.dispose();}
  await capture('选项已填写');
  log('按运行配置回答',config.question==='custom'?config.customText:config.question==='first'?'第一项':'第二项');
  return true;

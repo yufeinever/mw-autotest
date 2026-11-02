@@ -19,9 +19,9 @@ export async function runHomeWorkspaceSteps(context){
   if(!selected)throw Object.assign(Error(number===17?'未找到默认工作空间':'没有可引用的已有工作空间'),{blocked:true});
   const beforeSessionIds=number===17?(await workspaceSessions(page,selected.id)).map(session=>session.id):undefined;
   resources.workspaceResources=await prepareWorkspaceResources(page,{existingTargetId:selected.id,beforeSessionIds});await checkpointResources();
-  await chooseWorkspace(page,selected.name);await checkpointPage();
-  const selectedButton=page.locator('main').last().getByRole('button',{name:selected.name,exact:true}).filter({visible:true});
-  assert('输入区选中目标工作空间',await selectedButton.count()===1,{id:selected.id,name:selected.name});
+  const displayName=await chooseWorkspace(page,selected.id);await checkpointPage();
+  const selectedButton=page.locator('main').last().getByRole('button',{name:displayName,exact:true}).filter({visible:true});
+  assert('输入区选中目标工作空间',await selectedButton.count()===1,{id:selected.id,name:displayName});
   if(number===20){
    const section=page.getByTestId('workspace-section-header').locator('button[aria-expanded]:not([aria-haspopup])');
    if(await section.getAttribute('aria-expanded')!=='true')await section.click();

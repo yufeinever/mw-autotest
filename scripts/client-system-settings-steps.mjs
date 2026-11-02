@@ -6,7 +6,7 @@ import {prepareAccountLogout,waitAccountSignedOut,releaseAccountLogout,readLogge
 import {prepareSystemSettings,chooseTheme,chooseFont,readTheme,readTypography,systemTheme,releaseSystemSettings} from './mobilework-system-settings.mjs';
 import {restartOwnedClient} from './mobilework-client-restart.mjs';
 import {prepareSystemStorage,settleSystemStorage} from './mobilework-default-storage.mjs';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {selectNativeFolder,completeNativeFolder} from './mobilework-native-folder.mjs';
 import {chooseWorkspace} from './mobilework-workspaces.mjs';
 const review=message=>Object.assign(Error(message),{review:true});
 const save=(context,name,value)=>fs.writeFile(path.join(context.dir,name+'.json'),JSON.stringify(value,null,2));
@@ -44,10 +44,11 @@ export async function runSystemSettingsSteps(context){
  if(number===181){
   const created=await control.withUI(context.page,'INTERACTING',async()=>{
    const owned=await prepareSystemStorage(context),panel=await openSettings(context,'system');resources.settingsPanel.relocationToken=randomUUID();await context.checkpointResources();
-   await selectNativeFolder(context.page,{folder:owned.targetPath,dir:context.dir,control,log:context.log,open:()=>panel.getByRole('button',{name:'更新路径',exact:true}).click()});
+   const picked=await selectNativeFolder(context.page,{folder:owned.targetPath,dir:context.dir,control,log:context.log,deferCompletion:true,open:()=>panel.getByRole('button',{name:'更新路径',exact:true}).click()});
    const dialog=context.page.getByRole('dialog',{name:'在新目录新建默认工作空间?',exact:true}).filter({visible:true});await dialog.waitFor();await dialog.evaluate((node,token)=>node.setAttribute('data-mw-settings-relocation',token),resources.settingsPanel.relocationToken);await context.capture('新目录默认空间真实二次确认');
+   await completeNativeFolder(control,picked.ownership);
    owned.stage='submitted';await context.checkpointResources();await dialog.getByRole('button',{name:'新建默认空间',exact:true}).click();const created=await settleSystemStorage(context.page,resources);await dialog.waitFor({state:'hidden'});delete resources.settingsPanel.relocationToken;await context.checkpointResources();
-   const displayed=await panel.getByText(new RegExp(owned.targetPath.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).count();context.assert('设置展示本轮实际新存储路径',displayed===1);await context.capture('更新后的真实默认空间与路径');await releaseSettingsPanel(context.page,resources);await context.checkpointResources();await chooseWorkspace(context.page,created.name);await context.checkpointPage();finish('原生目录选择及新默认空间实际创建和展示');return created;
+   const displayed=await panel.getByText(new RegExp(owned.targetPath.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'))).count();context.assert('设置展示本轮实际新存储路径',displayed===1);await context.capture('更新后的真实默认空间与路径');await releaseSettingsPanel(context.page,resources);await context.checkpointResources();await chooseWorkspace(context.page,created.id);await context.checkpointPage();finish('原生目录选择及新默认空间实际创建和展示');return created;
   });
   const name='默认空间产物核验.txt',marker='存储路径-'+randomUUID();await context.send('请在当前任务目录新建UTF-8文件“'+name+'”，内容为“'+marker+'”。只创建该文件，不改其他目录。完成后简要告知。');
   const body=await fs.readFile(path.join(control.directory,name),'utf8'),relative=path.relative(created.path,control.directory);await fs.writeFile(path.join(context.dir,name),body);context.outputs.push({name,path:name});await save(context,'默认空间真实任务归属',{workspaceId:created.id,workspacePath:created.path,sessionId:context.getSessionId(),directory:control.directory,relative});context.assert('本Session任务目录和实际文件属于新默认空间',relative&&!relative.startsWith('..')&&!path.isAbsolute(relative)&&context.page.url().includes('/workspace/'+created.id+'/session/'+context.getSessionId())&&body.trim()===marker);finish('新默认空间真实Session与任务产物落盘');

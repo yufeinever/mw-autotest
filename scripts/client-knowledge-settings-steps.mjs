@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {addOwnedKnowledgeSource} from './mobilework-knowledge-folder.mjs';
 import {sameKnowledgePath} from './mobilework-knowledge-resources.mjs';
 import {closeKnowledgeSettings,openKnowledgeSettings} from './mobilework-knowledge-api.mjs';
 import {openSources,refreshSources} from './client-knowledge-source-steps.mjs';
@@ -27,13 +27,7 @@ async function addSource(context,call,created){
  const folder=path.join(context.dir,'本轮外部引用源');await fs.mkdir(folder);
  const fixture=await prepareKnowledgeReading({source_dir:[folder]});await save(context,'外部源文件及隐藏事实',fixture);
  await settings(context,created);
- const [responseResult,selectionResult]=await Promise.allSettled([
-  context.page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname==='/knowledge/add_source'&&response.request().postDataJSON().id===created.id,{timeout:60000}),
-  selectNativeFolder(context.page,{folder,dir:context.dir,control:context.control,log:context.log,open:()=>button(sourceSection(context.page),'添加').click()})
- ]);
- if(selectionResult.status==='rejected')throw selectionResult.reason;
- if(responseResult.status==='rejected')throw responseResult.reason;
- const response=responseResult.value,body=await response.json();
+ const {response,body}=await addOwnedKnowledgeSource(context,call,created,folder,()=>button(sourceSection(context.page),'添加').click());
  await save(context,'源路径真实添加请求',{request:response.request().postDataJSON(),httpStatus:response.status(),success:body.success});
  context.assert('原生目录确认后真实添加指定源路径',response.ok()&&body.success==='true'&&sameKnowledgePath(response.request().postDataJSON().source_dir,folder));
  await context.page.waitForFunction(folder=>[...document.querySelectorAll('[role="dialog"][aria-label="设置"] span')].some(node=>node.textContent===folder),folder);

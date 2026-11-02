@@ -6,7 +6,7 @@ import {parseOwnedKnowledge,completedKnowledgeParse} from './mobilework-knowledg
 import {prepareKnowledgeReading,knowledgeFingerprint} from './mobilework-knowledge-reading.mjs';
 import {openKnowledgeReference,observeLoadedKnowledgeReference,knowledgeReferenceRow,hasKnowledgeBudget,flattenKnowledgeFiles} from './mobilework-knowledge-source-ui.mjs';
 import {finalAssistantText} from './client-case-runner.mjs';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {selectNativeFolder,completeNativeFolder} from './mobilework-native-folder.mjs';
 import {sameKnowledgePath} from './mobilework-knowledge-resources.mjs';
 import {closeKnowledgeSettings,openKnowledgeSettings} from './mobilework-knowledge-api.mjs';
 import {observeKnowledgeGraph,observeKnowledgeGraphHover,assessKnowledgeGraph,assessGraphHighlight,blankGraphPoint,relatedKnowledgeNodes,nextKnowledgeSchedule,knowledgeDirectoryManifest,relocatedKnowledgePath} from './mobilework-knowledge-graph-settings.mjs';
@@ -186,15 +186,21 @@ async function storagePath(context,call,created){
  const row=settings.locator('section').filter({has:page.getByText('wiki存储路径',{exact:true})});
  // Start listening before confirming the native dialog; it resolves through the renderer asynchronously.
  const [responseResult,selectionResult]=await Promise.allSettled([
-  page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/knowledge/change_storage'&&r.request().postDataJSON().id===created.id,{timeout:60000}),
-  selectNativeFolder(page,{folder:target,dir:context.dir,control:context.control,log:context.log,open:()=>button(row,'修改').click(),beforeConfirm:async()=>{resources.knowledgeCreation.storageMove.state='submitted';await context.checkpointResources();}})
+  page.waitForResponse(r=>{if(r.request().method()!=='POST'||new URL(r.url()).pathname!=='/knowledge/change_storage')return false;const request=r.request().postDataJSON();return request.id===created.id&&typeof request.storage_dir==='string'&&sameKnowledgePath(request.storage_dir,target);},{timeout:60000}),
+  selectNativeFolder(page,{folder:target,dir:context.dir,control:context.control,log:context.log,deferCompletion:true,open:()=>button(row,'修改').click(),beforeConfirm:async()=>{resources.knowledgeCreation.storageMove.state='submitted';await context.checkpointResources();}})
  ]);
  if(selectionResult.status==='rejected')throw selectionResult.reason;
  if(responseResult.status==='rejected')throw responseResult.reason;
- const response=responseResult.value,body=await response.json();resources.knowledgeCreation.storageMove.state=response.ok()&&body.success==='true'?'completed':'rejected';await context.checkpointResources();
+ const response=responseResult.value,body=await response.json();
+ if(!response.ok()||body.success!=='true'){
+  resources.knowledgeCreation.storageMove.state='rejected';await context.checkpointResources();
+  await completeNativeFolder(context.control,selectionResult.value.ownership);
+  throw Error('知识库存储迁移失败：HTTP '+response.status());
+ }
  await save(context,'真实原生存储迁移请求',{request:response.request().postDataJSON(),httpStatus:response.status(),success:body.success});assert('真实选择目录触发并完成本库迁移请求',response.ok()&&body.success==='true'&&sameKnowledgePath(response.request().postDataJSON().storage_dir,target));remaining.delete('原生目录真实识别及迁移请求');
  const after=await call('/knowledge/'+created.id),expectedSources=created.source_dir.map(value=>relocatedKnowledgePath(value,created.storage_dir,target));
  assert('迁移后同ID的存储Wiki及内部源路径一致',after.id===created.id&&sameKnowledgePath(after.storage_dir,target)&&sameKnowledgePath(after.wiki_dir,relocatedKnowledgePath(created.wiki_dir,created.storage_dir,target))&&JSON.stringify(after.source_dir)===JSON.stringify(expectedSources));
+ resources.knowledgeCreation.storageMove.state='completed';await context.checkpointResources();await completeNativeFolder(context.control,selectionResult.value.ownership);
  const copied=await knowledgeDirectoryManifest(target),retained=await knowledgeDirectoryManifest(created.storage_dir);await save(context,'目录迁移完整文件及原位置保护',{before,copied,retained,after});assert('迁移完整复制所有真实目录及文件字节并保留旧目录',JSON.stringify(before)===JSON.stringify(copied)&&JSON.stringify(before)===JSON.stringify(retained));
  await page.waitForFunction(target=>[...document.querySelectorAll('[role="dialog"][aria-label="设置"] span')].some(node=>node.textContent===target),after.wiki_dir);await context.capture('原生迁移后真实路径回显');await closeKnowledgeSettings(page,{storageDir:target});await openSettings(context,after,{reload:true});const reloaded=await call('/knowledge/'+created.id);assert('重载后新Wiki路径保留',(await settingsOf(page).innerText()).includes(after.wiki_dir)&&sameKnowledgePath(reloaded.storage_dir,target));await closeKnowledgeSettings(page,{storageDir:target});remaining.delete('实际路径文件完整性及重载持久');await protect(context,fixture);
 }

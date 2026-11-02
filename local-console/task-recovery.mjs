@@ -69,8 +69,9 @@ export async function adoptOwnedSession(page,job){
 // its recorded task directory. A different page or a user draft is preserved.
 export async function adoptMissingSessionHome(page,job){
  const owned=job.composerResources,id=job.sessionId;
- if(!id||!(job.modelCompleted||job.sessionMissing&&job.sessionSettled)||!job.sessionUrl?.endsWith('/session/'+id)||owned?.url!==job.sessionUrl)return false;
+ if(!id||!(job.modelCompleted||job.sessionMissing&&job.sessionSettled)||!job.sessionUrl?.endsWith('/session/'+id))return false;
  const home=job.sessionUrl.slice(0,-('/'+id).length);
+ if(![job.sessionUrl,home].includes(owned?.url))return false;
  if(page.url()!==home)return false;
  const directory=job.sessionDirectory||job.result?.sessions?.find(item=>item.id===id)?.directory;
  if(!directory)return false;
@@ -135,7 +136,7 @@ export async function adoptFailedWorkspaceSession(page,job,{allowAbort=false,che
  await checkpoint();return true;
 }
 
-export async function settleSession(page,job,connection,{allowAbort=false}={}){
+export async function settleSession(page,job,connection,{allowAbort=false,checkpoint=async()=>{}}={}){
  if(!job.sessionId)return !job.submissionPending;
  if(job.modelCompleted||job.sessionSettled)return true;
  if(!connection){
@@ -188,8 +189,10 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
  }
  if(!allowAbort||job.recoveryAbortAttempted)return false;
  job.recoveryAbortAttempted=true;
+ try{await checkpoint();}catch(error){job.recoveryAbortAttempted=false;throw error;}
  if(await request('/session/'+job.sessionId+'/abort'+query,'POST')!==true)throw Error('客户端未确认停止本会话');
  job.abortAcknowledged=true;
+ await checkpoint();
  for(let i=0;i<10;i++){
   if(await stopped()){job.sessionSettled=true;job.recoveryAction='已停止本条关联会话并确认空闲；原用例结果不变';return true;}
   await delay(300);
@@ -197,10 +200,10 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
  return false;
 }
 
-export async function recoverJobPage(page,job,{connection,allowAbort=false,otherManagedSession=false}={}){
+export async function recoverJobPage(page,job,{connection,allowAbort=false,otherManagedSession=false,checkpoint=async()=>{}}={}){
  await adoptOwnedSession(page,job);
  confirmFailedBeforeSession(job);
- if(!await settleSession(page,job,connection,{allowAbort}))return {ready:false,reason:job.submissionPending&&!job.sessionId?'发送已尝试但Session归属未确认，暂停后续任务':'本条会话尚未确认结束'};
+ if(!await settleSession(page,job,connection,{allowAbort,checkpoint}))return {ready:false,reason:job.submissionPending&&!job.sessionId?'发送已尝试但Session归属未确认，暂停后续任务':'本条会话尚未确认结束'};
  const failure=await restoreFailedSubmissionPage(page,job);
  if(!failure.ready)return failure;
  let handoff=await inspectPageHandoff(page,{owned:job.ownedDraft,allowRunning:otherManagedSession,stepInterval:job.config?.stepInterval});
@@ -231,6 +234,6 @@ export async function recoverJob(job,{connection,allowAbort=false,jobs=[],checkp
   if(pages.length!==1)throw Error('未找到唯一客户端主界面');
   const page=pages[0],otherManagedSession=jobs.some(j=>j.id!==job.id&&j.status==='RUNNING'&&j.sessionUrl===page.url());
   page.setDefaultTimeout(5000);
-  return await recoverJobPage(page,job,{connection,allowAbort,otherManagedSession});
+  return await recoverJobPage(page,job,{connection,allowAbort,otherManagedSession,checkpoint});
  }finally{await browser.close();}
 }

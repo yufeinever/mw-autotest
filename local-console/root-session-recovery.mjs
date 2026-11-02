@@ -103,8 +103,9 @@ export async function settleRootSessions(job,{runtimes=new Map(),allowAbort=fals
    if(root.modelCompleted||root.sessionSettled)continue;
    try{
     const connection=await rootConnection(page,job,root,runtimes),view=rootJobView(job,root);
-    const settled=await settleSession(page,view,connection,{allowAbort});
-    commitRootView(root,view);updateRootSummary(job);await checkpoint();
+    let settled;
+    try{settled=await settleSession(page,view,connection,{allowAbort,checkpoint:async()=>{commitRootView(root,view);updateRootSummary(job);await checkpoint();}});}
+    finally{commitRootView(root,view);updateRootSummary(job);await checkpoint();}
     if(!settled)errors.push(root.key+'：根任务尚未确认结束');
    }catch(error){errors.push(root.key+'：'+error.message);}
   }

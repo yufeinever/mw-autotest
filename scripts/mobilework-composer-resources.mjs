@@ -17,7 +17,7 @@ import {releaseAccountObservation} from './mobilework-account-observation.mjs';
 import {releaseAccountLogout} from './mobilework-account-logout.mjs';
 import {releaseSettingsPanel} from './mobilework-account-settings.mjs';
 import {releaseSystemSettings} from './mobilework-system-settings.mjs';
-import {releaseSystemStorage} from './mobilework-default-storage.mjs';
+import {restoreSystemStorageMetadata,releaseSystemStorage} from './mobilework-default-storage.mjs';
 import {releaseWindowClose} from './mobilework-window-close.mjs';
 import {releaseInvalidDirectory} from './mobilework-storage-probe.mjs';
 import {releaseAccountMemory} from './mobilework-account-memory.mjs';
@@ -30,7 +30,6 @@ export const queuedRow=(page,text)=>page.getByRole('listitem').filter({visible:t
 // The names and URL are registered before mutation. Never clear another draft.
 export async function releaseComposerResources(page,owned,config){
  await releaseWindowClose(page,owned);
- await releaseInvalidDirectory(owned);
  await releaseConversationSettings(page,owned,{checkpoint:config.checkpoint});
  await releaseAccountMemory(page,owned,{checkpoint:config.checkpoint});
  await releaseAccountLogout(page,owned,{checkpoint:config.checkpoint});
@@ -40,12 +39,16 @@ export async function releaseComposerResources(page,owned,config){
  await releaseAccountObservation(page,owned);
  await closeAccountMenu(page,owned);
  await releaseAccountExternal(owned);
+ if(owned.managedSkills?.pickerToken){
+  await releaseManagedSkills(page,owned.managedSkills,{modelSettled:config.modelSettled,checkpoint:config.checkpoint});
+  delete owned.managedSkills;await config.checkpoint?.();
+ }
  await restoreModuleNavigation(page,owned,{modelSettled:config.modelSettled,cdpPort:config.cdpPort});
  if(page.url()!==owned.url)throw Error('输入区资源所在页面已变化，保留附件、排队消息与权限设置');
  if(owned.homeModel){await restoreHomeModel(page,owned.homeModel,config);delete owned.homeModel;}
  if(owned.caseFavorites){await releaseCaseFavorites(page,owned.caseFavorites);delete owned.caseFavorites;}
  if(owned.automation){await releaseAutomation(page,owned.automation);delete owned.automation;}
- if(owned.managedSkills){await releaseManagedSkills(page,owned.managedSkills,{modelSettled:config.modelSettled});delete owned.managedSkills;}
+ if(owned.managedSkills){await releaseManagedSkills(page,owned.managedSkills,{modelSettled:config.modelSettled,checkpoint:config.checkpoint});delete owned.managedSkills;}
  if(owned.customTool){await releaseCustomTool(page,owned.customTool);delete owned.customTool;}
  if(owned.toolSelection){
   await page.getByRole('button',{name:'工具',exact:true}).filter({visible:true}).click();
@@ -99,6 +102,9 @@ export async function releaseComposerResources(page,owned,config){
   if(await consent.count()===1)await consent.getByRole('button',{name:'取消',exact:true}).click();
   await resetComposerPermission(page,config);
  }
- await releaseSystemStorage(page,owned);
- if(owned.workspaceResources){await releaseWorkspaceResources(page,owned.workspaceResources,config);delete owned.workspaceResources;}
+ await restoreSystemStorageMetadata(page,owned,{checkpoint:config.checkpoint});
+ if(owned.workspaceResources)await releaseWorkspaceResources(page,owned.workspaceResources,config);
+ await releaseSystemStorage(page,owned,config);
+ await releaseInvalidDirectory(owned);
+ delete owned.workspaceResources;
 }

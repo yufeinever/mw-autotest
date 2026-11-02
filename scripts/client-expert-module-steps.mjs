@@ -5,10 +5,10 @@ import {parseDocument} from 'yaml';
 import {workspaces} from './mobilework-workspaces.mjs';
 import {readInstalledSkills,settleSkillReload} from './mobilework-skill-resources.mjs';
 import {openExpertWorkspace,marketCard} from './mobilework-market-ui.mjs';
-import {restoreModuleNavigation} from './mobilework-module-navigation.mjs';
+import {restoreModuleNavigation,reloadOwnedModule} from './mobilework-module-navigation.mjs';
 import {snapshotDraft} from './mobilework-isolation.mjs';
 import {inspectModuleHandoff} from './mobilework-module-handoff.mjs';
-import {selectNativeFolder} from './mobilework-native-folder.mjs';
+import {selectNativeFolder,completeNativeFolder} from './mobilework-native-folder.mjs';
 import {readLocalSkill,readCustomToolRegistry,releaseManagedSkills,releaseCustomTool} from './mobilework-module-resources.mjs';
 import {withMarketExpert} from './mobilework-recording-expert.mjs';
 import {readEngineConnection,engineRequest} from '../local-console/engine-client.mjs';
@@ -69,18 +69,23 @@ export async function runExpertModuleSteps(context){
   await fs.writeFile(path.join(folder,'SKILL.md'),source);
   const before=await readInstalledSkills(page,workspace.path);
   resources.managedSkills={projectDir:workspace.path,installedBefore:before,ids:[importId,createdId],marker,pending:false,pendingKind:'import'};await checkpointResources();
-  let failure;
+  let failure,picking=false;
   try{
    await openExpertWorkspace(context,{section:'技能',targetHash:'#/experts/skills',handoff:{kind:'skill-create',value:'mobilework-skill-creator',workspaceId}});
    await button(page,'添加技能').click();await page.getByRole('menuitem',{name:'上传技能',exact:true}).click();
+   const heading=page.getByRole('heading',{name:'上传技能',exact:true}).filter({visible:true});await heading.waitFor();
+   resources.managedSkills.importFolder=folder;resources.managedSkills.pickerToken=randomUUID();await checkpointResources();
+   await heading.evaluate((node,token)=>{node.setAttribute('data-mw-skill-picker',token);document.documentElement.setAttribute('data-mw-skill-picker-document',token);},resources.managedSkills.pickerToken);
    // The modal uses a native directory dialog, rather than an HTML file input.
-   await selectNativeFolder(page,{folder,dir,control,log,open:()=>button(page,'选择文件夹').click()});
-   await page.getByText(importId,{exact:true}).filter({visible:true}).waitFor();await capture('上传技能原生目录已选择');finish('真实原生目录选择');
+   picking=true;
+   const picked=await selectNativeFolder(page,{folder,dir,control,log,deferCompletion:true,open:()=>button(page,'选择文件夹').click()});
+   await page.getByText(importId,{exact:true}).filter({visible:true}).waitFor();await completeNativeFolder(control,picked.ownership);picking=false;
+   await capture('上传技能原生目录已选择');finish('真实原生目录选择');
    resources.managedSkills.pending=true;await checkpointResources();await button(page,'导入').click();
    await waitUntil(async()=> (await readInstalledSkills(page,workspace.path)).includes(importId),'合成技能导入尚未完成');
    await settleSkillReload(page);
    await page.getByRole('heading',{name:'上传技能',exact:true}).waitFor({state:'hidden'});
-   resources.managedSkills.pending=false;await checkpointResources();
+   resources.managedSkills.pending=false;delete resources.managedSkills.importFolder;delete resources.managedSkills.pickerToken;await checkpointResources();
    const imported=await readLocalSkill(page,workspace.path,importId);await fs.writeFile(path.join(dir,'导入后SKILL.md'),imported.content);
    assert('真实导入后名称及内容与合成源一致',skillMetadata(imported.content)?.name===importId&&imported.content.replace(/\r\n/g,'\n')===source);finish('导入真实目录及内容');await capture('合成技能导入完成');
    const creator=await page.evaluate(async projectDir=>{const invoke=window.__MOBILEWORK__.invoke,auth=await invoke('auth:current');const {value}=await invoke('store:read',{accountId:auth.account.id,path:'skills/registry.json',fallback:{}});return {inspection:await invoke('engine:inspectSkillPackage',{projectDir,id:'mobilework-skill-creator'}),enabled:value['mobilework-skill-creator']?.enabled===true};},workspace.path);
@@ -102,7 +107,7 @@ export async function runExpertModuleSteps(context){
   }catch(error){failure=error;await capture('技能上传创建异常现场').catch(e=>log('异常截图失败',e.message));}
   finally{
    try{
-    if(resources.managedSkills&&!resources.managedSkills.pending){await releaseManagedSkills(page,resources.managedSkills);delete resources.managedSkills;await checkpointResources();finish('仅清理本轮新增技能');}
+    if(resources.managedSkills&&!resources.managedSkills.pending&&!picking){await releaseManagedSkills(page,resources.managedSkills);delete resources.managedSkills;await checkpointResources();finish('仅清理本轮新增技能');}
    }catch(error){log('合成技能收尾未完成',error.message);if(failure)failure.message+='；收尾：'+error.message;else failure=error;}
   }
   if(failure)throw failure;return;
@@ -150,7 +155,7 @@ export async function runExpertModuleSteps(context){
   assert('修改表单回填本轮原名及地址',await edit.locator('input[placeholder="例如：企业内部 ERP"]').inputValue()===name&&await edit.locator('input[placeholder="https://api.example.com/mcp"]').inputValue()===url);finish('真实修改入口及回填');
   await edit.locator('input[placeholder="例如：企业内部 ERP"]').fill(renamed);await edit.locator('textarea').fill('本轮修改已保存-'+suffix);await capture('本轮工具改名保存前');
   await edit.getByRole('button',{name:'保存',exact:true}).click();await edit.waitFor({state:'hidden'});await button(page,'打开'+renamed+'更多操作').waitFor();
-  await page.reload({waitUntil:'commit'});await button(page,'我的工具').click();await button(page,'打开'+renamed+'更多操作').waitFor();
+  await reloadOwnedModule(page,resources);await button(page,'我的工具').click();await button(page,'打开'+renamed+'更多操作').waitFor();
   const actual=(await readCustomToolRegistry(page,workspaceId)).targets.find(t=>t.id===resources.customTool.id);await save('自定义工具修改实际结果.json',{before:registered[0],after:actual});
   assert('同ID工具改名和描述持久化且未连接',actual?.name===renamed&&actual.description==='本轮修改已保存-'+suffix&&actual.mcp.url===url&&!actual.connected&&!actual.mcp.hasCredentials);finish('真实持久化与同ID核对');
   await button(page,'打开'+renamed+'更多操作').click();await page.getByRole('menuitem',{name:'修改工具',exact:true}).click();

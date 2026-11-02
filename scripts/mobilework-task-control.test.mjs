@@ -27,10 +27,12 @@ test('交互竞态：过期请求、延迟渲染和重复审批不提前阻塞�
    throw Error(route);
   };
   await page.exposeFunction('approved',()=>{clicks.push(stage);stage++;});
-  const render=()=>page.evaluate(()=>{
+  const render=()=>page.evaluate(stage=>{
    document.body.innerHTML='<section><button>拒绝</button><button>允许一次</button><button>在会话期间允许</button><button>开启完全访问权限</button></section>';
+   const card=document.querySelector('section'),root={stateNode:{}};root.stateNode.current=root;
+   card.__reactFiber$fixture={memoizedProps:{permission:{id:'per_'+stage,sessionID:'ses_Race'},respondPermission:()=>{}},return:root};
    document.querySelectorAll('button')[2].onclick=async()=>{document.body.replaceChildren();await window.approved();};
-  });
+  },stage);
   control.withUI=async(_page,_phase,action)=>{
    uiTurns++;control.held=true;
    try{
@@ -109,7 +111,7 @@ test('串行任务独立交互，附件正文可核对，空正文终态返回�
     if(data.pending==='question'){const card=document.createElement('div'),q=document.createElement('p');card.className='border-[var(--mw-question-panel-border)]';q.textContent=id+' 选择方案';card.append(q);
      const close=document.createElement('button');close.setAttribute('aria-label','关闭');close.textContent='×';card.append(close);
      for(let n=1;n<=2;n++){const b=document.createElement('button');b.textContent=n+'方案'+n;b.onclick=()=>reply(id,'选项'+n);card.append(b);}root.append(card);
-    }else if(data.pending==='permission'){const card=document.createElement('section');for(const label of ['拒绝','允许一次','在会话期间允许','开启完全访问权限']){const b=document.createElement('button');b.textContent=label;b.onclick=()=>reply(id,label);card.append(b);}root.append(card);}
+    }else if(data.pending==='permission'){const card=document.createElement('section'),fiberRoot={stateNode:{}};fiberRoot.stateNode.current=fiberRoot;card.__reactFiber$fixture={memoizedProps:{permission:{id:'per_'+id,sessionID:'ses_'+id},respondPermission:()=>{}},return:fiberRoot};for(const label of ['拒绝','允许一次','在会话期间允许','开启完全访问权限']){const b=document.createElement('button');b.textContent=label;b.onclick=()=>reply(id,label);card.append(b);}root.append(card);}
     if(data.done){const p=document.createElement('p');p.textContent='最终助手回复 '+id;root.append(p);}
    }
    async function reply(id,action){await fetch('/answer/'+id,{method:'POST',body:JSON.stringify({action})});await render();}

@@ -18,7 +18,7 @@ export async function settleModuleReload({page,capture,log}){
 // route. Wait for the real sidebar, then re-enter only this owned module.
 export async function reloadOwnedModule(page,resources){
  const owned=resources.moduleNavigation;
- const entry={'#/automation':'自动化: 任务编排','#/explore':'案例库: 实例与回放','#/knowledge':'知识中心: 知识沉淀'}[owned?.targetHash];
+ const entry={'#/automation':'自动化: 任务编排','#/explore':'案例库: 实例与回放','#/knowledge':'知识中心: 知识沉淀','#/experts/connectors':'专家工作区: 专家 / 技能 / 工具'}[owned?.targetHash];
  if(!entry||new URL(page.url()).hash!==owned.targetHash)throw Error('重载前模块归属不匹配');
  await page.reload({waitUntil:'commit'});
  const navigation=page.getByRole('button',{name:entry,exact:true}).filter({visible:true});
@@ -36,6 +36,7 @@ export async function reloadOwnedModule(page,resources){
   const draft=await snapshotDraft(page);
   if(draft.text||draft.skills.length||draft.selection.length)throw Error('模块重载后发现未知草稿，未覆盖');
   await navigation.click();
+  if(owned.targetHash==='#/experts/connectors')await page.getByRole('button',{name:'工具',exact:true}).filter({visible:true}).click();
  }
  await page.waitForURL(url=>url.hash===owned.targetHash);
 }

@@ -375,6 +375,7 @@ export async function runInteractionCase(number){
    await settleOwnedRecording();
    if(resources.clientRestart){const next=await resumeClientRestart(resources,config,{checkpoint:checkpointResources});await replaceClient(next);}
    await control.acquire(page,'EVIDENCE');
+   if(resources.settingsPanel?.relocationToken||resources.managedSkills?.pickerToken||[resources.knowledgeCreation,resources.knowledgeSecondaryCreation].some(item=>item&&(!item.submitted||[item.sourceAdd?.state,item.storageMove?.state].some(state=>['picking','submitted'].includes(state)))))throw blocked('目录或确认框交接由控制台统一收尾');
    await releaseSettingsPanel(page,resources);await checkpointResources();
    await releaseAccountLogout(page,resources,{checkpoint:checkpointResources});
    if(resources.automation)await settleOwnedAutomation(page,resources.automation);

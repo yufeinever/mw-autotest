@@ -53,8 +53,8 @@ export async function runInterfaceCase(number){
    assert('当前客户端主页面可读',await page.locator('main').last().isVisible());
    assert('产品工作空间列表可读取',Array.isArray(before)&&before.length>0);
   }else if(definition.kind==='workspace-default'){
-   expectedDirectory=defaultSpace.path;await chooseWorkspace(page,defaultSpace.name);
-   assert('默认工作空间在输入区被选中',await button(page.locator('main').last(),defaultSpace.name).count()===1,defaultSpace.name);
+   expectedDirectory=defaultSpace.path;const displayName=await chooseWorkspace(page,defaultSpace.id);
+   assert('默认工作空间在输入区被选中',await button(page.locator('main').last(),displayName).count()===1,displayName);
   }else if(definition.kind==='workspace-create'){
    const name='MW-Autotest-'+Date.now();createdWorkspace=await createDefaultWorkspace(page,name);expectedDirectory=createdWorkspace.path;
    assert('默认存储空间创建成功',createdWorkspace.name===name,createdWorkspace);log('本轮工作空间已创建',name);
@@ -63,12 +63,12 @@ export async function runInterfaceCase(number){
    assert('原生文件夹选择器已识别并关闭',createdWorkspace.nativePicker.dialogFound&&createdWorkspace.nativePicker.dialogClosed);
    // Creating a local workspace can return to the previous Session view.
    await initializeTestPage(page,{stepInterval:config.stepInterval,model:config.model,log});
-   await chooseWorkspace(page,createdWorkspace.name);assert('本地工作空间已被选择',await button(page.locator('main').last(),createdWorkspace.name).count()===1,createdWorkspace.name);
+   const displayName=await chooseWorkspace(page,createdWorkspace.id);assert('本地工作空间已被选择',await button(page.locator('main').last(),displayName).count()===1,displayName);
   }else if(definition.kind==='workspace-reference'){
    const selected=before.find(item=>!item.isDefault&&item.workspaceType==='local');
    if(!selected)throw blocked('没有可供引用的已有本机工作空间');
-   expectedDirectory=selected.path;await chooseWorkspace(page,selected.name);
-   assert('已有工作空间可被发现并引用',await button(page.locator('main').last(),selected.name).count()===1,selected.name);
+   expectedDirectory=selected.path;const displayName=await chooseWorkspace(page,selected.id);
+   assert('已有工作空间可被发现并引用',await button(page.locator('main').last(),displayName).count()===1,displayName);
   }else{
    const beforeModels=await readModelOptions(page,config);
    assert('模型列表包含自动项',beforeModels.models.some(model=>model.name==='自动'),beforeModels.models);
@@ -102,7 +102,7 @@ export async function runInterfaceCase(number){
   if(createdWorkspace&&!checkOnly){try{
    if(previousWorkspace&&page.url().includes('/workspace/'+createdWorkspace.id+'/')){
     await initializeTestPage(page,{stepInterval:config.stepInterval,model:config.model,log});
-    await chooseWorkspace(page,previousWorkspace.name);
+    await chooseWorkspace(page,previousWorkspace.id);
    }
    await deleteWorkspace(page,createdWorkspace.id);log('已清理本轮工作空间',createdWorkspace.name);
   }catch(error){errorText=(errorText?errorText+'；':'')+error.message;result='BLOCKED';}}
