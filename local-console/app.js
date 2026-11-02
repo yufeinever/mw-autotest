@@ -1369,13 +1369,15 @@ if (traceId) {
     for (const id of ["recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).disabled = !c.enabled;
     $("#recordingEstimate").textContent = c.enabled ? `\u5F55\u6EE1 ${c.maxSeconds} \u79D2\u7EA6 ${(c.bitrateKbps * c.maxSeconds / 8e3).toFixed(1)} MB\uFF08\u6309\u76EE\u6807\u5E73\u5747\u7801\u7387\u4F30\u7B97\uFF09\u3002\u5230\u65F6\u4EC5\u505C\u6B62\u5F55\u50CF\uFF0C\u7528\u4F8B\u7EE7\u7EED\u6267\u884C\u3002` : "\u5F55\u50CF\u5DF2\u5173\u95ED\u3002";
   }, config = function() {
+    if (editionSwitching) throw Error("\u6B63\u5728\u5207\u6362\u5BA2\u6237\u7AEF\u7248\u672C\uFF0C\u8BF7\u7A0D\u540E\u64CD\u4F5C");
     const interval = $("#stepInterval").value.trim();
-    return { clientEdition: $("#clientEdition").value, recording: recordingConfig(), executionStrategy: "serial", maxParallel: 1, question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
+    return { clientEdition: editionValue(), recording: recordingConfig(), executionStrategy: "serial", maxParallel: 1, question: $("[name=question]:checked").value, customText: $("#customText").value, approval: $("[name=approval]:checked").value, model: $("#model").value, cdpPort: Number($("#cdpPort").value), stepInterval: interval === "" ? 0.5 : Number(interval), provider: { url: $("#providerUrl").value, key: $("#providerKey").value, model: $("#providerModel").value, multimodal: $("#providerMulti").checked, inputTokens: Number($("#inputTokens").value), outputTokens: Number($("#outputTokens").value) } };
   }, modelOption = function(name) {
     if (![...$("#model").options].some((o) => o.value === name)) $("#model").add(new Option(name, name));
   }, syncEdition = function() {
-    const label = editionLabels[$("#clientEdition").value];
-    $("#editionHint").textContent = "\u5F53\u524D\u9009\u62E9\uFF1A" + label;
+    const label = editionLabels[editionValue()];
+    $("#editionHint").textContent = label + " \xB7 \u5168\u5C40\u751F\u6548\uFF1ACDP \u8FDE\u63A5\u3001\u6A21\u578B\u4E0E\u7528\u4F8B\u6267\u884C";
+    $("#cdpState").closest("section").querySelector("h2").textContent = label + " \xB7 \u5BA2\u6237\u7AEF CDP \u914D\u7F6E";
     $("#clientEdition").title = "\u5206\u522B\u4FDD\u5B58\u4E24\u7248\u4EA4\u4E92\u4E0E\u6A21\u578B\u914D\u7F6E\uFF1B\u6267\u884C\u524D\u6838\u5BF9\u5B9E\u9645\u5BA2\u6237\u7AEF\uFF0C\u7248\u672C\u4E0D\u5339\u914D\u65F6\u4E0D\u63D0\u4EA4\u4EFB\u52A1\u3002";
     $("#approvalSettings").title = label + "\uFF1A\u6309\u6240\u9009\u65B9\u5F0F\u5904\u7406\u5BA1\u6279\uFF1B\u5F00\u542F\u5B8C\u5168\u8BBF\u95EE\u9700\u5B8C\u6210\u5BA2\u6237\u7AEF\u4E8C\u6B21\u786E\u8BA4\u3002\u6743\u9650\u4E13\u9879\u7528\u4F8B\u56FA\u5B9A\u62D2\u7EDD\u3002";
     $("#model").title = "\u53EA\u9009\u62E9" + label + "\u5B9E\u9645\u63D0\u4F9B\u7684\u6A21\u578B\uFF1B\u5207\u6362\u5BA2\u6237\u7AEF\u7248\u672C\u65F6\u52A0\u8F7D\u8BE5\u7248\u5DF2\u4FDD\u5B58\u9009\u62E9\uFF0C\u9996\u6B21\u9ED8\u8BA4\u81EA\u52A8\u3002";
@@ -1569,7 +1571,7 @@ if (traceId) {
     $("#nextPage").disabled = historyPage === pages;
   };
   const $ = (s) => document.querySelector(s);
-  let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false, lastServerCdpPort;
+  let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false, lastServerCdpPort, editionSwitching = false;
   const pendingScripts = /* @__PURE__ */ new Set(), selectedScripts = /* @__PURE__ */ new Set();
   let activeSuite = localStorage.getItem("mw-script-suite") === "permission" ? "permission" : "functional";
   const visibleScripts = () => scriptsInSuite(state?.scripts || [], activeSuite);
@@ -1598,24 +1600,42 @@ if (traceId) {
     openFolder: (id, location2) => api("/api/jobs/" + encodeURIComponent(id) + "/recording-folder", { location: location2 })
   });
   for (const id of ["recordingEnabled", "recordingResolution", "recordingFps", "recordingBitrate", "recordingMaxSeconds"]) $("#" + id).addEventListener("input", syncRecording);
+  const editionValue = () => $("[name=clientEdition]:checked").value;
+  const selectEdition = (value) => {
+    $(`[name=clientEdition][value="${value}"]`).checked = true;
+  };
   $("#clientEdition").onchange = async () => {
-    const requested = $("#clientEdition").value, previous = state.config.clientEdition || "enterprise";
+    const requested = editionValue(), previous = state.config.clientEdition || "enterprise";
+    if (editionSwitching || cdpBusy || cdpRefreshing) {
+      selectEdition(previous);
+      return;
+    }
+    const previousConfig = { ...config(), clientEdition: previous };
+    editionSwitching = true;
     $("#clientEdition").disabled = true;
+    for (const id of ["refreshCdp", "enableCdp", "restartCdp"]) $("#" + id).disabled = true;
+    $("#cdpState").textContent = "\u6B63\u5728\u5207\u6362\u5230" + editionLabels[requested] + "\uFF0C\u8BFB\u53D6\u5BF9\u5E94 CDP \u914D\u7F6E\u2026";
+    $("#cdpState").className = "hint";
+    $("#cdpConnection").textContent = "\u6B63\u5728\u6838\u5BF9\u6240\u9009\u5BA2\u6237\u7AEF\u8FDE\u63A5\u2026";
+    $("#cdpConnection").className = "hint";
+    $("#cdpMessage").textContent = "";
     try {
       if (state.capabilities?.clientEditions !== 1) throw Error("\u8BF7\u5148\u91CD\u542F\u63A7\u5236\u53F0\u4EE5\u542F\u7528\u5BA2\u6237\u7AEF\u7248\u672C\u9009\u62E9");
-      await api("/api/config", { ...config(), clientEdition: previous });
+      await api("/api/config", previousConfig);
       await api("/api/client-edition", { clientEdition: requested });
       $("#model").replaceChildren(new Option("\u6CBF\u7528\u5BA2\u6237\u7AEF\u5F53\u524D\u6A21\u578B", ""));
       initialized = false;
+      lastAutoCdpAttempt = 0;
       await refresh();
-      await refreshCdp();
       notice("\u5DF2\u5207\u6362\u5230" + editionLabels[requested] + "\uFF0C\u6267\u884C\u524D\u5C06\u6838\u5BF9\u5B9E\u9645\u8FDE\u63A5\u3002");
     } catch (e) {
-      $("#clientEdition").value = previous;
+      selectEdition(previous);
       syncEdition();
       notice(e.message, true);
     } finally {
-      $("#clientEdition").disabled = !!state.active || state.readingModels || cdpBusy;
+      editionSwitching = false;
+      await refreshCdp();
+      $("#clientEdition").disabled = !!state.active || state.readingModels || cdpBusy || cdpRefreshing;
     }
   };
   document.querySelectorAll("[name=question]").forEach((e) => e.onchange = syncCustom);
@@ -1624,11 +1644,14 @@ if (traceId) {
   $("#initializationHint").after(resultHelp);
   let cdpBusy = false, cdpRefreshing = false, lastAutoCdpAttempt = 0;
   async function refreshCdp() {
-    if (cdpRefreshing || cdpBusy) return;
+    if (cdpRefreshing || cdpBusy || editionSwitching) return;
     cdpRefreshing = true;
     $("#refreshCdp").disabled = true;
+    $("#clientEdition").disabled = true;
+    const edition = editionValue();
     try {
       let c = await api("/api/cdp-config");
+      if (c.clientEdition && c.clientEdition !== edition) throw Error("\u5BA2\u6237\u7AEF\u7248\u672C\u5DF2\u53D8\u5316\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u540E\u68C0\u67E5\u8FDE\u63A5");
       if (c.allowed === true && !c.connected && !c.busy && !c.restarting && !state?.active && state?.capabilities?.adaptiveCdp === 1 && Date.now() - lastAutoCdpAttempt > 6e4) {
         lastAutoCdpAttempt = Date.now();
         try {
@@ -1654,13 +1677,14 @@ if (traceId) {
       $("#enableCdp").disabled = true;
     } finally {
       cdpRefreshing = false;
-      if (!cdpBusy) $("#refreshCdp").disabled = false;
+      if (!cdpBusy && !editionSwitching) $("#refreshCdp").disabled = false;
+      $("#clientEdition").disabled = !!state.active || state.readingModels || cdpBusy || editionSwitching;
     }
   }
   $("#refreshCdp").textContent = "\u68C0\u67E5\u8FDE\u63A5 / \u91CD\u65B0\u8FDE\u63A5";
   $("#refreshCdp").title = "\u68C0\u67E5\u4E3B\u9875\u9762\u8FDE\u63A5\u53CA\u524D\u6761\u4EFB\u52A1\u4EA4\u63A5\uFF1B\u5168\u90E8\u901A\u8FC7\u540E\u7EE7\u7EED\u5269\u4F59\u961F\u5217\uFF0C\u4E0D\u91CD\u542F\u5BA2\u6237\u7AEF";
   $("#refreshCdp").onclick = async () => {
-    if (cdpBusy || cdpRefreshing) return;
+    if (cdpBusy || cdpRefreshing || editionSwitching) return;
     cdpBusy = true;
     $("#refreshCdp").disabled = true;
     $("#cdpMessage").textContent = "\u6B63\u5728\u5EFA\u7ACB\u8FDE\u63A5\u5E76\u68C0\u67E5\u4E3B\u9875\u9762\u54CD\u5E94\u2026";
@@ -1717,7 +1741,7 @@ if (traceId) {
     token = state.token;
     if (!initialized) {
       const c = state.config;
-      $("#clientEdition").value = c.clientEdition || "enterprise";
+      selectEdition(c.clientEdition || "enterprise");
       syncEdition();
       $(`[name=question][value="${c.question}"]`).checked = true;
       $(`[name=approval][value="${c.approval}"]`).checked = true;
@@ -1747,9 +1771,9 @@ if (traceId) {
       if (Number($("#cdpPort").value) === lastServerCdpPort) $("#cdpPort").value = state.config.cdpPort;
       lastServerCdpPort = state.config.cdpPort;
     }
-    $("#clientEdition").disabled = !!state.active || state.readingModels || cdpBusy;
+    $("#clientEdition").disabled = !!state.active || state.readingModels || cdpBusy || cdpRefreshing || editionSwitching;
     $("#connection").textContent = state.jobs.some((j) => j.status === "RUNNING") ? "\u811A\u672C\u6267\u884C\u4E2D" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CLIENT") ? "\u7B49\u5F85\u5BA2\u6237\u7AEF\u51C6\u5907" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CONNECTION") ? "\u7B49\u5F85 MobileWork \u8FDE\u63A5" : state.active ? "\u811A\u672C\u6392\u961F\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
-    $("#models").disabled = !!state.active || state.readingModels;
+    $("#models").disabled = !!state.active || state.readingModels || editionSwitching;
     if (state.capabilities?.taskIsolation !== 2) batchNotice("\u4EFB\u52A1\u9694\u79BB\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF1A\u8BF7\u5148\u5173\u95ED\u65E7\u63A7\u5236\u53F0\u670D\u52A1\uFF0C\u518D\u8FD0\u884C\u201C\u542F\u52A8\u6D4B\u8BD5\u5E73\u53F0.cmd\u201D\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\uFF1B\u4EC5\u5237\u65B0\u9875\u9762\u4E0D\u80FD\u5347\u7EA7\u670D\u52A1\u3002", true);
     if (state.capabilities?.serialOnly !== 1) batchNotice("\u4E32\u884C\u8C03\u5EA6\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u4EFB\u52A1\u7A7A\u95F2\u540E\u91CD\u542F\u63A7\u5236\u53F0\uFF0C\u4ECD\u4F7F\u752818888\u7AEF\u53E3\u3002", true);
     renderScripts();
