@@ -58,7 +58,7 @@ async function captureRaw(name){
   const viewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
   log('截图超时','通过客户端窗口接口重绘并还原大小后重试一次');
   await page.evaluate(async()=>{
-   const control=window.__OPENWORK_ELECTRON__?.windowControl;
+   const control=(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__)?.windowControl;
    if(!control?.getChromeState||!control?.toggleMaximize)throw Error('客户端不提供窗口重绘接口');
    const before=await control.getChromeState();
    try{await control.toggleMaximize();}

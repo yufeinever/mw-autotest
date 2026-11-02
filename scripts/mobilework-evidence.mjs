@@ -28,12 +28,12 @@ export function createEvidenceRecorder(dir,log=()=>{}){
   try{await page.screenshot({path:path.join(dir,stem+'.png'),timeout:15000});}
   catch(error){
    if(!error.message.includes('Timeout'))throw error;
-   const supported=await page.evaluate(()=>Boolean(window.__OPENWORK_ELECTRON__?.windowControl?.toggleMaximize));
+   const supported=await page.evaluate(()=>Boolean((window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__)?.windowControl?.toggleMaximize));
    if(!supported)throw error;
    const viewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
    log('截图超时','通过客户端窗口接口重绘并还原大小后重试一次');
    await page.evaluate(async()=>{
-    const c=window.__OPENWORK_ELECTRON__.windowControl,original=await c.getChromeState();
+    const c=(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).windowControl,original=await c.getChromeState();
     try{await c.toggleMaximize();}finally{if((await c.getChromeState()).maximized!==original.maximized)await c.toggleMaximize();}
    });
    await page.waitForFunction(v=>innerWidth===v.width&&innerHeight===v.height,viewport,{timeout:5000});

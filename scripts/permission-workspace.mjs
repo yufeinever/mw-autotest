@@ -5,7 +5,7 @@ import path from 'node:path';
 // Never infer the selected directory from a translated label or URL alone.
 export async function readPermissionWorkspace(page,{allowedRoot}){
  const registry=await page.evaluate(async()=>{
-  const info=await window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo');
+  const info=await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo');
   return {baseUrl:info?.baseUrl,token:info?.clientToken};
  });
  const base=new URL(registry.baseUrl);

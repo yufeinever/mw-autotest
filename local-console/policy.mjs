@@ -1,7 +1,9 @@
 import {normalizeRecording} from './recording-config.mjs';
+import {normalizeEdition} from './client-edition.mjs';
 export const approvalLabels = {reject:'拒绝',once:'允许一次',session:'在会话期间允许',full:'开启完全访问权限'};
 export function normalizeConfig(input={}) {
  const provider=input.provider||{};
+ const clientEdition=normalizeEdition(input.clientEdition??'enterprise');
  const rawStepInterval=input.stepInterval;
  const c={version:1,executionStrategy:input.executionStrategy??'serial',maxParallel:Number(input.maxParallel??3),question:input.question??'first',customText:input.customText??'',approval:input.approval??'once',model:input.model??'',cdpPort:Number(input.cdpPort??9223),stepInterval:rawStepInterval===undefined||rawStepInterval===null||rawStepInterval===''?0.5:Number(rawStepInterval),provider:{url:provider.url??'',key:provider.key??'',model:provider.model??'',multimodal:Boolean(provider.multimodal),inputTokens:Number(provider.inputTokens??262144),outputTokens:Number(provider.outputTokens??65536)}};
  if(!['serial','parallel'].includes(c.executionStrategy))throw Error('执行策略无效');
@@ -20,6 +22,7 @@ export function normalizeConfig(input={}) {
  if(!Number.isInteger(c.provider.inputTokens)||c.provider.inputTokens<1||c.provider.inputTokens>10000000)throw Error('输入模型长度无效');
  if(!Number.isInteger(c.provider.outputTokens)||c.provider.outputTokens<1||c.provider.outputTokens>10000000)throw Error('输出模型长度无效');
  if(!Number.isInteger(c.cdpPort)||c.cdpPort<1||c.cdpPort>65535)throw Error('CDP端口无效');
+ c.clientEdition=clientEdition;
  c.recording=normalizeRecording(input.recording);
  return c;
 }

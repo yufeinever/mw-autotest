@@ -26,11 +26,13 @@ import {randomUUID,randomBytes} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {StringDecoder} from 'node:string_decoder';
 import {normalizeConfig} from './policy.mjs';
+import {normalizeEdition,editionLabels} from './client-edition.mjs';
+import {readEnvironment} from './environment.mjs';
 import {readModelOptions} from '../scripts/mobilework-run-policy.mjs';
 import {renderReport} from './report.mjs';
 import {saveClientModel} from './model-config.mjs';
 import {readSessionLogFromPage} from './session-log.mjs';
-import {readCdpConfig,enableCdpConfig,buildInfoPath} from './cdp-config.mjs';
+import {readCdpConfig,enableCdpConfig} from './cdp-config.mjs';
 import {probeCdp,restartClient} from './cdp-restart.mjs';
 import {discoverClientCdpPort} from './cdp-port.mjs';
 import {killScript,stopSession,releaseOwnedLock,releaseNativeFolder,releaseKnowledge,releaseExpert,releaseTool,releaseSkill,releaseComposer,releaseSopRecording} from './stop-job.mjs';
@@ -60,7 +62,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile=buildInfoPath,clientProbe=probeCdp,discoverPort=discoverClientCdpPort,verifyRestartPort=verifyClientRestartPort,composerReleaser=releaseComposer}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile,clientProbe=probeCdp,discoverPort=discoverClientCdpPort,verifyRestartPort=verifyClientRestartPort,composerReleaser=releaseComposer}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -68,6 +70,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  try{state=JSON.parse(await fs.readFile(settingsPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;state={config:normalizeConfig(),scripts:[]};}
  state.scripts=withClientCases(state.scripts,projectRoot);
  state.config=normalizeConfig(state.config);
+ const currentBuildInfo=()=>cdpConfigFile||readEnvironment(state.config.clientEdition).buildInfoPath;
  const jobs=[],batches=[];const active=new Set(),batchStarting=new Set(),taskTokens=new Map(),taskRuntimes=new Map();let readingModels=false,editingCdp=false,unlocking=false;
  const token=randomBytes(24).toString('hex');
  const persist=()=>fs.writeFile(settingsPath,JSON.stringify(state,null,2));
@@ -125,15 +128,16 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  };
  const scheduler=new TaskScheduler({changed:job=>{writeJob(job).catch(()=>{});if(['FAIL','STOPPED'].includes(job.status))active.delete(job.id);}});
  const connectionChecks=new Map(),connectionStates=new Map();
- const checkConnection=(port,{cached=false}={})=>{
+ const checkConnection=(port,{cached=false,clientEdition=state.config.clientEdition}={})=>{
   if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
-  if(connectionChecks.has(port))return connectionChecks.get(port);
+  const key=port+':'+clientEdition;
+  if(connectionChecks.has(key))return connectionChecks.get(key);
   const previous=connectionStates.get(port);
-  if(cached&&previous&&Date.now()-Date.parse(previous.checkedAt)<10000)return Promise.resolve(previous);
-  const pending=Promise.resolve().then(()=>clientProbe(port)).catch(()=>({connected:false,error:'MobileWork连接检查失败，请重新连接。'})).then(result=>{
-   const current={...result,port,checkedAt:new Date().toISOString()};connectionStates.set(port,current);return current;
-  }).finally(()=>connectionChecks.delete(port));
-  connectionChecks.set(port,pending);return pending;
+  if(cached&&previous?.clientEdition===clientEdition&&Date.now()-Date.parse(previous.checkedAt)<10000)return Promise.resolve(previous);
+  const pending=Promise.resolve().then(()=>clientProbe(port,{clientEdition})).catch(()=>({connected:false,error:'MobileWork连接检查失败，请重新连接。'})).then(result=>{
+   const current={...result,port,clientEdition,checkedAt:new Date().toISOString()};connectionStates.set(port,current);return current;
+  }).finally(()=>connectionChecks.delete(key));
+  connectionChecks.set(key,pending);return pending;
  };
  const requireConnection=async config=>{
   const port=config.cdpPort;
@@ -141,8 +145,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   if(scheduler.renderer(port).connectionError)throw Error('MobileWork连接中断，队列已暂停；请点击“检查连接 / 重新连接”后继续。');
   // While a managed task is running, do not attach an extra inspection client.
   // Every queued entry will still run a fresh check when it takes its turn.
-  if(jobs.some(j=>j.status==='RUNNING'))return;
-  const result=await checkConnection(port);
+  const running=jobs.find(j=>j.status==='RUNNING');
+  if(running){if((running.config.clientEdition||'enterprise')!==config.clientEdition)throw Error('执行中不能切换客户端版本');return;}
+  const result=await checkConnection(port,{clientEdition:config.clientEdition});
   if(!result.connected)throw Error(result.error||'MobileWork连接不可用，请重新连接。');
  };
  const recovering=new Map();
@@ -446,7 +451,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
        if(owned.accountMemory){validateAccountMemory(owned.accountMemory,job.composerResources?.accountMemory);const ids=new Set([job.sessionId,...(job.completedSessions||[]).map(item=>item.id)]);if(owned.accountMemory.sourceSessions.some(id=>!ids.has(id)))throw Error('记忆来源必须是本用例登记的阶段会话');}
        if(owned.systemStorage){if(!owned.workspaceResources)throw Error('存储恢复缺本轮空间归属');validateSystemStorage(owned.systemStorage,job.composerResources?.systemStorage);}
        if(owned.conversationSettings)validateConversationSettings(owned.conversationSettings,job.composerResources?.conversationSettings);
-       if(owned.clientRestart){if(owned.clientRestart.originUrl!==owned.url||!(owned.systemSettings?.kind==='theme'||['maf','instruction'].includes(owned.conversationSettings?.kind)))throw Error('重启缺原页面或对应设置恢复归属');validateClientRestart(owned.clientRestart,job.composerResources?.clientRestart);}
+       if(owned.clientRestart){if(owned.clientRestart.originUrl!==owned.url||!(owned.systemSettings?.kind==='theme'||['maf','instruction'].includes(owned.conversationSettings?.kind)))throw Error('重启缺原页面或对应设置恢复归属');validateClientRestart(owned.clientRestart,job.composerResources?.clientRestart,job.config.clientEdition);}
        if(owned.accountLogout){if(owned.accountLogout.originUrl!==owned.url)throw Error('本轮登出恢复页面归属不匹配');validateAccountLogout(owned.accountLogout,job.composerResources?.accountLogout);}
        if(owned.settingsPanel){if(owned.settingsPanel.originUrl!==owned.url)throw Error('本轮设置页面归属不匹配');validateSettingsPanel(owned.settingsPanel,job.composerResources?.settingsPanel);}
        if(owned.messageObservation&&(typeof owned.messageObservation!=='string'||!/^[\da-f-]{36}$/.test(owned.messageObservation)))throw Error('消息观察归属无效');
@@ -579,7 +584,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.config.cdpPort===job.config.cdpPort&&(j.sessionUrl===body.url||j.rootSessions?.some(root=>root.url===body.url)))});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1,clientEditions:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
    if(recordingFolder&&((req.method==='GET'&&recordingFolder[2]==='locations')||(req.method==='POST'&&recordingFolder[2]==='folder'))){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -662,12 +667,25 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(safeError||count!==batch.scripts.length)batch.error=safeError||`仅启动 ${count}/${batch.scripts.length} 条，剩余未执行。`;
     await writeBatch(batch);return send(200,{id:batch.id});
    }
-   if(req.method==='POST'&&url.pathname==='/api/config'){if(editingCdp)return send(409,{error:'正在检查或重启客户端，请稍后保存配置'});state.config=normalizeConfig(body);await persist();return send(200,state.config);}
+   if(req.method==='POST'&&url.pathname==='/api/client-edition'){
+    if(active.size||readingModels||editingCdp||batchStarting.size)return send(409,{error:'执行或排队期间不能切换客户端版本'});
+    const edition=normalizeEdition(body.clientEdition);
+    state.editionConfigs??={};state.editionConfigs[state.config.clientEdition]=state.config;
+    state.config=normalizeConfig(state.editionConfigs[edition]||{...state.config,clientEdition:edition,model:'自动',provider:{},cdpPort:9223});
+    await persist();return send(200,{config:state.config,label:editionLabels[edition]});
+   }
+   if(req.method==='POST'&&url.pathname==='/api/config'){
+    if(editingCdp)return send(409,{error:'正在检查或重启客户端，请稍后保存配置'});
+    const next=normalizeConfig(body);
+    if(next.clientEdition!==state.config.clientEdition&&(active.size||readingModels||batchStarting.size))return send(409,{error:'执行或排队期间不能切换客户端版本'});
+    state.config=next;state.editionConfigs??={};state.editionConfigs[next.clientEdition]=next;
+    await persist();return send(200,state.config);
+   }
    if(req.method==='GET'&&url.pathname==='/api/cdp-config'){
     const port=state.config.cdpPort||9223,busy=editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING');
     const connection=busy?{...(connectionStates.get(port)||{connected:false,port}),busy:true}:await checkConnection(port,{cached:true});
     const renderer=scheduler.renderer(port);
-     return send(200,{...await readCdpConfig(cdpConfigFile),...connection,connectionError:connection.error,preparationError:renderer.preparationError,handoffPending:scheduler.unresolved().size,paused:Boolean(renderer.connectionError||renderer.preparationError||scheduler.unresolved().size),restarting:editingCdp});
+     return send(200,{...await readCdpConfig(currentBuildInfo()),...connection,clientEdition:state.config.clientEdition,connectionError:connection.error,preparationError:renderer.preparationError,handoffPending:scheduler.unresolved().size,paused:Boolean(renderer.connectionError||renderer.preparationError||scheduler.unresolved().size),restarting:editingCdp});
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-check'){
     if(editingCdp||readingModels||jobs.some(j=>j.status==='RUNNING'))return send(409,{error:'正在执行或收尾，请等待完成后检查连接。'});
@@ -678,7 +696,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(!Number.isInteger(port)||port<1||port>65535)throw Error('CDP端口无效');
     const idle=!active.size&&!batchStarting.size&&!recovering.size&&!scheduler.entries.length&&![...scheduler.renderers.values()].some(r=>r.owner||r.waiting.length);
     if(!result.connected&&idle){
-     const discovered=await discoverPort();
+     const discovered=await discoverPort({clientEdition:state.config.clientEdition});
      if(discovered?.port&&discovered.port!==port){
       const candidate=await checkConnection(discovered.port);
       if(candidate.connected){port=discovered.port;result=candidate;if(!scheduler.unresolved().size){state.config.cdpPort=port;await persist();autoSwitched=true;}}
@@ -688,7 +706,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
       const holders=[...scheduler.unresolved()].map(id=>jobs.find(j=>j.id===id)).filter(Boolean);
       if(holders.some(job=>job.config.cdpPort!==port)){
        if(!idle||holders.length!==1)throw Error('仍有其他执行、排队或待交接任务，不能切换恢复端口');
-       const discovered=await discoverPort();
+       const discovered=await discoverPort({clientEdition:state.config.clientEdition});
        if(discovered?.port!==port)throw Error('新端口未确认属于唯一的 MobileWork 主进程');
        const job=holders[0];job.recoveryConnection=await verifyRestartPort(job,port);await writeJob(job);
       }
@@ -708,17 +726,17 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/restart'){
     if(active.size||readingModels||editingCdp||batchStarting.size||recovering.size||scheduler.entries.length||[...scheduler.renderers.values()].some(r=>r.owner||r.waiting.length||r.unresolved.size))return send(409,{error:'控制台仍有执行、排队或待交接任务，请处理完成后重试'});
     editingCdp=true;
-    try{const port=Number(body.port||state.config.cdpPort||9223);const result=await restartClient(path.join(dataDir,'cdp-backups'),port);state.config.cdpPort=result.port;await persist();return send(200,result);}finally{editingCdp=false;}
+    try{const port=Number(body.port||state.config.cdpPort||9223);const result=await restartClient(path.join(dataDir,'cdp-backups'),port,{clientEdition:state.config.clientEdition});state.config.cdpPort=result.port;await persist();return send(200,result);}finally{editingCdp=false;}
    }
    if(req.method==='POST'&&url.pathname==='/api/cdp-config/enable'){
     if(active.size||readingModels||editingCdp)return send(409,{error:'控制台正在执行操作，请结束后重试'});
     editingCdp=true;
-    try{return send(200,await enableCdpConfig(path.join(dataDir,'cdp-backups'),cdpConfigFile));}finally{editingCdp=false;}
+    try{return send(200,await enableCdpConfig(path.join(dataDir,'cdp-backups'),currentBuildInfo()));}finally{editingCdp=false;}
    }
    if(req.method==='POST'&&url.pathname==='/api/models/save'){
     if(active.size||readingModels||editingCdp)return send(409,{error:'客户端正在被操作，请稍后保存模型'});
     readingModels=true;
-    try{const result=await saveClientModel(body);state.config=normalizeConfig({...state.config,model:result.model,provider:{}});await persist();return send(200,result);}finally{readingModels=false;}
+    try{const c=normalizeConfig({...state.config,...body});if(c.clientEdition!==state.config.clientEdition)throw Error('请先切换客户端版本，再保存该版模型');const result=await saveClientModel(c);state.config=normalizeConfig({...state.config,model:result.model,provider:{}});state.editionConfigs??={};state.editionConfigs[state.config.clientEdition]=state.config;await persist();return send(200,result);}finally{readingModels=false;}
    }
    if(req.method==='POST'&&url.pathname==='/api/scripts'){
     if(typeof body.path!=='string'||!path.isAbsolute(body.path))throw Error('请输入脚本的绝对路径');
@@ -741,13 +759,13 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const c=normalizeConfig(body);readingModels=true;
     try{
      if(modelReader)return send(200,await modelReader(c));
-     const browser=await connectClient(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
+     const browser=await connectClient(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000,clientEdition:c.clientEdition});
      try{
       const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的MobileWork主界面');
       const page=pages[0];
-      if(await page.getByRole('button',{name:'停止',exact:true}).filter({visible:true}).count())throw Error('MobileWork 正在运行，请结束后读取模型');
-      return send(200,await readModelOptions(page));
+      if(await page.getByRole('button',{name:/^(停止|允许一次|跳过)$/,exact:true}).filter({visible:true}).count())throw Error('MobileWork 正在运行或等待交互，请结束后读取模型');
+      return send(200,await readModelOptions(page,c));
      }finally{await browser.close();}
     }finally{readingModels=false;}
    }
@@ -780,7 +798,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      await writeJob(job);
      if(job.stopRequested||job.status!=='RUNNING')return;
      job.phase='CHECKING_CONNECTION';await writeJob(job);
-     const connection=await checkConnection(config.cdpPort);
+     const connection=await checkConnection(config.cdpPort,{clientEdition:config.clientEdition});
      if(job.stopRequested||job.status!=='RUNNING')return;
      if(!connection.connected){
       scheduler.waitForConnection(job,connection.error||'MobileWork连接不可用，请重新连接');
@@ -789,7 +807,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }
      job.phase='PREPARING';await writeJob(job);
      if(config.recording.enabled&&!runArgs.includes('--check')){
-      const pending=recorderFactory({config:config.recording,directory:path.join(dataDir,'recordings',job.id),cdpPort:config.cdpPort,onChange:async metadata=>{
+      const pending=recorderFactory({config:config.recording,directory:path.join(dataDir,'recordings',job.id),cdpPort:config.cdpPort,clientEdition:config.clientEdition,onChange:async metadata=>{
        const previous=job.recording?.status;job.recording={...metadata,storage:'recordings'};
        if(previous!==metadata.status){
         const stamp=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',dateStyle:'short',timeStyle:'medium'}).format(new Date());
@@ -802,7 +820,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      }else job.recording={status:config.recording.enabled?'SKIPPED':'DISABLED',config:config.recording};
      if(job.stopRequested||job.status!=='RUNNING'){await finishRecording(job,'stopped');return;}
      const taskToken=randomBytes(24).toString('hex');taskTokens.set(job.id,taskToken);
-     const child=spawn(command,argv,{cwd:projectRoot,windowsHide:true,shell:false,env:{...process.env,MW_TEST_CONFIG_JSON:JSON.stringify(config),MW_MODEL_CONFIG_JSON:JSON.stringify(config.provider),MW_CDP_PORT:String(config.cdpPort),MW_CONSOLE_JOB_ID:job.id,...(info.cooperative?{MW_TASK_CONTROL_URL:`http://${expectedHost}/api/task-control/${job.id}`,MW_TASK_CONTROL_TOKEN:taskToken}:{}),PYTHONIOENCODING:'utf-8'},stdio:['ignore','pipe','pipe']});
+     const child=spawn(command,argv,{cwd:projectRoot,windowsHide:true,shell:false,env:{...process.env,MW_CLIENT_EDITION:config.clientEdition,MW_TEST_CONFIG_JSON:JSON.stringify(config),MW_MODEL_CONFIG_JSON:JSON.stringify(config.provider),MW_CDP_PORT:String(config.cdpPort),MW_CONSOLE_JOB_ID:job.id,...(info.cooperative?{MW_TASK_CONTROL_URL:`http://${expectedHost}/api/task-control/${job.id}`,MW_TASK_CONTROL_TOKEN:taskToken}:{}),PYTHONIOENCODING:'utf-8'},stdio:['ignore','pipe','pipe']});
      job.pid=child.pid;
      const decoders=[new StringDecoder('utf8'),new StringDecoder('utf8')];
      const logPath=path.join(jobDir,'执行日志.txt');let chain=Promise.resolve();
@@ -844,7 +862,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     if(!traceMatch[2]){res.writeHead(302,{Location:'/?trace='+encodeURIComponent(job.id)});res.end();return;}
     let trace,error;
     try{trace=await loadJobTrace(job,traceReader||(async sessionId=>{
-     const browser=await connectClient(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000});
+     const browser=await connectClient(`http://127.0.0.1:${job.config?.cdpPort||state.config.cdpPort||9223}`,{timeout:8000,clientEdition:job.config?.clientEdition});
      try{const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
       if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
       return await readSessionLogFromPage(pages[0],{sessionId,includeChildren:true});
@@ -868,7 +886,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='GET'&&sessionMatch){
     const sessionId=decodeURIComponent(sessionMatch[1]);
     if(!/^ses_[A-Za-z0-9]+$/.test(sessionId))throw Error('会话 ID 无效');
-    const browser=await connectClient(`http://127.0.0.1:${state.config.cdpPort||9223}`,{timeout:8000});
+    const browser=await connectClient(`http://127.0.0.1:${state.config.cdpPort||9223}`,{timeout:8000,clientEdition:state.config.clientEdition});
     try{
      const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
      if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');

@@ -1,6 +1,7 @@
 import {chromium} from 'playwright-core';
 import bundle from 'playwright-core/lib/utilsBundle';
 import {isClientPageUrl,uniqueClientPage} from './client-page.mjs';
+import {assertClientEdition} from './client-edition.mjs';
 
 // Playwright 1.62 exposes ConnectOverCDPTransport. Keep its pinned WebSocket
 // implementation, but expose only the discovered application target to it.
@@ -110,7 +111,7 @@ export function isAccountExternalUrl(value,{origin,route}){
  return ['http:','https:'].includes(url.protocol)&&url.origin===origin&&!url.username&&!url.password&&hash.split('?')[0]===route&&![...url.searchParams.keys(),...query.keys()].some(key=>/^(code|code_verifier|access_token|refresh_token|id_token|state|grant_type|token|ticket|nonce)$/i.test(key));
 }
 
-async function connectDocument(endpoint,{timeout=7000,menu=false,browserViewId,widgetPin,external}={}){
+async function connectDocument(endpoint,{timeout=7000,menu=false,browserViewId,widgetPin,external,clientEdition=process.env.MW_CLIENT_EDITION}={}){
  const url=localEndpoint(endpoint,['http:']);
  if(url.pathname!=='/'||url.search||url.hash)throw Error('MobileWork CDP 地址必须为本机端口根地址');
  if(!Number.isFinite(timeout)||timeout<=0)throw Error('CDP 连接超时必须大于0');
@@ -158,7 +159,10 @@ async function connectDocument(endpoint,{timeout=7000,menu=false,browserViewId,w
   const remaining=deadline-Date.now();if(remaining<=0)throw Error('CDP发现超时');
   transport=new ClientTransport(socketUrl.href,selected.id,{timeout:remaining});
   browser=await chromium.connectOverCDP(transport,{timeout:remaining});
-  if(!menu&&!browserViewId&&!widgetPin&&!external)uniqueClientPage(browser);
+  if(!menu&&!browserViewId&&!widgetPin&&!external){
+   const page=uniqueClientPage(browser);
+   if(clientEdition!==undefined)await assertClientEdition(page,clientEdition);
+  }
   browser.once('disconnected',()=>transport.close());
   return browser;
  }catch(error){

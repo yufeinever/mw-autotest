@@ -10,7 +10,7 @@ export async function readConversationPreferences(page){return page.evaluate(()=
 export async function readSendMessageShortcut(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('openwork.preferences')||'{}').sendMessageShortcut??'enter');}
 export async function readOfficialMaf(page){return page.evaluate(async()=>{const data=await window.__MOBILEWORK__.invoke('models:list');if(data.ok===false)throw Error('读取模型配置失败');return {enabled:data.officialMaf!==false};});}
 export async function readOfficialMafOrigin(page){
- const roots=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('__pathRoots'));if(!path.isAbsolute(roots.dataRootDir))throw blocked('未确认模型配置真实根目录');
+ const roots=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('__pathRoots'));if(!path.isAbsolute(roots.dataRootDir))throw blocked('未确认模型配置真实根目录');
  let raw;try{raw=JSON.parse(await fs.readFile(path.join(roots.dataRootDir,'models.json'),'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;return {explicit:false};}
  return {explicit:!Array.isArray(raw)&&Object.hasOwn(raw,'officialMaf'),...(typeof raw.officialMaf==='boolean'?{storedEnabled:raw.officialMaf}:{})};
 }

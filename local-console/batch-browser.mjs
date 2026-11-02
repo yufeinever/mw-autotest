@@ -44,7 +44,7 @@ export async function showBatch(id){
    if(batch.note)summary.append(el('p',batch.note,'hint'));if(batch.error)summary.append(el('p','批次提交未完成：'+batch.error,'result-fail'));
    summary.append(el('p',`未执行 ${batch.counts.NOT_RUN||0} 条 · 停止 ${batch.counts.STOPPED||0} 条 · 中断 ${batch.counts.INTERRUPTED||0} 条 · ${batch.checks.missing} 条尚无断言；汇总只统计已经产生的断言。`,'hint'));
    const parameters=el('details'),parameterTitle=el('summary','本批次执行参数');parameters.dataset.expansionKey='parameters';parameters.append(parameterTitle);
-   const c=batch.config;if(c){parameters.append(el('p',`选项：${{first:'第一项',second:'第二项',custom:'自定义'}[c.question]||c.question}　审批：${approvalLabels[c.approval]||c.approval}　模型：${c.model||'沿用客户端当前模型'}　CDP：${c.cdpPort}`));if(c.question==='custom')parameters.append(el('p','自定义回答：'+c.customText));}else parameters.append(el('p','历史记录的参数分别保存在各用例报告中。'));
+   const c=batch.config;if(c){parameters.append(el('p',`客户端：${editionLabels[c.clientEdition]||'历史记录未标注'}　选项：${{first:'第一项',second:'第二项',custom:'自定义'}[c.question]||c.question}　审批：${approvalLabels[c.approval]||c.approval}　模型：${c.model||'沿用客户端当前模型'}　CDP：${c.cdpPort}`));if(c.question==='custom')parameters.append(el('p','自定义回答：'+c.customText));}else parameters.append(el('p','历史记录的参数分别保存在各用例报告中。'));
    summary.append(parameters);
    const section=el('section');section.append(el('h2','用例执行明细'),el('p','查看报告可展开过程、截图与断言；点击录像可播放、按关键截图时间跳转、下载或打开本地文件夹。Session 日志和 Trace 按对应会话保留。','hint'));
    const scroll=el('div',undefined,'table batch-case-table'),table=el('table'),thead=el('thead'),head=el('tr');
@@ -84,3 +84,4 @@ export async function showBatch(id){
  }
  await refresh();const timer=setInterval(refresh,2000);window.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
 }
+import {editionLabels} from './client-edition.mjs';

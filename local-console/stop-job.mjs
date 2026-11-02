@@ -47,7 +47,7 @@ async function adoptRecordingSubmission(page,job,checkpoint){
 // checkpoint until its recorder, late continuation and both Sessions settle.
 export async function releaseSopRecording(job,{allowAbort=false,checkpoint=async()=>{}}={}){
  if(!job.recordingResources)return;
- const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   await adoptRecordingSubmission(page,job,checkpoint);
@@ -64,7 +64,7 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
  if(job.expertResources)throw Error('本轮专家安装、召唤或历史尚未收尾，保留模块入口及输入区资源');
  if(!job.composerResources)return;
  const reconnected=await resumeClientRestart(job.composerResources,job.config,{checkpoint});
- const browser=reconnected?.browser||await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ const browser=reconnected?.browser||await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   await releaseAccountLogout(page,job.composerResources,{checkpoint});
@@ -146,7 +146,7 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
 }
 export async function releaseSkill(job){
  if(!job.skillResources)return;
- const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   if(await composerFieldOf(page).count()===1){
@@ -158,7 +158,7 @@ export async function releaseSkill(job){
 }
 export async function releaseTool(job){
  if(!job.toolResources)return;
- const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   if(await composerFieldOf(page).count()===1){
@@ -177,7 +177,7 @@ export async function releaseTool(job){
 export async function releaseExpert(job,{checkpoint=async()=>{}}={}){
  if(job.recordingResources)throw Error('本轮SOP录制尚未完成收尾，保留专家资源及历史');
  if(!job.expertResources)return;
- const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   const handoff=job.expertResources.summonTarget&&job.composerResources?await inspectModuleHandoff(page,job.composerResources):null;
@@ -203,7 +203,7 @@ export async function releaseNativeFolder(job){
 }
 export async function releaseKnowledge(job){
  if(!job.knowledge)return;
- const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   await closeKnowledgeSettings(page,job.knowledge);
@@ -243,7 +243,7 @@ export async function stopSession(job,{connection}={}){
   if(response.status===404){job.sessionSettled=true;job.sessionMissing=true;return '客户端会话已不存在，确认停止 '+id;}
   if(!response.ok||await response.json()!==true)throw Error('客户端未确认停止本次会话');return '客户端已确认停止本次会话 '+id;
  }
- const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000});
+ const browser=await connectClient(`http://127.0.0.1:${job.config.cdpPort||9223}`,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const page=uniqueClientPage(browser);
   if(!page)throw Error('未找到客户端主界面');

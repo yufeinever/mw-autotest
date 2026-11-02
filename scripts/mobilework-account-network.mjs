@@ -21,7 +21,7 @@ export async function applyAccountNetworkFault(context){
  try{pid=(await cdp.send('SystemInfo.getProcessInfo')).processInfo.find(process=>process.type==='browser')?.id;}finally{await cdp.detach();}
  if(!Number.isInteger(pid))throw blocked('无法确认客户端主进程，未改变网络');
  const process=await accountNetworkCommand('process',{pid});if(!process.administrator)throw blocked('169需要管理员权限创建仅限客户端门户地址的临时规则；未全局断网');
- const portal=await context.page.evaluate(async()=>{const {portal}=await window.__OPENWORK_ELECTRON__.invokeDesktop('runtimeEndpoints');return portal;});
+ const portal=await context.page.evaluate(async()=>{const {portal}=await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('runtimeEndpoints');return portal;});
  const url=new URL(portal);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw blocked('未取得有效门户地址，未改变网络');
  const addresses=[...new Set((await lookup(url.hostname,{all:true})).map(item=>item.address))].sort();
  const owned={name:'MW-Autotest-Network-169-'+randomUUID(),pid,program:process.program,addresses,port:Number(url.port)||(url.protocol==='https:'?443:80)};

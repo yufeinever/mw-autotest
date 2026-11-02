@@ -1,4 +1,5 @@
 import {showBrowserTrace} from './trace-browser.mjs';
+import {editionLabels} from './client-edition.mjs';
 import {scriptsInSuite,suiteLabels} from './script-groups.mjs';
 import {showBatch} from './batch-browser.mjs';
 import {appendResultDescription,resultGuide,describeResult} from './result-display.mjs';
@@ -26,8 +27,27 @@ const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script
 function recordingConfig(){return {enabled:$('#recordingEnabled').checked,resolution:$('#recordingResolution').value,fps:Number($('#recordingFps').value),bitrateKbps:Number($('#recordingBitrate').value),maxSeconds:Number($('#recordingMaxSeconds').value||600)};}
 function syncRecording(){const c=recordingConfig();for(const id of ['recordingResolution','recordingFps','recordingBitrate','recordingMaxSeconds'])$('#'+id).disabled=!c.enabled;$('#recordingEstimate').textContent=c.enabled?`录满 ${c.maxSeconds} 秒约 ${(c.bitrateKbps*c.maxSeconds/8000).toFixed(1)} MB（按目标平均码率估算）。到时仅停止录像，用例继续执行。`:'录像已关闭。';}
 for(const id of ['recordingEnabled','recordingResolution','recordingFps','recordingBitrate','recordingMaxSeconds'])$('#'+id).addEventListener('input',syncRecording);
-function config(){const interval=$('#stepInterval').value.trim();return {recording:recordingConfig(),executionStrategy:'serial',maxParallel:1,question:$('[name=question]:checked').value,customText:$('#customText').value,approval:$('[name=approval]:checked').value,model:$('#model').value,cdpPort:Number($('#cdpPort').value),stepInterval:interval===''?0.5:Number(interval),provider:{url:$('#providerUrl').value,key:$('#providerKey').value,model:$('#providerModel').value,multimodal:$('#providerMulti').checked,inputTokens:Number($('#inputTokens').value),outputTokens:Number($('#outputTokens').value)}};}
+function config(){const interval=$('#stepInterval').value.trim();return {clientEdition:$('#clientEdition').value,recording:recordingConfig(),executionStrategy:'serial',maxParallel:1,question:$('[name=question]:checked').value,customText:$('#customText').value,approval:$('[name=approval]:checked').value,model:$('#model').value,cdpPort:Number($('#cdpPort').value),stepInterval:interval===''?0.5:Number(interval),provider:{url:$('#providerUrl').value,key:$('#providerKey').value,model:$('#providerModel').value,multimodal:$('#providerMulti').checked,inputTokens:Number($('#inputTokens').value),outputTokens:Number($('#outputTokens').value)}};}
 function modelOption(name){if(![...$('#model').options].some(o=>o.value===name))$('#model').add(new Option(name,name));}
+function syncEdition(){
+ const label=editionLabels[$('#clientEdition').value];
+ $('#editionHint').textContent='当前选择：'+label;
+ $('#clientEdition').title='分别保存两版交互与模型配置；执行前核对实际客户端，版本不匹配时不提交任务。';
+ $('#approvalSettings').title=label+'：按所选方式处理审批；开启完全访问需完成客户端二次确认。权限专项用例固定拒绝。';
+ $('#model').title='只选择'+label+'实际提供的模型；切换客户端版本时加载该版已保存选择，首次默认自动。';
+}
+$('#clientEdition').onchange=async()=>{
+ const requested=$('#clientEdition').value,previous=state.config.clientEdition||'enterprise';
+ $('#clientEdition').disabled=true;
+ try{
+  if(state.capabilities?.clientEditions!==1)throw Error('请先重启控制台以启用客户端版本选择');
+  await api('/api/config',{...config(),clientEdition:previous});
+  await api('/api/client-edition',{clientEdition:requested});
+  $('#model').replaceChildren(new Option('沿用客户端当前模型',''));
+  initialized=false;await refresh();await refreshCdp();notice('已切换到'+editionLabels[requested]+'，执行前将核对实际连接。');
+ }catch(e){$('#clientEdition').value=previous;syncEdition();notice(e.message,true);}
+ finally{$('#clientEdition').disabled=!!state.active||state.readingModels||cdpBusy;}
+};
 function syncCustom(){$('#customText').disabled=$('[name=question]:checked').value!=='custom';}
 document.querySelectorAll('[name=question]').forEach(e=>e.onchange=syncCustom);
 function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
@@ -70,9 +90,9 @@ $('#restartCdp').onclick=async()=>{cdpBusy=true;$('#restartCdp').disabled=true;$
 $('#enableCdp').onclick=async()=>{cdpBusy=true;$('#enableCdp').disabled=true;try{const r=await api('/api/cdp-config/enable',{});$('#cdpMessage').textContent=r.changed?'已设为 true，备份：'+r.backup+'。请在当前任务结束后，以 CDP 启动配置重启客户端。':'已是 true，无需修改。';}catch(e){$('#cdpMessage').textContent=e.message;}finally{cdpBusy=false;await refreshCdp();}};
 async function refresh(){
  state=await api('/api/state');token=state.token;
- if(!initialized){const c=state.config;$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;lastServerCdpPort=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;const v=c.recording||{};$('#recordingEnabled').checked=v.enabled??true;$('#recordingResolution').value=v.resolution||'960x540';$('#recordingFps').value=v.fps||30;$('#recordingBitrate').value=v.bitrateKbps||600;$('#recordingMaxSeconds').value=v.maxSeconds||600;syncRecording();if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
+ if(!initialized){const c=state.config;$('#clientEdition').value=c.clientEdition||'enterprise';syncEdition();$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;lastServerCdpPort=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;const v=c.recording||{};$('#recordingEnabled').checked=v.enabled??true;$('#recordingResolution').value=v.resolution||'960x540';$('#recordingFps').value=v.fps||30;$('#recordingBitrate').value=v.bitrateKbps||600;$('#recordingMaxSeconds').value=v.maxSeconds||600;syncRecording();if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
  else if(state.config.cdpPort!==lastServerCdpPort){if(Number($('#cdpPort').value)===lastServerCdpPort)$('#cdpPort').value=state.config.cdpPort;lastServerCdpPort=state.config.cdpPort;}
- $('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CLIENT')?'等待客户端准备':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
+ $('#clientEdition').disabled=!!state.active||state.readingModels||cdpBusy;$('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CLIENT')?'等待客户端准备':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels;
  if(state.capabilities?.taskIsolation!==2)batchNotice('任务隔离升级尚未加载：请先关闭旧控制台服务，再运行“启动测试平台.cmd”，仍使用18888端口；仅刷新页面不能升级服务。',true);
  if(state.capabilities?.serialOnly!==1)batchNotice('串行调度升级尚未加载，请在任务空闲后重启控制台，仍使用18888端口。',true);
  renderScripts();

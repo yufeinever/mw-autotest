@@ -5,21 +5,20 @@ import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
 import {enableCdpConfig} from './cdp-config.mjs';
-import {testEnvironment} from './environment.mjs';
+import {readEnvironment} from './environment.mjs';
 import {probeCdp} from './cdp-readiness.mjs';
 import {discoverClientCdpPort,selectAvailableCdpPort} from './cdp-port.mjs';
 export {probeCdp} from './cdp-readiness.mjs';
 const exec=promisify(execFile);
-const executable=testEnvironment.clientExecutable;
 const ps=async script=>(await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:15000})).stdout.trim();
-async function processes(){
+async function processes(executable){
  const escaped=executable.replaceAll("'","''");
  const raw=await ps(`@(Get-CimInstance Win32_Process -Filter "Name='MobileWork.exe'" | Where-Object { $_.ExecutablePath -eq '${escaped}' -and $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId) | ConvertTo-Json -Compress`);
  return raw?[JSON.parse(raw)].flat().map(p=>p.ProcessId):[];
 }
-async function assertIdle(port){
- if((await probeCdp(port)).connected){
-  const browser=await connectClient(`http://127.0.0.1:${port}`,{timeout:5000});
+async function assertIdle(port,environment){
+ if((await probeCdp(port,{clientEdition:environment.edition})).connected){
+  const browser=await connectClient(`http://127.0.0.1:${port}`,{timeout:5000,clientEdition:environment.edition});
   try{const page=uniqueClientPage(browser);
    const busy=await page.evaluate(async()=>{
     const buttons=[...document.querySelectorAll('button')].filter(b=>b.getClientRects().length).map(b=>(b.getAttribute('aria-label')||b.textContent).trim());
@@ -31,7 +30,7 @@ async function assertIdle(port){
   }finally{await browser.close();}return;
  }
  // CDP is off: use the application's local UI bridge, never assume idle from a closed port.
- const d=JSON.parse(await fs.readFile(testEnvironment.discoveryPath,'utf8'));
+ const d=JSON.parse(await fs.readFile(environment.discoveryPath,'utf8'));
  if(typeof d?.baseUrl!=='string'||!d.baseUrl.trim())throw Error('客户端本地接口尚未就绪，无法核实空闲；未退出客户端');
  const r=await fetch(d.baseUrl.replace(/\/$/,'')+'/snapshot',{headers:{Authorization:'Bearer '+d.token},signal:AbortSignal.timeout(5000)});
  if(!r.ok)throw Error('无法检查客户端状态，请先手动完全退出客户端，再点击按钮启动');
@@ -50,32 +49,33 @@ export async function requestClientQuit(connected,connect){
   const page=uniqueClientPage(browser);
   if(!page)throw Error('未找到 MobileWork 主界面，未执行退出');
   await page.evaluate(()=>{
-   if(typeof window.__OPENWORK_ELECTRON__?.shell?.quit!=='function')throw Error('当前版本没有正常退出接口');
+   if(typeof (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__)?.shell?.quit!=='function')throw Error('当前版本没有正常退出接口');
    // Let evaluation return before shutdown disconnects the CDP transport.
-   setTimeout(()=>window.__OPENWORK_ELECTRON__.shell.quit(),100);
+   setTimeout(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).shell.quit(),100);
   });
  }finally{await browser.close();}
 }
-export async function restartClient(backupDir,requestedPort=9223){
+export async function restartClient(backupDir,requestedPort=9223,{clientEdition='enterprise'}={}){
+ const environment=readEnvironment(clientEdition),executable=environment.clientExecutable;
  if(!Number.isInteger(requestedPort)||requestedPort<1||requestedPort>65535)throw Error('CDP端口无效');
  let ids=[],port=requestedPort;
  return restartFlow({
   checkIdle:async()=>{
-   ids=await processes();if(ids.length>1)throw Error('存在多个客户端主进程，无法安全重启');
+   ids=await processes(executable);if(ids.length>1)throw Error('存在多个客户端主进程，无法安全重启');
    if(ids.length){
-    const current=await discoverClientCdpPort();
+    const current=await discoverClientCdpPort({clientEdition});
     if(!current)throw Error('当前客户端没有可用的 CDP，无法自动正常退出。请右键系统托盘中的 MobileWork 图标选择“退出”，再点击“一键启用并重启”。');
     port=current.port;
-    await assertIdle(port);
+    await assertIdle(port,environment);
    }
   },
-  enable:()=>enableCdpConfig(backupDir),
-  close:async()=>{if(!ids.length)return;await assertIdle(port);
-   const id=ids[0];await requestClientQuit((await probeCdp(port)).connected,()=>connectClient(`http://127.0.0.1:${port}`,{timeout:5000}));
-   for(let i=0;i<40;i++){if(!(await processes()).includes(id))return;await new Promise(r=>setTimeout(r,500));}
+  enable:()=>enableCdpConfig(backupDir,environment.buildInfoPath),
+  close:async()=>{if(!ids.length)return;await assertIdle(port,environment);
+   const id=ids[0];await requestClientQuit((await probeCdp(port,{clientEdition})).connected,()=>connectClient(`http://127.0.0.1:${port}`,{timeout:5000,clientEdition}));
+   for(let i=0;i<40;i++){if(!(await processes(executable)).includes(id))return;await new Promise(r=>setTimeout(r,500));}
    throw Error('已请求正常退出，但客户端仍在后台运行，请从托盘退出后重试；未强制终止进程');
   },
   launch:async()=>{port=await selectAvailableCdpPort(port);return new Promise((resolve,reject)=>{const child=spawn(executable,[],{detached:true,stdio:'ignore',windowsHide:false,env:{...process.env,OPENWORK_ELECTRON_REMOTE_DEBUG_PORT:String(port)}});child.once('error',()=>reject(Error('无法启动 MobileWork，请检查安装路径')));child.once('spawn',()=>{child.unref();resolve();});});},
-  probe:()=>probeCdp(port)
+  probe:()=>probeCdp(port,{clientEdition})
  });
 }

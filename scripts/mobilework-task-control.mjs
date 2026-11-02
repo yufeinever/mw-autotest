@@ -62,7 +62,7 @@ export class TaskControl {
   // Credentials remain in this process only, never in scheduler state/reports.
   this.connection=await page.evaluate(async()=>{
    for(let n=0;n<40;n++){
-    const i=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
+    const i=await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('engineInfo');
     if(typeof i?.baseUrl==='string'&&i.baseUrl.trim()){
      const redactionSecrets=[];
      try{const data=await window.__MOBILEWORK__.invoke('models:list');for(const model of data.models||[])if(typeof model.apiKey==='string'&&model.apiKey)redactionSecrets.push(model.apiKey);}catch{}

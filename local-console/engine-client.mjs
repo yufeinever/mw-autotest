@@ -1,7 +1,7 @@
 // Credentials stay in the Node process; renderer origins never issue engine HTTP requests.
 export async function readEngineConnection(page){
  const info=await page.evaluate(async()=>{
-  const i=await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
+  const i=await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('engineInfo');
   const redactionSecrets=[];
   try{const data=await window.__MOBILEWORK__.invoke('models:list');for(const m of data.models||[])if(m.apiKey)redactionSecrets.push(m.apiKey);}catch{}
   return {baseUrl:i?.baseUrl,opencodeUsername:i?.opencodeUsername,opencodePassword:i?.opencodePassword,redactionSecrets};

@@ -5,7 +5,7 @@ const blocked=message=>Object.assign(Error(message),{blocked:true});
 export const resourceHash=value=>createHash('sha256').update(JSON.stringify(value??null)).digest('hex');
 
 export async function readLocalSkill(page,projectDir,id){
- return page.evaluate(({projectDir,id})=>window.__OPENWORK_ELECTRON__.invokeDesktop('readLocalSkill',projectDir,id),{projectDir,id});
+ return page.evaluate(({projectDir,id})=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('readLocalSkill',projectDir,id),{projectDir,id});
 }
 
 export async function releaseManagedSkills(page,owned,{modelSettled=false}={}){

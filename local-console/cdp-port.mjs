@@ -1,16 +1,16 @@
 import {execFile} from 'node:child_process';
 import {createServer} from 'node:net';
 import {promisify} from 'node:util';
-import {testEnvironment} from './environment.mjs';
+import {readEnvironment} from './environment.mjs';
 import {probeCdp} from './cdp-readiness.mjs';
 
 const exec=promisify(execFile);
 
 // Only consider a debug port advertised by a child of the installed client
 // and actually owned by its unique main process.
-export async function discoverClientCdpPort(){
+export async function discoverClientCdpPort({clientEdition='enterprise'}={}){
  if(process.platform!=='win32')return null;
- const executable=testEnvironment.clientExecutable.replaceAll("'","''");
+ const executable=readEnvironment(clientEdition).clientExecutable.replaceAll("'","''");
  const script=`$items=@(Get-CimInstance Win32_Process -Filter "Name='MobileWork.exe'" | Where-Object { $_.ExecutablePath -eq '${executable}' });
  $main=@($items | Where-Object { $_.CommandLine -notmatch '--type=' });
  $ports=@();
@@ -25,7 +25,7 @@ export async function discoverClientCdpPort(){
  if(result.mainCount>1)throw Error('存在多个 MobileWork 主进程，无法自动识别调试端口');
  const ports=[...new Set((result.ports||[]).map(Number).filter(port=>Number.isInteger(port)&&port>0&&port<=65535))];
  const connected=[];
- for(const port of ports){const state=await probeCdp(port);if(state.connected)connected.push(state);}
+ for(const port of ports){const state=await probeCdp(port,{clientEdition});if(state.connected)connected.push(state);}
  if(connected.length>1)throw Error('发现多个有效的 MobileWork 调试端口，无法自动选择');
  return connected[0]||null;
 }

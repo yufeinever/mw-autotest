@@ -2,7 +2,7 @@
 export async function startUpdateObservation(page, owner, {snapshotOnly=false}={}) {
  return page.evaluate(async ({owner,snapshotOnly}) => {
   if (window.__MW_UPDATE_OBSERVER__) throw Error('已有未结束的更新观察');
-  const updater=window.__OPENWORK_ELECTRON__?.autoUpdate;
+  const updater=(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__)?.autoUpdate;
   if (!updater?.getState||!updater?.onState) throw Error('客户端未提供更新状态订阅');
   const project=(value,kind)=>({
    kind,at:Date.now(),state:value?.state??null,checkSource:value?.checkSource??null,

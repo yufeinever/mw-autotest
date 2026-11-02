@@ -37,7 +37,7 @@ export function disposableReminder(baseline,meetings,now=Date.now()){
  return actual?.reminder?.leadMinutes===5&&!actual.reminder.claimedAt&&!actual.reminder.firedAt?{fact,actual}:null;
 }
 export async function mailClient(page){
- const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo')),url=new URL(info.baseUrl);
+ const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo')),url=new URL(info.baseUrl);
  if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('邮箱服务不是本机地址');
  const headers={Authorization:'Bearer '+(info.ownerToken||info.clientToken),'content-type':'application/json',...(info.hostToken?{'X-OpenWork-Host-Token':info.hostToken}:{})};
  return async(route,{method='GET',body}={})=>{

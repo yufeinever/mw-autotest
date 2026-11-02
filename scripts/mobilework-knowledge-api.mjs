@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import {settleSkillReload} from './mobilework-skill-resources.mjs';
 
 export async function knowledgeClient(page){
- const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo'));
+ const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo'));
  const url=new URL(info.baseUrl);
  if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('知识库服务地址不是本机地址');
  const base=info.baseUrl.replace(/\/$/,''),headers={Authorization:'Bearer '+(info.ownerToken||info.clientToken),'content-type':'application/json'};

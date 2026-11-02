@@ -17,6 +17,8 @@
 
 客户端CDP统一通过`local-console/client-connection.mjs`连接已识别的唯一主页面，禁止各入口直接全页面附加；菜单按确切`overlay.html`地址、内嵌浏览器按本Session的`viewId`、固定组件按本轮`canvasId/widgetId`定向连接，保留无关附属窗口，失败及断开必须释放本次传输。连接成功后仍须核对会话、网页及原生窗口交接，才能继续队列。
 
+政企版/公众版通过`clientEdition`选择，复用`local-console/client-edition.mjs`校验真实接口及版别；安装路径、模型和交互参数分版保存，子进程继承所选版别，收尾及Trace使用原job快照。未知或不匹配版本明确阻塞，不向客户端注入旧版全局别名。
+
 同条用例验证多个产品任务时复用`RootSessionGroup`，逐根登记真实Session、提交边界、目录及证据，由单循环依次处理页面交互；全部根和待提交任务确认结束后才释放共享空间/模型基线、放行下条。不同用例仍严格串行。
 
 模块跳转新任务前登记目标及原工作空间，复用`mobilework-module-handoff.mjs`核对实际草稿与选择；允许产品的`#/session`入口，不以地址相似接管未知内容。

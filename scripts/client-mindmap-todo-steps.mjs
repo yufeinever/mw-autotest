@@ -72,7 +72,7 @@ export async function runMindmapTodoSteps(context){
   const text=await archive('成长计划转换.md'),original=headingTree(input.toString('utf8')),converted=headingTree(text);await save('脑图转换层级对照.json',{original,converted});
   assert('转为真实Markdown且全部节点父子顺序保留',original.length===21&&sameCards(original,converted));finish('Markdown真实产物及节点层级');
   await ui(async()=>{const panel=await previewTaskFile(page,config,'成长计划转换.md',capture),actual=await panel.innerText();assert('转换后Markdown实际预览含核心节点',['星桥成长计划','每周整理三条笔记','根据反馈调整目标'].every(fact=>actual.includes(fact)));await capture('转换后Markdown实际预览');});
-  const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo')),base=new URL(info.baseUrl);
+  const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo')),base=new URL(info.baseUrl);
   if(base.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(base.hostname))throw Error('客户端文件下载接口不是本机地址');
   const workspaceId=page.url().match(/#\/workspace\/([^/]+)\/session\//)[1];
   const response=await fetch(info.baseUrl.replace(/\/$/,'')+'/workspace/'+encodeURIComponent(workspaceId)+'/files/raw?path='+encodeURIComponent('成长计划转换.md')+'&sessionId='+encodeURIComponent(getSessionId()),{headers:{Authorization:'Bearer '+(info.ownerToken||info.clientToken)}});

@@ -14,7 +14,7 @@ export function ownedAccountTarget(targets,owned){
 }
 export async function prepareAccountExternal(context,route){
  const endpoint=process.env.MW_TEST_SYSTEM_BROWSER_CDP_ENDPOINT;if(!endpoint)throw blocked('系统默认浏览器未配置MW_TEST_SYSTEM_BROWSER_CDP_ENDPOINT，无法真实验证外链页面；未点击跳转');
- const portal=await context.page.evaluate(async()=>{const {portal}=await window.__OPENWORK_ELECTRON__.invokeDesktop('runtimeEndpoints');return portal;});
+ const portal=await context.page.evaluate(async()=>{const {portal}=await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('runtimeEndpoints');return portal;});
  // Validate the configured local endpoint before issuing any discovery request.
  const owned={endpoint:new URL(endpoint).href,origin:new URL(portal).origin,route,beforeIds:[],submitted:false,targetId:null};validateAccountExternal(owned);
  owned.beforeIds=(await accountBrowserTargets(owned.endpoint)).map(target=>target.id);context.resources.accountExternal=owned;await context.checkpointResources();return owned;

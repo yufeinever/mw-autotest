@@ -5,11 +5,11 @@ export async function saveClientModel(input){
  const c=normalizeConfig(input),p=c.provider;
  if(!p.url.trim()||!p.model.trim()||!p.key.trim())throw Error('请填写 URL、Key 和模型名称');
  const url=new URL(p.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('请输入有效的 HTTP/HTTPS URL');
- const browser=await connectClient(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000});
+ const browser=await connectClient(`http://127.0.0.1:${c.cdpPort}`,{timeout:8000,clientEdition:c.clientEdition});
  try{
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('没有唯一的 MobileWork 主界面');
-  const page=pages[0];if(await page.getByRole('button',{name:'停止',exact:true}).filter({visible:true}).count())throw Error('客户端正在执行任务，请结束后保存模型');
+  const page=pages[0];if(await page.getByRole('button',{name:/^(停止|允许一次|跳过)$/}).filter({visible:true}).count())throw Error('客户端正在执行任务，请结束后保存模型');
   return await page.evaluate(async p=>{
    const api=window.__MOBILEWORK__;const before=await api.invoke('models:list');
    if(!Array.isArray(before.models))throw Error('客户端模型列表不可读取');

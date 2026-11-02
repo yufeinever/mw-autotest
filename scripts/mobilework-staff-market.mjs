@@ -2,7 +2,7 @@
 // client's main process; neither the executor nor reports receive credentials.
 export async function readStaffService(page,route,params={}){
  return page.evaluate(async({route,params})=>{
-  const {portal}=await window.__OPENWORK_ELECTRON__.invokeDesktop('runtimeEndpoints');
+  const {portal}=await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('runtimeEndpoints');
   if(!portal)throw Error('数智员工门户地址未配置');
   const query=new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
   const response=await window.__MOBILEWORK__.invoke('assets:fetch',{path:portal.replace(/\/+$/,'')+'/mw2yunxi'+route+(query.size?'?'+query:''),method:'GET'});

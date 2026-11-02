@@ -7,7 +7,7 @@ const route='/p/portal/manual';
 export async function prepareHelpExternal(context){
  const endpoint=process.env.MW_TEST_SYSTEM_BROWSER_CDP_ENDPOINT;
  if(!endpoint)throw blocked('系统默认浏览器未配置本机CDP，无法核对帮助文档；未点击外链');
- const domain=await context.page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('portalBaseDomainName'));
+ const domain=await context.page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('portalBaseDomainName'));
  if(typeof domain!=='string'||!domain.trim())throw blocked('客户端未配置帮助文档门户地址');
  const origin=new URL(domain.trim().replace(/\/+$/,'')+':9070').origin;
  const owned={endpoint:new URL(endpoint).href,origin,route,beforeIds:[],submitted:false,targetId:null};

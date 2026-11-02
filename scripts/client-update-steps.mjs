@@ -15,7 +15,7 @@ export async function runUpdateSteps(context){
   const account=await readAccountSession(page);
   if(!account.signedIn||account.validation!=='valid')throw blocked('更新用例需要已验证登录的测试账号；未检查或触发更新');
   const available=await page.evaluate(()=>({
-   updater:typeof window.__OPENWORK_ELECTRON__?.autoUpdate?.getState==='function'&&typeof window.__OPENWORK_ELECTRON__?.autoUpdate?.onState==='function',
+   updater:typeof (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__)?.autoUpdate?.getState==='function'&&typeof (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__)?.autoUpdate?.onState==='function',
    observerInUse:Boolean(window.__MW_UPDATE_OBSERVER__),
   }));
   if(!available.updater)throw blocked('当前客户端未提供更新状态读取与订阅；未触发更新');

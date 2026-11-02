@@ -32,7 +32,7 @@ export async function resolveRecordingRuntimeDbPath(page,{runtimeDbPath}={}){
   requireValue(absolute(runtimeDbPath),'显式录制运行库路径必须为绝对路径');
   return {runtimeDbPath,source:'explicit'};
  }
- const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo'));
+ const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo'));
  const base=new URL(info.baseUrl);
  requireValue(base.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(base.hostname)&&!base.username&&!base.password,'录制路径读取仅允许当前本机产品服务');
  const response=await fetch(info.baseUrl.replace(/\/$/,'')+'/status',{headers:{Authorization:'Bearer '+(info.clientToken||info.ownerToken)},signal:AbortSignal.timeout(5000)});

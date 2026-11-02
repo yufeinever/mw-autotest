@@ -1,4 +1,5 @@
 import {normalizeConfig,approvalLabels} from '../local-console/policy.mjs';
+import {assertClientEdition,editionProfiles} from '../local-console/client-edition.mjs';
 
 export async function waitStep(page,config={}){
  const seconds=normalizeConfig({stepInterval:config.stepInterval}).stepInterval;
@@ -103,6 +104,7 @@ async function stableModelSnapshot(page,name,{timeoutMs=10000,stableMs=1000}={})
  throw Error('模型列表在10秒内未稳定，保留现场，请稍后重试');
 }
 export async function readModelOptions(page,config={}){
+ if(config.clientEdition)await assertClientEdition(page,config.clientEdition);
  const trigger=await modelTrigger(page);
  const current=(await trigger.innerText()).trim()||await trigger.getAttribute('aria-label');
  await waitStep(page,config);await trigger.click();
@@ -112,8 +114,9 @@ export async function readModelOptions(page,config={}){
   try{return {current,models:await snapshot.evaluate(s=>s.models)};}finally{await snapshot.dispose();}
  }finally{await waitStep(page,config);await page.keyboard.press('Escape');}
 }
-export async function selectModel(page,name,{stepInterval=0.5,expectedIdentity}={}){
+export async function selectModel(page,name,{stepInterval=0.5,expectedIdentity,clientEdition}={}){
  if(!name)return null;
+ if(clientEdition)await assertClientEdition(page,clientEdition);
  const trigger=await modelTrigger(page);await waitStep(page,{stepInterval});await trigger.click();
  await page.getByRole('listbox').filter({visible:true}).waitFor({timeout:5000});
  await waitStep(page,{stepInterval});
@@ -144,7 +147,7 @@ export async function selectModel(page,name,{stepInterval=0.5,expectedIdentity}=
  }
  if(!clicked)throw Error('模型选项持续刷新，未能安全选择：'+name);
  await page.getByRole('listbox').filter({visible:true}).waitFor({state:'hidden',timeout:5000});
- const verify=await readModelOptions(page,{stepInterval});
+ const verify=await readModelOptions(page,{stepInterval,clientEdition});
  const matches=verify.models.filter(m=>m.name===name);
  if(matches.length!==1||!matches[0].selected||(selectedValue!==null&&matches[0].value!==selectedValue)||(selectedIdentity&&JSON.stringify(matches[0].identity)!==JSON.stringify(selectedIdentity)))throw Error('模型切换未生效或目标已变化：'+name);
  return name;
@@ -220,6 +223,7 @@ export async function questionPanel(page){
  return null;
 }
 export async function handleConfiguredDialog(page,config,capture,log,{kind,expectedQuestions=[],expectedPermission,canAct=async()=>true,clickTimeoutMs=2000,clickRecoveryMs=5000}={}){
+ if(config.clientEdition)await assertClientEdition(page,config.clientEdition);
  const originUrl=page.url();
  const fail=message=>{throw Object.assign(Error(message),{blocked:true});};
  const checkReload=async()=>{
@@ -232,7 +236,8 @@ export async function handleConfiguredDialog(page,config,capture,log,{kind,expec
   if(await approve.count()!==1)throw Error('存在多个审批面板，不能确定本次审批');
   let panel=approve;
   for(let i=0;i<10;i++){panel=panel.locator('..');if(await panel.getByRole('button',{name:'拒绝',exact:true}).count()&&await panel.getByRole('button',{name:'开启完全访问权限',exact:true}).count())break;}
-  const aliases=config.approval==='session'?['在会话期间允许','在会话期间运行']:[approvalLabels[config.approval]];
+  const profile=editionProfiles[config.clientEdition||'enterprise'];
+  const aliases=config.approval==='session'?profile.sessionActions:[approvalLabels[config.approval]];
   let target;
   for(const name of aliases){const b=panel.getByRole('button',{name,exact:true}).filter({visible:true});if(await b.count()===1){target=b;break;}}
   if(!target)throw Error('审批面板没有所选操作：'+approvalLabels[config.approval]);

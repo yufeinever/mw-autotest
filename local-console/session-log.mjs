@@ -11,7 +11,7 @@ export async function readSessionLog(request){
  if(!Number.isInteger(maxSessions)||maxSessions<1||!Number.isInteger(timeoutMs)||timeoutMs<1)throw Error('子会话采集预算必须为正整数');
  let collection,deadline=null;
  if(!/^ses_[A-Za-z0-9]+$/.test(sessionId))throw Error('会话 ID 无效');
- const info=typeof request==='object'&&request.connection?request.connection:await window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo');
+ const info=typeof request==='object'&&request.connection?request.connection:await (window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('engineInfo');
  if(typeof info?.baseUrl!=='string'||!info.baseUrl.trim())throw Error('客户端引擎尚未就绪：缺少引擎地址；请等待准备完成后再读取会话');
  const base=String(info.baseUrl||'').replace(/\/$/,'');
  const headers={Authorization:'Basic '+btoa(info.opencodeUsername+':'+info.opencodePassword)};

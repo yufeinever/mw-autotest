@@ -21,7 +21,7 @@ export function encoderArgs(config,file){
 // The controller owns the encoder, independently of the script process. A
 // forced script stop can therefore still flush and finalize its own video.
 export class PageRecorder {
- constructor({config,directory,cdpPort,onChange=async()=>{},connect=()=>connectClient('http://127.0.0.1:'+cdpPort,{timeout:4000}),executable=ffmpegPath}){
+ constructor({config,directory,cdpPort,clientEdition,onChange=async()=>{},connect=()=>connectClient('http://127.0.0.1:'+cdpPort,{timeout:4000,clientEdition}),executable=ffmpegPath}){
   Object.assign(this,{config,directory,onChange,connect,executable});
   this.state={status:'STARTING',config:{...config},source:'MobileWork 页面',capturedFrames:0,encodedFrames:0};
   this.file=path.join(directory,recordingFile);this.partial=path.join(directory,'执行录像.partial.mp4');

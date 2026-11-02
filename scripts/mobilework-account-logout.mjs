@@ -64,7 +64,7 @@ async function normalSmsLogin(page,payload){
 }
 export async function readLoggedOutFiles(page){
  if((await readAccountSession(page)).signedIn)throw blocked('仍在登录状态，未读取原登录凭据文件');
- const roots=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('__pathRoots'));
+ const roots=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('__pathRoots'));
  if(!path.isAbsolute(roots.dataRootDir))throw blocked('未确认当前客户端真实身份存储根目录');
  const result={};
  for(const name of ['session.json','current-account.json']){

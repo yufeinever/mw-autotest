@@ -5,7 +5,7 @@ const blocked=message=>Object.assign(Error(message),{blocked:true});
 const visible=locator=>locator.filter({visible:true});
 const button=(page,name)=>visible(page.getByRole('button',{name,exact:true}));
 async function workspaceApi(page){
- const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo'));
+ const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo'));
  const base=String(info.baseUrl).replace(/\/$/,'');
  const headers={Authorization:'Bearer '+(info.ownerToken||info.clientToken),'Content-Type':'application/json'};
  return {base,headers};

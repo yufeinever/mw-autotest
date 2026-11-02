@@ -95,7 +95,7 @@ async function rootConnection(page,job,root,runtimes){
 // One finalization owner attempts every root before releasing any shared
 // resource. Failure in A never short-circuits B's stop acknowledgement.
 export async function settleRootSessions(job,{runtimes=new Map(),allowAbort=false,checkpoint=async()=>{}}={}){
- const browser=await connectClient('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000}),errors=[];
+ const browser=await connectClient('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000,clientEdition:job.config.clientEdition}),errors=[];
  try{
   const page=uniqueClientPage(browser);page.setDefaultTimeout(5000);
   try{await recoverPending(page,job,runtimes,checkpoint);}catch(error){errors.push('待提交任务：'+error.message);}

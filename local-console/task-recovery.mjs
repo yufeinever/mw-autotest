@@ -142,7 +142,7 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
   // A default workspace or another task's page is not evidence of this
   // session's engine. Never abort using whichever engine happens to be open.
   if(!page.url().endsWith('/session/'+job.sessionId))throw Error('尚未取得本会话引擎连接，未操作其他会话');
-  const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('engineInfo'));
+  const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('engineInfo'));
   connection={baseUrl:info?.baseUrl,opencodeUsername:info?.opencodeUsername,opencodePassword:info?.opencodePassword};
  }
  if(!connection.baseUrl)throw Error('本会话引擎未就绪');
@@ -225,7 +225,7 @@ export async function recoverJob(job,{connection,allowAbort=false,jobs=[],checkp
   return settleRootSessions(job,{runtimes:connection instanceof Map?connection:new Map(),allowAbort,checkpoint});
  }
 
- const browser=await connectClient('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000});
+ const browser=await connectClient('http://127.0.0.1:'+job.config.cdpPort,{timeout:5000,clientEdition:job.config.clientEdition});
  try{
   const pages=browser.contexts().flatMap(c=>c.pages()).filter(p=>isClientPageUrl(p.url()));
   if(pages.length!==1)throw Error('未找到唯一客户端主界面');

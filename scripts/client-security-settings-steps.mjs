@@ -14,7 +14,7 @@ const review=message=>Object.assign(Error(message),{review:true});
 const save=(context,name,value)=>fs.writeFile(path.join(context.dir,name+'.json'),JSON.stringify(value,null,2));
 
 async function auditRequest(page,route){
- const info=await page.evaluate(()=>window.__OPENWORK_ELECTRON__.invokeDesktop('openworkServerInfo'));
+ const info=await page.evaluate(()=>(window.__MOBILEWORK_ELECTRON__ ?? window.__OPENWORK_ELECTRON__).invokeDesktop('openworkServerInfo'));
  const url=new URL(info.baseUrl??info.connectUrl??info.lanUrl??info.mdnsUrl);
  if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password||url.search||url.hash)throw Error('安全审计服务不是有效的本机地址');
  const base=url.href.replace(/\/$/,'');let token=info.ownerToken||info.clientToken;
