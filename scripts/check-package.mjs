@@ -8,6 +8,7 @@ import {createConsole,projectRoot} from '../local-console/server.mjs';
 import {testEnvironment,previewBrowserOptions} from '../local-console/environment.mjs';
 import {clientCases,caseWorkbook} from './client-case-catalog.mjs';
 import {permissionCases} from './permission-case-catalog.mjs';
+import {publicCases} from './public-case-catalog.mjs';
 import {readCdpConfig} from '../local-console/cdp-config.mjs';
 import {probeCdp} from '../local-console/cdp-restart.mjs';
 
@@ -15,7 +16,7 @@ import {probeCdp} from '../local-console/cdp-restart.mjs';
 export async function selfTestPackage(){
  assert.ok(Number(process.versions.node.split('.')[0])>=22,'需要 Node.js 22 或更新版本');
  assert.equal(clientCases.length,203);
- for(const item of clientCases)await fs.access(path.join(projectRoot,item.entry));
+ for(const item of [...clientCases,...publicCases])await fs.access(path.join(projectRoot,item.entry));
  await fs.access(path.join(projectRoot,'测试用例与脚本',caseWorkbook));
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'MobileWork-包自检-'));
  const previous=process.env.MW_FIXTURE_DIR;process.env.MW_FIXTURE_DIR=dir;
@@ -23,7 +24,7 @@ export async function selfTestPackage(){
  try{
   app=await createConsole({clientProbe:async()=>({connected:true}),port:0,dataDir:path.join(dir,'console')});
   const state=await(await fetch(app.url+'/api/state')).json();
-  assert.equal(state.projectRoot,projectRoot);assert.equal(state.scripts.length,clientCases.length+permissionCases.length);
+  assert.equal(state.projectRoot,projectRoot);assert.equal(state.scripts.length,clientCases.length+permissionCases.length+publicCases.length);
   assert.ok(state.scripts.every(s=>s.exists&&(s.integrated||s.unavailable)));assert.equal(state.jobs.length,0);
   browser=await chromium.launch(previewBrowserOptions());
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];

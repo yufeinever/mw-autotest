@@ -506,15 +506,20 @@ async function showBrowserTrace(id) {
 }
 
 // package.json
-var version = "0.0.50";
+var version = "0.0.51";
 
 // local-console/client-edition.mjs
 var editionLabels = { enterprise: "\u653F\u4F01\u7248", public: "\u516C\u4F17\u7248" };
+function normalizeEdition(value = "enterprise") {
+  if (!Object.hasOwn(editionLabels, value)) throw Error("\u5BA2\u6237\u7AEF\u7248\u672C\u5FC5\u987B\u9009\u62E9\u653F\u4F01\u7248\u6216\u516C\u4F17\u7248");
+  return value;
+}
 
 // local-console/script-groups.mjs
 var scriptSuite = (script) => script?.suite === "permission" ? "permission" : "functional";
+var scriptEdition = (script) => normalizeEdition(script?.clientEdition ?? "enterprise");
 var suiteLabels = { functional: "\u529F\u80FD\u7528\u4F8B", permission: "\u6743\u9650\u7BA1\u63A7" };
-var scriptsInSuite = (scripts, suite) => scripts.filter((s) => scriptSuite(s) === suite);
+var scriptsInSuite = (scripts, suite, edition) => scripts.filter((s) => scriptSuite(s) === suite && (edition === void 0 || scriptEdition(s) === normalizeEdition(edition)));
 
 // local-console/root-session-state.mjs
 var isRootSessionJob = (job) => job.rootSessionVersion === 1;
@@ -674,6 +679,9 @@ var permissionCases = rows.map(([title, fixture, expectation, task, unavailable]
   source: "\u9700\u6C42\u89C4\u683C\u8BF4\u660E\u4E66v1.1 \xA74.1\uFF1B041/042\u4E3A\u811A\u672C\u6765\u6E90\u8865\u5145\u5206\u652F"
 }));
 
+// scripts/public-case-catalog.mjs
+var publicCases = [];
+
 // local-console/recording-timeline.mjs
 var timestamp = (value) => typeof value === "string" && value ? Date.parse(value) : NaN;
 var positive = (value) => typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -819,7 +827,8 @@ var normalizedPath = (value) => {
 };
 function findScriptCase(script, projectRoot) {
   if (!projectRoot || !script?.path) return null;
-  return [...clientCases, ...permissionCases].find((item) => normalizedPath(projectRoot + "/" + item.entry) === normalizedPath(script.path)) || null;
+  const cases = scriptEdition(script) === "public" ? publicCases : [...clientCases, ...permissionCases];
+  return cases.find((item) => normalizedPath(projectRoot + "/" + item.entry) === normalizedPath(script.path)) || null;
 }
 function installDetailPreview(readCase, canPreview = () => true, recordingActions = {}) {
   if (window.top !== window) return { openScript: () => {
@@ -1385,6 +1394,9 @@ if (traceId) {
     $("#clientEdition").title = "\u5206\u522B\u4FDD\u5B58\u4E24\u7248\u4EA4\u4E92\u4E0E\u6A21\u578B\u914D\u7F6E\uFF1B\u6267\u884C\u524D\u6838\u5BF9\u5B9E\u9645\u5BA2\u6237\u7AEF\uFF0C\u7248\u672C\u4E0D\u5339\u914D\u65F6\u4E0D\u63D0\u4EA4\u4EFB\u52A1\u3002";
     $("#approvalSettings").title = label + "\uFF1A\u6309\u6240\u9009\u65B9\u5F0F\u5904\u7406\u5BA1\u6279\uFF1B\u5F00\u542F\u5B8C\u5168\u8BBF\u95EE\u9700\u5B8C\u6210\u5BA2\u6237\u7AEF\u4E8C\u6B21\u786E\u8BA4\u3002\u6743\u9650\u4E13\u9879\u7528\u4F8B\u56FA\u5B9A\u62D2\u7EDD\u3002";
     $("#model").title = "\u53EA\u9009\u62E9" + label + "\u5B9E\u9645\u63D0\u4F9B\u7684\u6A21\u578B\uFF1B\u5207\u6362\u5BA2\u6237\u7AEF\u7248\u672C\u65F6\u52A0\u8F7D\u8BE5\u7248\u5DF2\u4FDD\u5B58\u9009\u62E9\uFF0C\u9996\u6B21\u9ED8\u8BA4\u81EA\u52A8\u3002";
+    $("#scriptEditionBadge").textContent = label;
+    $("#scriptEditionBadge").dataset.edition = editionValue();
+    $("#scriptEditionBadge").title = "\u8DDF\u968F\u9876\u90E8\u5BA2\u6237\u7AEF\u7248\u672C\u9009\u62E9\uFF0C\u4EC5\u5C55\u793A" + label + "\u7684\u72EC\u7ACB\u811A\u672C\u3002";
   }, syncCustom = function() {
     $("#customText").disabled = $("[name=question]:checked").value !== "custom";
   }, el2 = function(tag, text, cls) {
@@ -1412,6 +1424,8 @@ if (traceId) {
     readExecutionLog();
   }, renderScripts = function() {
     const scripts = visibleScripts();
+    $("#scriptEditionBadge").textContent = editionLabels[state.config.clientEdition];
+    $("#scriptEditionBadge").dataset.edition = state.config.clientEdition;
     for (const tab of document.querySelectorAll("[data-suite]")) {
       const on = tab.dataset.suite === activeSuite;
       tab.setAttribute("aria-selected", String(on));
@@ -1442,7 +1456,7 @@ if (traceId) {
         why.style.display = "block";
         name.append(why);
       }
-      const job = state.jobs.filter((j) => j.scriptId === script.id).at(-1);
+      const job = state.jobs.filter((j) => j.scriptId === script.id && (j.config?.clientEdition || "enterprise") === state.config.clientEdition).at(-1);
       if (state.jobs.some((j) => j.scriptId === script.id && j.status === "RUNNING")) {
         tr.classList.add("script-running");
         const locked = el2("span", "\u9501\u5B9A MW", "mw-lock-badge");
@@ -1519,7 +1533,7 @@ if (traceId) {
       $("#scripts").append(tr);
     }
     if (!total) {
-      const tr = el2("tr"), td = el2("td", "\u6682\u65E0\u811A\u672C\uFF0C\u8BF7\u5148\u6DFB\u52A0\u3002", "hint");
+      const label = editionLabels[state.config.clientEdition], tr = el2("tr"), td = el2("td", label + "\u6682\u65E0\u72EC\u7ACB" + suiteLabels[activeSuite] + "\u811A\u672C\uFF0C\u8BF7\u901A\u8FC7\u201C\u6DFB\u52A0\u811A\u672C\u201D\u767B\u8BB0\u672C\u7248\u811A\u672C\u3002", "hint");
       td.colSpan = 6;
       tr.append(td);
       $("#scripts").append(tr);
@@ -1578,7 +1592,7 @@ if (traceId) {
   let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false, lastServerCdpPort, editionSwitching = false;
   const pendingScripts = /* @__PURE__ */ new Set(), selectedScripts = /* @__PURE__ */ new Set();
   let activeSuite = localStorage.getItem("mw-script-suite") === "permission" ? "permission" : "functional";
-  const visibleScripts = () => scriptsInSuite(state?.scripts || [], activeSuite);
+  const visibleScripts = () => scriptsInSuite(state?.scripts || [], activeSuite, state?.config.clientEdition || "enterprise");
   const submissions = /* @__PURE__ */ new Set();
   let stopAllBusy = false, stopGeneration = 0;
   const labels = { QUEUED: "\u6392\u961F\u4E2D", RUNNING: "\u6267\u884C\u4E2D", PASS: "\u901A\u8FC7", FAIL: "\u5931\u8D25", BLOCKED: "\u963B\u585E", EXITED: "\u5DF2\u9000\u51FA\uFF08\u672A\u58F0\u660E\u65AD\u8A00\u7ED3\u679C\uFF09", INTERRUPTED: "\u63A7\u5236\u53F0\u5DF2\u4E2D\u65AD", CHECKED: "\u9884\u68C0\u901A\u8FC7", RESUMED: "\u7EED\u8DD1\u5B8C\u6210" };
@@ -1627,6 +1641,10 @@ if (traceId) {
       if (state.capabilities?.clientEditions !== 1) throw Error("\u8BF7\u5148\u91CD\u542F\u63A7\u5236\u53F0\u4EE5\u542F\u7528\u5BA2\u6237\u7AEF\u7248\u672C\u9009\u62E9");
       await api("/api/config", previousConfig);
       await api("/api/client-edition", { clientEdition: requested });
+      scriptPage = 1;
+      selectedScripts.clear();
+      $("#scriptRange").value = "";
+      $("#batchMessage").hidden = true;
       $("#model").replaceChildren(new Option("\u6CBF\u7528\u5BA2\u6237\u7AEF\u5F53\u524D\u6A21\u578B", ""));
       initialized = false;
       lastAutoCdpAttempt = 0;
@@ -1838,6 +1856,14 @@ if (traceId) {
   }
   logRefresh.onclick = readExecutionLog;
   async function startScripts(scripts, label, batch = false) {
+    if (editionSwitching) {
+      batchNotice("\u6B63\u5728\u5207\u6362\u5BA2\u6237\u7AEF\u7248\u672C\uFF0C\u8BF7\u7A0D\u540E\u6267\u884C\u3002", true);
+      return;
+    }
+    if (state.capabilities?.scriptEditions !== 1) {
+      batchNotice("\u72EC\u7ACB\u811A\u672C\u6E05\u5355\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u7A7A\u95F2\u65F6\u91CD\u542F18888\u63A7\u5236\u53F0\u3002", true);
+      return;
+    }
     if (activeSuite === "permission" && state.capabilities?.scriptSuites !== 1) {
       batchNotice("\u7528\u4F8B\u5206\u7C7B\u5347\u7EA7\u5C1A\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5728\u7A7A\u95F2\u65F6\u91CD\u542F18888\u63A7\u5236\u53F0\uFF1B\u672A\u63D0\u4EA4\u4EFB\u52A1\u3002", true);
       return;
@@ -2100,12 +2126,13 @@ if (traceId) {
   $("#addForm").onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await api("/api/scripts", { name: $("#scriptName").value, path: $("#scriptPath").value, suite: activeSuite });
+      if (editionSwitching) throw Error("\u6B63\u5728\u5207\u6362\u5BA2\u6237\u7AEF\u7248\u672C\uFF0C\u8BF7\u7A0D\u540E\u6DFB\u52A0");
+      await api("/api/scripts", { name: $("#scriptName").value, path: $("#scriptPath").value, suite: activeSuite, clientEdition: editionValue() });
       $("#addDialog").close();
       $("#addForm").reset();
       scriptPage = Math.ceil((visibleScripts().length + 1) / Number($("#scriptPageSize").value));
       await refresh();
-      notice("\u811A\u672C\u5DF2\u6DFB\u52A0\u5230" + suiteLabels[activeSuite] + "\u3002");
+      notice("\u811A\u672C\u5DF2\u6DFB\u52A0\u5230" + editionLabels[editionValue()] + " \xB7 " + suiteLabels[activeSuite] + "\u3002");
     } catch (err) {
       $("#dialogError").textContent = err.message;
     }

@@ -8,6 +8,7 @@ import ffmpegPath from 'ffmpeg-static';
 import {unzipSync,strFromU8} from 'fflate';
 import {clientCases,caseWorkbook} from './client-case-catalog.mjs';
 import {permissionCases} from './permission-case-catalog.mjs';
+import {publicCases} from './public-case-catalog.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -30,6 +31,7 @@ export async function selectedFiles(){
  selected.push('local-console/fixtures/long-running.mjs','scripts/fixtures/case002-synthetic-meeting.mjs');
  selected.push(...clientCases.map(c=>c.entry));
  selected.push(...permissionCases.map(c=>c.entry));
+ selected.push('scripts/public-case-catalog.mjs',...publicCases.map(c=>c.entry));
  selected.push(...['permission-case-catalog.mjs','permission-case-runner.mjs','permission-fixtures.mjs','permission-observation.mjs','permission-workspace.mjs','permission-suite.test.mjs'].map(s=>'scripts/'+s));
  selected.push('scripts/mobilework-initialize.mjs','scripts/mobilework-initialize.test.mjs');
  for(const name of await fs.readdir(path.join(root,'scripts/fixtures/client-upload-files')))selected.push('scripts/fixtures/client-upload-files/'+name);

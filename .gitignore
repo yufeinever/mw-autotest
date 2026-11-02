@@ -43,6 +43,8 @@
 !/local-console/batches.mjs
 !/local-console/batches.test.mjs
 !/local-console/case-registry.mjs
+!/local-console/script-editions.test.mjs
+!/scripts/public-case-catalog.mjs
 !/local-console/cdp-config.mjs
 !/local-console/cdp-config.test.mjs
 !/local-console/cdp-port.mjs

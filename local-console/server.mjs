@@ -41,7 +41,8 @@ import {startRecording} from './recording.mjs';
 import {recordingLocation,recordingLocations,openWindowsFolder} from './recording-storage.mjs';
 import {withClientCases} from './case-registry.mjs';
 import {clientCases} from '../scripts/client-case-catalog.mjs';
-import {scriptSuite,scriptsInSuite,suiteLabels} from './script-groups.mjs';
+import {scriptSuite,assertScriptEdition,scriptsInSuite,suiteLabels} from './script-groups.mjs';
+import {publicCases} from '../scripts/public-case-catalog.mjs';
 import {permissionCases} from '../scripts/permission-case-catalog.mjs';
 import {loadJobTrace,jobSessionId} from './trace-store.mjs';
 import {renderTrace} from './trace.mjs';
@@ -94,7 +95,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    const content=await fs.readFile(real,'utf8');
    const permission=permissionCases.some(c=>real===path.join(projectRoot,c.entry));
    const integrated=!item.unavailable&&(permission||real===path.join(projectRoot,'scripts','run-client-case001.mjs')||/MW_TEST_CONFIG_JSON|mobilework-run-policy/.test(content));
-   const cooperative=cooperativeDetector?cooperativeDetector(real):permission||clientCases.some(item=>path.resolve(projectRoot,item.entry)===real);
+   const cooperative=cooperativeDetector?cooperativeDetector(real):permission||[...clientCases,...publicCases].some(item=>path.resolve(projectRoot,item.entry)===real);
    return {...item,exists:true,integrated,cooperative};
   }catch(e){return {...item,exists:false,integrated:false,error:e.message};}
  };
@@ -333,12 +334,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   return ['cmd.exe',['/d','/c',file]];
  };
  const safeConfig=config=>{const safe=structuredClone(config);if(safe.provider)delete safe.provider.key;return safe;};
+ const executionConfig=body=>{
+  const config=normalizeConfig(body.config);
+  if(config.clientEdition!==state.config.clientEdition)throw Error('客户端版本已变化，请刷新页面后执行当前版脚本');
+  return config;
+ };
  const createBatch=async body=>{
+  const config=executionConfig(body);
   const ids=body.scriptIds,mode=body.mode||'single';
   const suite=body.suite||scriptSuite(state.scripts.find(s=>s.id===ids?.[0]));
   if(!Object.hasOwn(suiteLabels,suite))throw Error('用例分类无效');
-  const group=scriptsInSuite(state.scripts,suite),eligible=group.filter(s=>!s.unavailable);
+  const group=scriptsInSuite(state.scripts,suite,config.clientEdition),eligible=group.filter(s=>!s.unavailable);
   if(!Array.isArray(ids)||!ids.length||ids.length>1000||ids.some(id=>typeof id!=='string')||new Set(ids).size!==ids.length)throw Error('批次需要不重复的脚本 ID 列表');
+  for(const id of ids){const script=state.scripts.find(s=>s.id===id);if(script)assertScriptEdition(script,config.clientEdition);}
   if(!['single','all','range','selected'].includes(mode)||mode==='single'&&ids.length!==1)throw Error('批次执行方式无效');
   const scripts=[];
   for(const id of ids){const index=group.findIndex(s=>s.id===id);if(index<0)throw Error('批次不能混合不同分类或不存在的脚本');const script=await scriptInfo(group[index]);if(!script.exists||!script.integrated)throw Error(script.unavailable||script.name+'：文件不存在或未接入参数');scripts.push({scriptId:id,name:script.name,path:script.path,number:index+1});}
@@ -347,7 +355,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
   if(mode==='selected')scripts.sort((a,b)=>a.number-b.number);
   const startedAt=new Date().toISOString(),label=mode==='all'?'全部执行':mode==='range'?`序号 ${scripts[0].number}-${scripts.at(-1).number}`:mode==='selected'?'勾选序号 '+scripts.map(s=>s.number).join('、'):'单条执行';
   const stamp=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()).replace(/\//g,'').replace(/:/g,'');
-  const batch={id:randomUUID(),suite,name:stamp+' · '+suiteLabels[suite]+' · '+label,mode,scope:mode==='single'?`序号 ${scripts[0].number} · ${scripts[0].name}`:suiteLabels[suite]+' · '+label+`（${scripts.length} 条）`,startedAt,submission:'SUBMITTING',scripts,config:safeConfig(normalizeConfig(body.config))};
+  await requireConnection(config);
+  executionConfig(body); // 连接检查期间可能由其他页面切版，未创建批次前再次核对。
+  const batch={id:randomUUID(),clientEdition:config.clientEdition,suite,name:stamp+' · '+editionLabels[config.clientEdition]+' · '+suiteLabels[suite]+' · '+label,mode,scope:mode==='single'?`序号 ${scripts[0].number} · ${scripts[0].name}`:suiteLabels[suite]+' · '+label+`（${scripts.length} 条）`,startedAt,submission:'SUBMITTING',scripts,config:safeConfig(config)};
   await writeBatch(batch);batches.push(batch);return batch;
  };
  const batchDetail=id=>collectBatches(batches,jobs).find(b=>b.id===id);
@@ -584,7 +594,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.config.cdpPort===job.config.cdpPort&&(j.sessionUrl===body.url||j.rootSessions?.some(root=>root.url===body.url)))});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1,clientEditions:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptEditions:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1,clientEditions:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
    const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
    if(recordingFolder&&((req.method==='GET'&&recordingFolder[2]==='locations')||(req.method==='POST'&&recordingFolder[2]==='folder'))){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -652,7 +662,6 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='POST'&&unlocking)return send(409,{error:'正在解除调度锁，请稍后再试'});
    if(req.method==='POST'&&url.pathname==='/api/batches'){
     if(readingModels||editingCdp)return send(409,{error:'正在读取模型或重启客户端，请等待完成'});
-    await requireConnection(normalizeConfig(body.config));
     const batch=await createBatch(body);return send(201,{id:batch.id});
    }
    const batchMatch=url.pathname.match(/^\/api\/batches\/([\w-]+)(\/complete)?$/);
@@ -743,7 +752,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     const file=await fs.realpath(body.path.trim().replace(/^"|"$/g,''));
     if(state.scripts.some(s=>s.path.toLowerCase()===file.toLowerCase()))throw Error('脚本已经添加');
     if(body.suite!==undefined&&!Object.hasOwn(suiteLabels,body.suite))throw Error('用例分类无效');
-    const item={id:randomUUID(),name:String(body.name||path.basename(file)).slice(0,100),path:file,suite:body.suite||'functional'};
+    const edition=normalizeEdition(body.clientEdition??state.config.clientEdition);
+    if(edition!==state.config.clientEdition)throw Error('请切换到目标客户端版本后再添加脚本');
+    const item={id:randomUUID(),name:String(body.name||path.basename(file)).slice(0,100),path:file,suite:body.suite||'functional',clientEdition:edition};
     const info=await scriptInfo(item);if(!info.exists)throw Error(info.error);
     state.scripts.push(item);await persist();return send(201,info);
    }
@@ -774,13 +785,12 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     let batch,startKey,ownsStart=false,automaticBatch=false;
     try{
      const item=state.scripts.find(s=>s.id===body.scriptId);if(!item)throw Error('脚本不存在');
+     const config=executionConfig(body);assertScriptEdition(item,config.clientEdition);
      const info=await scriptInfo(item);if(!info.exists)throw Error(info.error);
      const runArgs=body.args??[];
      if(!Array.isArray(runArgs)||runArgs.length>1||runArgs.some(a=>typeof a!=='string'||!/^--(?:check|fill-check|resume=ses_[A-Za-z0-9]+)$/.test(a))||runArgs.length&&!info.cooperative)throw Error('脚本执行参数无效');
      if(!info.integrated)throw Error('此脚本尚未接入参数协议，请先读取 MW_TEST_CONFIG_JSON 再执行');
-     const config=normalizeConfig(body.config);
-     if(!body.batchId)await requireConnection(config);
-     else if(scheduler.renderer(config.cdpPort).connectionError)throw Error('MobileWork连接不可用，批次暂停，请重新连接后继续。');
+     if(body.batchId&&scheduler.renderer(config.cdpPort).connectionError)throw Error('MobileWork连接不可用，批次暂停，请重新连接后继续。');
      const savedConfig=safeConfig(config);
      if(body.batchId){batch=batches.find(b=>b.id===body.batchId);if(!batch)throw Error('执行批次不存在');if(batch.submission!=='SUBMITTING')throw Error('批次提交已结束，不得追加执行');if(!batch.scripts.some(s=>s.scriptId===item.id))throw Error('脚本不属于本执行批次');if(JSON.stringify(batch.config)!==JSON.stringify(savedConfig))throw Error('本次参数与批次参数快照不一致');}
      else{batch=await createBatch({scriptIds:[item.id],mode:'single',config});automaticBatch=true;}

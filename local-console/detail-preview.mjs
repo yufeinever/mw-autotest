@@ -1,6 +1,8 @@
 // Keep the list DOM alive: returning never reloads configuration or CDP status.
 import {clientCases,caseWorkbook,caseSheet} from '../scripts/client-case-catalog.mjs';
 import {permissionCases} from '../scripts/permission-case-catalog.mjs';
+import {publicCases} from '../scripts/public-case-catalog.mjs';
+import {scriptEdition} from './script-groups.mjs';
 import {renderRecordingTimeline} from './recording-timeline.mjs';
 
 const normalizedPath=value=>{
@@ -13,7 +15,8 @@ const normalizedPath=value=>{
 };
 export function findScriptCase(script,projectRoot){
  if(!projectRoot||!script?.path)return null;
- return [...clientCases,...permissionCases].find(item=>normalizedPath(projectRoot+'/'+item.entry)===normalizedPath(script.path))||null;
+ const cases=scriptEdition(script)==='public'?publicCases:[...clientCases,...permissionCases];
+ return cases.find(item=>normalizedPath(projectRoot+'/'+item.entry)===normalizedPath(script.path))||null;
 }
 export function installDetailPreview(readCase,canPreview=()=>true,recordingActions={}){
  if(window.top!==window)return {openScript:()=>{},openRecording:()=>{}};

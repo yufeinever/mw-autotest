@@ -14,7 +14,7 @@ const $=s=>document.querySelector(s);
 let token='',state,selectedJob,parentDir,initialized=false,historyPage=1,scriptPage=1,batchBusy=false,lastServerCdpPort,editionSwitching=false;
 const pendingScripts=new Set(),selectedScripts=new Set();
 let activeSuite=localStorage.getItem('mw-script-suite')==='permission'?'permission':'functional';
-const visibleScripts=()=>scriptsInSuite(state?.scripts||[],activeSuite);
+const visibleScripts=()=>scriptsInSuite(state?.scripts||[],activeSuite,state?.config.clientEdition||'enterprise');
 const submissions=new Set();let stopAllBusy=false,stopGeneration=0;
 const labels={QUEUED:'排队中',RUNNING:'执行中',PASS:'通过',FAIL:'失败',BLOCKED:'阻塞',EXITED:'已退出（未声明断言结果）',INTERRUPTED:'控制台已中断',CHECKED:'预检通过',RESUMED:'续跑完成'};
 labels.STOPPED='已强制停止';
@@ -40,6 +40,9 @@ function syncEdition(){
  $('#clientEdition').title='分别保存两版交互与模型配置；执行前核对实际客户端，版本不匹配时不提交任务。';
  $('#approvalSettings').title=label+'：按所选方式处理审批；开启完全访问需完成客户端二次确认。权限专项用例固定拒绝。';
  $('#model').title='只选择'+label+'实际提供的模型；切换客户端版本时加载该版已保存选择，首次默认自动。';
+ $('#scriptEditionBadge').textContent=label;
+ $('#scriptEditionBadge').dataset.edition=editionValue();
+ $('#scriptEditionBadge').title='跟随顶部客户端版本选择，仅展示'+label+'的独立脚本。';
 }
 $('#clientEdition').onchange=async()=>{
  const requested=editionValue(),previous=state.config.clientEdition||'enterprise';
@@ -53,6 +56,7 @@ $('#clientEdition').onchange=async()=>{
   if(state.capabilities?.clientEditions!==1)throw Error('请先重启控制台以启用客户端版本选择');
   await api('/api/config',previousConfig);
   await api('/api/client-edition',{clientEdition:requested});
+  scriptPage=1;selectedScripts.clear();$('#scriptRange').value='';$('#batchMessage').hidden=true;
   $('#model').replaceChildren(new Option('沿用客户端当前模型',''));
   initialized=false;lastAutoCdpAttempt=0;await refresh();notice('已切换到'+editionLabels[requested]+'，执行前将核对实际连接。');
  }catch(e){selectEdition(previous);syncEdition();notice(e.message,true);}
@@ -138,6 +142,8 @@ logRefresh.onclick=readExecutionLog;
 function showExecutionLog(job){logJobId=job.id;logHeading.textContent=job.name+' · 执行日志';logMeta.textContent='';logDialog.showModal();readExecutionLog();}
 function renderScripts(){
  const scripts=visibleScripts();
+ $('#scriptEditionBadge').textContent=editionLabels[state.config.clientEdition];
+ $('#scriptEditionBadge').dataset.edition=state.config.clientEdition;
  for(const tab of document.querySelectorAll('[data-suite]')){const on=tab.dataset.suite===activeSuite;tab.setAttribute('aria-selected',String(on));tab.tabIndex=on?0:-1;tab.disabled=batchBusy||submissions.size>0;}
  $('#scriptPanel').setAttribute('aria-labelledby',activeSuite==='permission'?'permissionTab':'functionalTab');
  $('#suiteHint').textContent=activeSuite==='permission'?'先准备隔离材料，再观察问询、拦截与后续执行。权限卡固定拒绝并继续观察，不使用上方全局自动授权。待确认或需专用能力的场景不可执行。':'功能用例：验证业务回复、实际产物和 Skill 调用。';
@@ -151,7 +157,7 @@ function renderScripts(){
  for(const [offset,script] of scripts.slice(start,start+size).entries()){
   const tr=el('tr');tr.dataset.scriptId=script.id;tr.dataset.scriptNumber=start+offset+1;
   const name=el('td'),title=el('button',script.name,'script-title script-source');title.title='查看用例描述';title.onclick=()=>preview.openScript(script);name.append(title);if(script.unavailable){const why=el('small',script.unavailable,'hint');why.style.display='block';name.append(why);}
-  const job=state.jobs.filter(j=>j.scriptId===script.id).at(-1);
+  const job=state.jobs.filter(j=>j.scriptId===script.id&&(j.config?.clientEdition||'enterprise')===state.config.clientEdition).at(-1);
   if(state.jobs.some(j=>j.scriptId===script.id&&j.status==='RUNNING')){
    tr.classList.add('script-running');const locked=el('span','锁定 MW','mw-lock-badge');locked.title='自动化正在执行，请勿手动操作 MobileWork';name.append(locked);
   }
@@ -183,7 +189,7 @@ function renderScripts(){
   actionGroup.append(remove);actions.prepend(actionGroup);tr.append(actions);
   ['序号','脚本','参数接入','最近结果','最近执行（北京时间）','操作'].forEach((label,i)=>tr.children[i].dataset.label=label);$('#scripts').append(tr);
  }
- if(!total){const tr=el('tr'),td=el('td','暂无脚本，请先添加。','hint');td.colSpan=6;tr.append(td);$('#scripts').append(tr);}
+ if(!total){const label=editionLabels[state.config.clientEdition],tr=el('tr'),td=el('td',label+'暂无独立'+suiteLabels[activeSuite]+'脚本，请通过“添加脚本”登记本版脚本。','hint');td.colSpan=6;tr.append(td);$('#scripts').append(tr);}
  $('#scriptPageInfo').textContent=`共 ${total} 条 · ${total?start+1:0}–${Math.min(start+size,total)} 条 · 第 ${scriptPage} / ${pages} 页`;
  $('#scriptPrevPage').disabled=scriptPage===1;$('#scriptNextPage').disabled=scriptPage===pages;
  const unavailable=state.capabilities?.serialOnly!==1||state.capabilities?.taskIsolation!==2||stopAllBusy||batchBusy||pendingScripts.size>0||state.readingModels||cdpBusy||!total;
@@ -198,6 +204,8 @@ function renderScripts(){
  $('#stopAll').textContent=stopAllBusy?'正在停止…':'强制停止全部';
 }
 async function startScripts(scripts,label,batch=false){
+ if(editionSwitching){batchNotice('正在切换客户端版本，请稍后执行。',true);return;}
+ if(state.capabilities?.scriptEditions!==1){batchNotice('独立脚本清单尚未加载，请在空闲时重启18888控制台。',true);return;}
  if(activeSuite==='permission'&&state.capabilities?.scriptSuites!==1){batchNotice('用例分类升级尚未加载，请在空闲时重启18888控制台；未提交任务。',true);return;}
  if(config().recording.enabled&&state.capabilities?.recording!==1){batchNotice('录像功能尚未加载，请在空闲时重启控制台后执行。',true);return;}
  if(state.capabilities?.serialOnly!==1){batchNotice('请先在空闲时重启控制台加载串行调度，未提交任务。',true);return;}
@@ -283,7 +291,7 @@ $('#models').onclick=async()=>{const b=$('#models');b.disabled=true;try{const se
 $('#add').onclick=()=>{$('#dialogError').textContent='';$('#addDialog').showModal();};$('#cancel').onclick=()=>$('#addDialog').close();
 async function browse(dir){try{const data=await api('/api/browse'+(dir?'?path='+encodeURIComponent(dir):''));parentDir=data.parent;$('#browser').hidden=false;$('#browsePath').value=data.path;$('#files').replaceChildren();for(const entry of data.entries){const b=el('button',(entry.directory?'文件夹 · ':'脚本 · ')+entry.name);b.type='button';b.onclick=()=>entry.directory?browse(entry.path):($('#scriptPath').value=entry.path);$('#files').append(b);}}catch(e){$('#dialogError').textContent=e.message;}}
 $('#browse').onclick=()=>browse();$('#go').onclick=()=>browse($('#browsePath').value);$('#up').onclick=()=>browse(parentDir);
-$('#addForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/scripts',{name:$('#scriptName').value,path:$('#scriptPath').value,suite:activeSuite});$('#addDialog').close();$('#addForm').reset();scriptPage=Math.ceil((visibleScripts().length+1)/Number($('#scriptPageSize').value));await refresh();notice('脚本已添加到'+suiteLabels[activeSuite]+'。');}catch(err){$('#dialogError').textContent=err.message;}};
+$('#addForm').onsubmit=async e=>{e.preventDefault();try{if(editionSwitching)throw Error('正在切换客户端版本，请稍后添加');await api('/api/scripts',{name:$('#scriptName').value,path:$('#scriptPath').value,suite:activeSuite,clientEdition:editionValue()});$('#addDialog').close();$('#addForm').reset();scriptPage=Math.ceil((visibleScripts().length+1)/Number($('#scriptPageSize').value));await refresh();notice('脚本已添加到'+editionLabels[editionValue()]+' · '+suiteLabels[activeSuite]+'。');}catch(err){$('#dialogError').textContent=err.message;}};
 await refresh().catch(e=>notice(e.message,true));refreshCdp();setInterval(refreshCdp,15000);
 let refreshing=false;setInterval(async()=>{if(refreshing)return;refreshing=true;try{await refresh();}catch(e){$('#connection').textContent='服务连接断开';notice(e.message,true);}finally{refreshing=false;}},2000);
 }
