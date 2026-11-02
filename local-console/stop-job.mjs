@@ -19,7 +19,7 @@ import {releaseSettingsPanel} from '../scripts/mobilework-account-settings.mjs';
 import {snapshotDraft,clearOwnedDraft,composerFieldOf} from '../scripts/mobilework-isolation.mjs';
 import {adoptWorkspacePage,workspaces,workspaceSessions} from '../scripts/mobilework-workspaces.mjs';
 import {normalizeComposerText} from '../scripts/mobilework-composer.mjs';
-import {adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,adoptMissingSessionHome,confirmFailedBeforeSession,restoreFailedSubmissionPage,recoverJobPage,settleSession} from './task-recovery.mjs';
+import {adoptOwnedSession,adoptFailedWorkspaceSession,adoptExistingWorkspaceSession,adoptMissingSessionHome,confirmFailedBeforeSession,restoreFailedSubmissionPage,recoverJobPage,settleSession} from './task-recovery.mjs';
 import {restoreModuleNavigation} from '../scripts/mobilework-module-navigation.mjs';
 import {settleOwnedAutomation} from '../scripts/mobilework-automation-resources.mjs';
 import {adoptCaseTaskDraft} from '../scripts/mobilework-case-library.mjs';
@@ -70,6 +70,10 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
   await releaseAccountLogout(page,job.composerResources,{checkpoint});
   await releaseSettingsPanel(page,job.composerResources);
   await adoptFailedWorkspaceSession(page,job,{allowAbort,checkpoint});
+  if(await adoptOwnedSession(page,job)){
+   job.composerResources.url=job.sessionUrl;
+   await checkpoint();
+  }
   if(confirmFailedBeforeSession(job))await checkpoint();
   const failure=await restoreFailedSubmissionPage(page,job);
   if(!failure.ready)throw Error(failure.reason);

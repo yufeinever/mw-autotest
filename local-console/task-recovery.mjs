@@ -14,7 +14,9 @@ export function failedBeforeSession(job){
  const r=job.result;
  return Boolean(job.submissionPending&&!job.sessionId&&!r?.sessionId&&r?.result==='BLOCKED'&&
   typeof r.error==='string'&&r.error.startsWith('客户端工作区准备失败：')&&
-  r.events?.some(e=>e.step==='BLOCKED'&&e.detail===r.error));
+  r.events?.some(e=>e.step==='BLOCKED'&&typeof e.detail==='string'&&
+   e.detail.startsWith('客户端工作区准备失败：')&&e.detail.endsWith('；未创建Session')&&
+   (e.detail===r.error||r.error.startsWith(e.detail+'；'))));
 }
 
 export function confirmFailedBeforeSession(job){
@@ -196,8 +198,8 @@ export async function settleSession(page,job,connection,{allowAbort=false}={}){
 }
 
 export async function recoverJobPage(page,job,{connection,allowAbort=false,otherManagedSession=false}={}){
- confirmFailedBeforeSession(job);
  await adoptOwnedSession(page,job);
+ confirmFailedBeforeSession(job);
  if(!await settleSession(page,job,connection,{allowAbort}))return {ready:false,reason:job.submissionPending&&!job.sessionId?'发送已尝试但Session归属未确认，暂停后续任务':'本条会话尚未确认结束'};
  const failure=await restoreFailedSubmissionPage(page,job);
  if(!failure.ready)return failure;

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {chromium} from 'playwright-core';
-import {recoverJobPage,failedBeforeSession} from './task-recovery.mjs';
+import {recoverJobPage,failedBeforeSession,adoptOwnedSession} from './task-recovery.mjs';
 import {createConsole} from './server.mjs';
 import {normalizeConfig} from './policy.mjs';
 import {snapshotDraft,selectionState} from '../scripts/mobilework-isolation.mjs';
@@ -12,10 +12,26 @@ import {snapshotDraft,selectionState} from '../scripts/mobilework-isolation.mjs'
 const error='客户端工作区准备失败：专家安装失败(MW105050909)；未创建Session';
 const failure=()=>({submissionPending:true,result:{result:'BLOCKED',error,events:[{step:'BLOCKED',detail:error}]}});
 
+test('重试产生的本轮会话只按原空间及完整提交文本认领',async()=>{
+ const origin='mobilework-shell://app/index.html#/workspace/ws_test/session';
+ const job={...failure(),ownedDraft:{url:origin,text:'本轮完整测试输入'}};
+ const page={url:()=>origin+'/ses_123',locator:()=>({innerText:async()=> '本轮完整测试输入'})};
+ assert.equal(await adoptOwnedSession(page,job),true);
+ assert.equal(job.sessionId,'ses_123');assert.equal(job.submissionPending,false);
+ assert.equal(failedBeforeSession(job),false);
+ const other={...failure(),ownedDraft:{url:origin,text:'本轮完整测试输入'}};
+ assert.equal(await adoptOwnedSession({...page,locator:()=>({innerText:async()=> '其他输入'})},other),false);
+ assert.equal(other.submissionPending,true);
+});
+
 test('创建会话前失败返回编辑并悬停退出专家，未知发送及修改草稿仍保护',async t=>{
  const browser=await chromium.launch({channel:'chrome',headless:true});t.after(()=>browser.close());
  const page=await browser.newPage();await page.setContent('<div contenteditable="true"></div>');
  const job=failure();assert.equal(failedBeforeSession(job),true);
+ const withCleanupError=failure();withCleanupError.result.error=error+'；locator.evaluate: Timeout 10000ms exceeded.';
+ assert.equal(failedBeforeSession(withCleanupError),true);
+ const mismatched=failure();mismatched.result.error=error+'不同的内容';
+ assert.equal(failedBeforeSession(mismatched),false);
  assert.equal((await recoverJobPage(page,job)).ready,true);assert.equal(job.submissionPending,false);
  const unknown={submissionPending:true};assert.equal((await recoverJobPage(page,unknown)).ready,false);
  const changed=failure();await page.locator('[contenteditable]').fill('用户的新草稿');
