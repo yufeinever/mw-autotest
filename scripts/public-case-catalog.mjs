@@ -1,6 +1,6 @@
 // 公众版独立定义。入口、材料和判定单独维护；声明已接入不代表已实测通过。
 const scenes=[
- ['日常办公','日程管理','帮我规划本周的工作日程与优先级。','workday-calendar'],
+ ['日常办公','日程管理','帮我整理日程并排定优先级。可以直接上传日程表、会议通知等文件（Excel/Word/文本均可），将根据文件内容生成对应日程。','workday-calendar'],
  ['日常办公','会议纪要','把这段会议记录整理成结构化纪要与待办清单。','meeting-and-brief'],
  ['日常办公','邮件处理','帮我起草一封专业的工作邮件。','email-official'],
  ['日常办公','文稿写作','帮我起草一份公文（请说明文种与主要内容）。','chinese-official-writing'],
@@ -26,7 +26,7 @@ const goals=[
 export const publicCases=scenes.map(([category,button,prompt,skill],index)=>Object.freeze({
  number:index+1,id:'MW-PUBLIC-'+String(index+1).padStart(3,'0'),clientEdition:'public',suite:'functional',
  title:'公众版 · '+button+'：'+goals[index],category,button,prompt,skills:skill?[skill]:[],
- expert:index===6?'mermaid-diagram-expert':null,kind:'public-scene',label:'公众版-'+button.replaceAll('/',''),
+ expert:index===6?'mermaid-diagram-expert':null,expertLabel:index===6?'图表设计与渲染专家':null,kind:'public-scene',label:'公众版-'+button.replaceAll('/',''),
  sourceCaseId:'MW-CLIENT-'+String(index+1).padStart(3,'0'),
  requirement:'公众版MW-V1.0.1实际首页场景与自动填充；仅沿用政企版同序号的业务目标，独立材料与判定。',
  requirementLink:'测试用例与脚本/公众版01-10用例说明.md',

@@ -24,7 +24,7 @@ async function noUnknownDialog(page){
  if(await button(page,'立即终止并生效').count())throw blocked('公众版预置配置等待引擎生效；请确认当前任务已结束后处理客户端重载提示，本轮未强制终止');
  if(await modalDialogs(page).count())throw blocked('公众版出现未支持弹框，保留现场：'+(await modalDialogs(page).first().innerText()).slice(0,300));
 }
-async function fillPublicScene(page,definition,config,{assert,capture,control,log}){
+async function fillPublicScene(page,definition,config,{assert,capture,control,log,rememberDraft}){
  await noUnknownDialog(page);await resetComposerPermission(page,config);
  // Public Base UI popovers finish their exit animation after Escape resolves.
  // Only wait for the permission menu opened by this check, never dismiss unknown dialogs.
@@ -51,12 +51,12 @@ async function fillPublicScene(page,definition,config,{assert,capture,control,lo
  if(!await scene.isEnabled())throw blocked('公众版场景尚未生效：'+definition.button);
  const previousSelection=await selectionState(page);await waitStep(page,config);await scene.click();
  const editor=editorOf(page);await editor.waitFor({timeout:10000});
- try{await page.waitForFunction(prompt=>[...document.querySelectorAll('[contenteditable=true]')].some(e=>e.innerText.includes(prompt)),definition.prompt,{timeout:10000});}
- catch(error){await noUnknownDialog(page);throw error;}
- const owned={...await snapshotDraft(page,editor),editor,previousSelection};await control.checkpointDraft(owned);
+ try{await page.waitForFunction(([element,prompt])=>element.innerText.includes(prompt),[await editor.elementHandle(),definition.prompt],{timeout:10000});}
+ catch(error){await noUnknownDialog(page);throw blocked('场景预填与当前版本不一致或未完成，请检查“'+definition.button+'”预填内容；未发送任务');}
+ const owned={...await snapshotDraft(page,editor),editor,previousSelection};await control.checkpointDraft(owned);rememberDraft(owned);
  await noUnknownDialog(page);assert('公众版场景真实自动填充',containsComposerText(owned.text,definition.prompt),{expected:definition.prompt,actual:owned.text});
  assert('公众版场景技能选择与实际预置一致',definition.skills.every(skill=>owned.skills.includes(skill)),{expected:definition.skills,actual:owned.skills});
- if(definition.expert)assert('架构图场景确实选择专家',owned.selection.length>0,owned.selection);
+ if(definition.expert)assert('架构图场景确实选择预期专家',owned.selection.some(selected=>selected.item==='expert'&&selected.exit==='退出「'+definition.expertLabel+'」'),{expected:definition.expertLabel,actual:owned.selection});
  assert('自动填充后可运行任务',await button(page,'运行任务').isEnabled());
  await capture('公众版场景自动填充');log('公众版场景已核对',definition.category+' → '+definition.button);return owned;
 }
@@ -103,7 +103,7 @@ export async function runPublicCase(number,inputConfig){
   await control.begin(page,{openComposer:!checkOnly,stepInterval:config.stepInterval,model:config.model});await capture('连接公众版');
   if(checkOnly){await noUnknownDialog(page);result='CHECKED';log('仅预检','未选择场景或发送业务');}
   else{
-   owned=await fillPublicScene(page,definition,config,{assert,capture,control,log});
+   owned=await fillPublicScene(page,definition,config,{assert,capture,control,log,rememberDraft:draft=>{owned=draft;}});
    const after=await appendComposerText(owned.editor,input,{stepInterval:config.stepInterval,onDraft:async value=>{owned={...owned,...value};await control.checkpointDraft(owned);}});owned={...owned,...after};
    assert('保留预填且追加完整本轮材料',containsComposerText(owned.text,definition.prompt)&&containsComposerText(owned.text,input)&&definition.skills.every(skill=>owned.skills.includes(skill)));
    await capture('公众版完整测试材料');
@@ -130,27 +130,35 @@ export async function runPublicCase(number,inputConfig){
     environment.sessionDirectory=directory;actualOutput=path.join(directory,relativeOutput);environment.outputDirectory=actualOutput;
     await fs.writeFile(path.join(dir,'环境.json'),JSON.stringify(environment,null,2));await capture('公众版发送成功');
     const data=await control.wait(page,config,{timeoutMs:definition.timeoutMs,capture,log});
-    const final=data.messages.filter(m=>m.info?.role==='assistant'&&!(m.parts||[]).some(p=>p.type==='tool')).at(-1);
+    const final=data.messages.filter(m=>m.info?.role==='assistant'&&m.info?.time?.completed).at(-1);
     const text=(final?.parts||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('\n');
     await fs.writeFile(path.join(dir,'助手最终回复.txt'),text);checks.push(...publicTextChecks(number,text));
     if(publicArtifacts[number]){
      const artifacts=await publicFileChecks(number,actualOutput);checks.push(...artifacts.checks);
      for(const artifact of artifacts.outputs){const rel=path.join('产物',artifact.name);await fs.mkdir(path.dirname(path.join(dir,rel)),{recursive:true});await fs.copyFile(artifact.source,path.join(dir,rel));outputs.push({...artifact,path:rel});}
     }
-    await capture('公众版执行完成');result=checks.every(c=>c.pass)?'PASS':'FAIL';
-    if(result==='FAIL')error=checks.filter(c=>!c.pass).map(c=>c.name).join('；');
+    await capture('公众版执行完成');result='PASS';
    }
   }
- }catch(e){error=e.message;result=e.blocked?'BLOCKED':'FAIL';log(result,error);if(page)await capture('公众版异常现场').catch(e=>log('异常现场未采集',e.message));if(!submitted&&owned&&page)await clearOwnedDraft(page,owned,config).catch(()=>false);}
+ }catch(e){error=e.message;result=e.blocked||/MessageAbortedError/.test(error)?'BLOCKED':'FAIL';
+  if(page&&/MessageAbortedError/.test(error)){
+   const visible=await page.locator('body').innerText({timeout:3000}).catch(()=>'');
+   if(visible.includes('MW103032001')&&visible.includes('请求模型服务 180 秒内未得到响应'))error='客户端提示请求模型服务180秒内未得到响应（MW103032001）；'+error;
+  }
+  log(result,error);if(page)await capture('公众版异常现场').catch(e=>log('异常现场未采集',e.message));if(!submitted&&owned&&page)await clearOwnedDraft(page,owned,config).catch(()=>false);}
  finally{
-  if(page&&sessionId){trace=await saveRunTrace({page,sessionId,definition,dir,checks,log,...(control?.connection?{readLog:children=>control.readLog(children)}:{})});if(result==='PASS'&&checks.some(c=>!c.pass)){result='FAIL';error='公众版Trace或预期技能实际调用核对失败';}}
-  if(result==='PASS'&&warnings.length){result='REVIEW';error='业务检查完成，但截图证据不完整，需复核';}
-  try{await control?.close(page);}catch(e){warnings.push('调度交接未完成：'+e.message);if(['PASS','CHECKED'].includes(result)){result='BLOCKED';error=warnings.at(-1);}}
+  if(page&&sessionId){trace=await saveRunTrace({page,sessionId,definition,dir,checks,log,...(control?.connection?{readLog:children=>control.readLog(children)}:{})});}
+  if(result==='PASS'){
+   const failed=checks.filter(c=>c.pass===false&&!c.review),pending=checks.filter(c=>c.review||c.pass==null);
+   if(failed.length){result='FAIL';error=failed.map(c=>c.name).join('；');}
+   else if(pending.length||warnings.length){result='REVIEW';error=[...pending.map(c=>c.name),...warnings].join('；');}
+  }
+  try{await control?.close(page);}catch(e){warnings.push('调度交接未完成：'+e.message);if(['PASS','REVIEW','CHECKED'].includes(result)){result='BLOCKED';error=warnings.at(-1);}}
   await browser?.close().catch(()=>{});
   const summary={result,caseId:definition.id,title:definition.title,sourceCaseId:definition.sourceCaseId,clientEdition:'public',requirement:definition.requirement,requirementLink:definition.requirementLink,startedAt:started.toISOString(),endedAt:new Date().toISOString(),sessionId,runConfig:safeConfig,environment,mode:checkOnly?'只读预检':fillOnly?'填充检查（未发送）':'完整执行',checks,events,evidence:recorder.evidence,outputs,trace,warnings,error,scope:definition.expected+' 公众版独立材料及判定；不代表完整产品需求验收，正文检查不强求固定措辞，产物检查以本轮真实文件为准。'};
   await fs.writeFile(path.join(dir,'执行结果.json'),JSON.stringify(summary,null,2));
   await fs.writeFile(path.join(dir,'执行日志.txt'),events.map(e=>'['+beijingLogTime(new Date(e.time))+'] '+e.step+' '+e.detail).join('\n')+'\n');
-  const lines=['# '+definition.id+' 公众版执行报告','','- 用例：'+definition.title,'- 结果：'+result,'- 业务来源：'+definition.sourceCaseId+'（仅继承目标，非复用脚本）','- Session：'+(sessionId||'未创建'),'- 实际任务目录：'+(environment.sessionDirectory||'未取得'),'- 执行模式：'+summary.mode,'- 错误：'+(error||'无'),'- 范围：'+summary.scope,'','## 本轮检查','',...checks.map(c=>'- '+(c.pass?'通过':'**不符合**')+'：'+c.name+(c.actual===undefined?'':'；实际：'+JSON.stringify(c.actual))),'','## 证据缺口','',...warnings.map(w=>'- '+w),'','## 真实产物','',...outputs.map(o=>'- ['+o.name+']('+o.path.replaceAll('\\','/')+')'),'','## 执行过程','',...events.map(e=>'- ['+beijingLogTime(new Date(e.time))+'] '+e.step+' '+e.detail),'','## 关键截图','',...recorder.evidence.flatMap(e=>['### '+e.step,'','!['+e.step+']('+e.screenshot+')',''])];
+  const lines=['# '+definition.id+' 公众版执行报告','','- 用例：'+definition.title,'- 结果：'+result,'- 业务来源：'+definition.sourceCaseId+'（仅继承目标，非复用脚本）','- Session：'+(sessionId||'未创建'),'- 实际任务目录：'+(environment.sessionDirectory||'未取得'),'- 执行模式：'+summary.mode,'- 错误：'+(error||'无'),'- 范围：'+summary.scope,'','## 本轮检查','',...checks.map(c=>'- '+(c.review||c.pass==null?'**待复核**':c.pass?'通过':'**不符合**')+'：'+c.name+(c.actual===undefined?'':'；实际：'+JSON.stringify(c.actual))),'','## 证据缺口','',...warnings.map(w=>'- '+w),'','## 真实产物','',...outputs.map(o=>'- ['+o.name+']('+o.path.replaceAll('\\','/')+')'),'','## 执行过程','',...events.map(e=>'- ['+beijingLogTime(new Date(e.time))+'] '+e.step+' '+e.detail),'','## 关键截图','',...recorder.evidence.flatMap(e=>['### '+e.step,'','!['+e.step+']('+e.screenshot+')',''])];
   if(trace)lines.push('','## Trace','','[本Session调用证据](trace.json)');
   await fs.writeFile(path.join(dir,'执行报告.md'),lines.join('\n')+'\n');console.log('报告：'+path.join(dir,'执行报告.md'));process.exitCode=['PASS','CHECKED'].includes(result)?0:result==='BLOCKED'?2:1;
  }

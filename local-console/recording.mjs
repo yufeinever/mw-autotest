@@ -92,7 +92,11 @@ export class PageRecorder {
   this.state.status='FINALIZING';await this.publish();
   try{
    if(this.encoder){
-    if(this.writing)await this.writing;
+    // A write failure can call stop() from the write-error path while the
+    // same promise is still settling. Waiting unboundedly here deadlocks
+    // finish(), leaving the worker and ffmpeg alive forever. Give the write
+    // a short grace period, then close/kill the encoder in the error path.
+    if(this.writing)await timeout(this.writing,3000,'录像写入收尾超时').catch(error=>{this.state.error||=error.message;});
     if(!this.state.error)await this.flush();
     this.encoder.stdin.end();
     const code=await timeout(this.exit,10000,'录像保存超时');

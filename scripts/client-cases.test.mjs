@@ -10,6 +10,7 @@ import {clientCases,getClientCase} from './client-case-catalog.mjs';
 import {permissionCases} from './permission-case-catalog.mjs';
 import {clientCaseInput} from './client-case-inputs.mjs';
 import {textChecks,algorithmChecks,workflowChecks,diagramChecks,pptChecks,skillArchiveChecks,zipTextFiles,readArtifact} from './client-case-checks.mjs';
+import {publicTextChecks,publicFileChecks} from './public-case-checks.mjs';
 import {previewChecks} from './client-case-preview.mjs';
 import {fillScenario,clearOwnedDraft,waitSentInput,waitCreatedSession,finalAssistantText,guardDialogs} from './client-case-runner.mjs';
 import {withClientCases} from '../local-console/case-registry.mjs';
@@ -17,6 +18,60 @@ import {createConsole,projectRoot} from '../local-console/server.mjs';
 import {normalizeConfig} from '../local-console/policy.mjs';
 
 const all=checks=>checks.every(c=>c.pass),json=x=>'```json\n'+JSON.stringify(x)+'\n```';
+test('公众版检查：正文语义需复核，空回复仍然失败',()=>{
+ for(let number=1;number<=4;number++){
+  const checks=publicTextChecks(number,'测试回复');
+  assert.ok(checks.some(c=>c.review===true&&c.pass===null));
+  const empty=publicTextChecks(number,'');
+  assert.equal(empty.find(c=>c.name==='本Session有非空最终助手正文')?.pass,false);
+ }
+});
+test('公众版检查：生成的模块和测试文件不得执行',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-public-code-check-'));
+ try{
+  for(const [number,sourceName,testName,fn] of [[5,'priority.mjs','priority.test.mjs','normalizePriority'],[9,'clamp.mjs','clamp.test.mjs','clamp']]){
+   const marker=path.join(dir,'executed-'+number);
+   const payload=`this.constructor.constructor('return process')().getBuiltinModule('fs').writeFileSync(${JSON.stringify(marker)},'executed');`;
+   await fs.writeFile(path.join(dir,sourceName),payload+`\nexport function ${fn}() {}`);
+   await fs.writeFile(path.join(dir,testName),payload+'\nassert(true);');
+   const {checks}=await publicFileChecks(number,dir);
+   assert.ok(checks.some(c=>c.review===true&&c.pass===null));
+   assert.equal(checks.filter(c=>c.pass===false).length,0);
+   await assert.rejects(fs.access(marker),{code:'ENOENT'});
+  }
+  await fs.rm(path.join(dir,'clamp.test.mjs'));
+  const missing=await publicFileChecks(9,dir);
+  assert.ok(missing.checks.some(c=>c.pass===false&&c.name.includes('clamp.test.mjs')));
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+test('公众版检查：流水线条件不得执行，结构错误仍然失败',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-public-workflow-check-'));
+ try{
+  const marker=path.join(dir,'executed');
+  const condition=`this.constructor.constructor('return process')().getBuiltinModule('fs').writeFileSync(${JSON.stringify(marker)},'executed') || true`;
+  const setup=[{uses:'actions/checkout@v4'},{uses:'actions/setup-node@v4',with:{'node-version':22}},{run:'npm ci'}];
+  const workflow={on:{push:{},pull_request:{},workflow_dispatch:{inputs:{confirm:{type:'boolean',default:false}}}},permissions:{contents:'read'},jobs:{
+   test:{'runs-on':'ubuntu-latest',steps:[...setup,{run:'npm test'}]},
+   build:{needs:'test','runs-on':'ubuntu-latest',steps:[...setup,{run:'npm run build'},{uses:'actions/upload-artifact@v4',with:{path:'dist'}}]},
+   deploy:{needs:'build','runs-on':'ubuntu-latest',if:condition,steps:[{run:'echo deploy'}]},
+   release:{needs:'build','runs-on':'ubuntu-latest',if:condition,steps:[{run:'echo release'}]}
+  }};
+  const workflowDir=path.join(dir,'.github','workflows');
+  await fs.mkdir(workflowDir,{recursive:true});await fs.writeFile(path.join(dir,'README.md'),'fixture');
+  const workflowPath=path.join(workflowDir,'ci.yml');await fs.writeFile(workflowPath,stringify(workflow));
+  let {checks}=await publicFileChecks(6,dir);
+  assert.ok(checks.some(c=>c.review===true&&c.pass===null));
+  assert.equal(checks.filter(c=>c.pass===false).length,0);
+  await assert.rejects(fs.access(marker),{code:'ENOENT'});
+  workflow.jobs.deploy.needs='test';await fs.writeFile(workflowPath,stringify(workflow));
+  ({checks}=await publicFileChecks(6,dir));
+  assert.ok(checks.some(c=>c.review===true&&c.pass===null));
+  assert.ok(checks.some(c=>c.pass===false&&c.name.includes('依赖构建')));
+  await fs.writeFile(workflowPath,'jobs: [');
+  ({checks}=await publicFileChecks(6,dir));
+  assert.ok(checks.some(c=>c.pass===false&&c.name==='YAML语法正确'));
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
 test('日程功能按实际安排与优先顺序判断，拒绝仅复述要求或无关回复',()=>{
  // Excerpt from the 1020-2321 false negative; keep regression portable.
  const actual='## 本周工作日程与优先级\n优先级规则：本周必须交付、影响他人或有明确截止时间的事项。\n按天安排：10月21日 周三，完成最紧急、最接近截止的交付事项。\n每天2小时建议拆分：前10分钟确认当天唯一核心目标；接下来80分钟连续深度工作；最后30分钟检查、整理、提交。';

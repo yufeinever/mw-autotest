@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import vm from 'node:vm';
 import {parseDocument} from 'yaml';
 import {unzipSync,strFromU8} from 'fflate';
 
 const item=(name,pass,actual)=>({name,pass:Boolean(pass),...(actual===undefined?{}:{actual})});
+const review=(name,actual)=>({name,pass:null,review:true,...(actual===undefined?{}:{actual})});
 const compact=text=>String(text).normalize('NFKC').replace(/[\s*_`]/g,'');
 const all=(text,patterns)=>patterns.every(p=>p.test(text));
 const clock=(h,m)=>new RegExp(`${h}[:：]${String(m).padStart(2,'0')}|${h}(?:时|点)${m===0?'(?:整)?':m+'分?'}|${h>12?'下午'+(h-12)+(m===30?'点半|下午'+(h-12)+':30':'点'):'(?!)'}`);
@@ -19,6 +19,7 @@ export function publicTextChecks(number,text){
  }else if(number===4){
   checks.push(item('通知对象、核查内容及单位完整',all(s,[/各部门/,/电脑/,/显示器/,/打印机/,/资产编号/,/使用人/,/设备状态|状态/,/蓝桥科技综合管理部/])),item('提交期限联系人与异常说明完整',all(s,[/11(?:月|[-/.])13|13日/,clock(17,0),/周宁/,/806/,/丢失|遗失/,/损坏/,/单独|另行|注明|说明/])));
  }
+ if(number>=1&&number<=4)checks.push(review('文本关键事实与业务约束的语义关系待复核',{reason:'自动检查仅识别关键词，不能证明时间、负责人、约束等关系均正确。'}));
  return checks;
 }
 export const publicArtifacts={5:['priority.mjs','priority.test.mjs'],6:['.github/workflows/ci.yml','README.md'],7:['architecture.mmd'],8:['text-brief.zip'],9:['clamp.mjs','clamp.test.mjs'],10:['试点复盘.pptx']};
@@ -30,25 +31,20 @@ async function ownedFile(root,name){
 }
 function functionChecks(number,source,testSource){
  const fn=number===5?'normalizePriority':'clamp';
- const checks=[item('实现具名导出且测试文件包含真实断言',new RegExp('export[\\s\\S]*\\b'+fn+'\\b').test(source)&&/assert|expect|throw/.test(testSource))];
- if(/\bimport\s|\brequire\s*\(|\bprocess\s*\.|\bfetch\s*\(/.test(source)){checks.push(item('纯函数实现无文件网络进程依赖',false));return checks;}
- const executable=source.replace(/export\s*\{[^}]*\}\s*;?/g,'').replace(/\bexport\s+(?=(?:async\s+)?function|const|let|var|class)/g,'');
- const calls=number===5?[[['P0'],'P0'],[[' p1 '],'P1'],[['p2'],'P2'],[['P3'],null,'RangeError'],[[''],null,'RangeError'],[[1],null,'TypeError'],[[null],null,'TypeError'],[[{}],null,'TypeError']]:[[[5,0,10],5],[[12,0,10],10],[[ -2,0,10],0],[[2,2,2],2],[[ -5,-10,-1],-5],[[1,2,0],null,'RangeError'],[['5',0,10],null,'TypeError'],[[null,0,10],null,'TypeError']];
- try{
-  const values=JSON.parse(vm.runInNewContext(executable+'\nJSON.stringify('+JSON.stringify(calls.map(c=>c[0]))+'.map(args=>{try{return {value:'+fn+'(...args)}}catch(e){return {error:e.name}}}))',{}, {timeout:1000,contextCodeGeneration:{strings:false,wasm:false}}));
-  for(let i=0;i<calls.length;i++)checks.push(item('独立行为 '+fn+'('+JSON.stringify(calls[i][0]).slice(1,-1)+')',calls[i][2]?values[i].error===calls[i][2]:values[i].value===calls[i][1],values[i]));
-  if(number===9){const nonfinite=JSON.parse(vm.runInNewContext(executable+'\nJSON.stringify([NaN,Infinity,-Infinity].flatMap(v=>[[v,0,1],[0,v,1],[0,0,v]]).map(args=>{try{clamp(...args);return false}catch(e){return e.name==="TypeError"}}))',{}, {timeout:1000}));checks.push(item('三个参数均拒绝NaN与正负Infinity',nonfinite.length===9&&nonfinite.every(Boolean)));}
- }catch(error){checks.push(item('真实模块可独立验证',false,error.message));}
- return checks;
+ return [review('函数导出、行为与测试有效性待人工复核',{
+  functionName:fn,
+  sourceMentionsFunction:new RegExp('\\b'+fn+'\\b').test(source),
+  testMentionsAssertion:/assert|expect|throw/.test(testSource),
+  reason:'仅提供文本线索，未执行或证明生成代码和测试的行为；需在可信隔离环境中验证。'
+ })];
 }
 function workflowChecks(source){
  const doc=parseDocument(source);if(doc.errors.length)return [item('YAML语法正确',false,doc.errors.map(e=>e.message))];
  const w=doc.toJS(),jobs=w?.jobs||{},entries=Object.entries(jobs),steps=j=>j?.steps||[],runs=(j,re)=>steps(j).some(s=>re.test(s.run||''));
  const test=entries.find(([,j])=>runs(j,/npm test/)),build=entries.find(([,j])=>runs(j,/npm run build/));
  const depends=(j,id)=>[j?.needs].flat().includes(id),setup=j=>steps(j).some(s=>String(s.uses).startsWith('actions/checkout@'))&&steps(j).some(s=>String(s.uses).startsWith('actions/setup-node@')&&/^22(?:\.|$)/.test(String(s.with?.['node-version'])));
- const guarded=j=>{const expression=String(j.if||'').replace(/^\s*\$\{\{|\}\}\s*$/g,'');try{return ['push','pull_request','workflow_dispatch'].every(event=>[false,true].every(confirm=>Boolean(vm.runInNewContext(expression,{github:{event_name:event,event:{inputs:{confirm:String(confirm)}}},inputs:{confirm}},{timeout:100}))===(event==='workflow_dispatch'&&confirm)));}catch{return false;}};
  const delivery=entries.filter(([id,j])=>/deploy|release|部署|发布/i.test(id+' '+(j.name||'')));
- return [item('三种触发与默认只读权限',all(JSON.stringify(w.on||{}),[/push/,/pull_request/,/workflow_dispatch/])&&w.permissions?.contents==='read'),item('手动确认布尔输入默认关闭',w.on?.workflow_dispatch?.inputs?.confirm?.type==='boolean'&&w.on.workflow_dispatch.inputs.confirm.default===false),item('测试构建真实依赖及Node22环境',test&&build&&depends(build[1],test[0])&&[test[1],build[1]].every(j=>setup(j)&&runs(j,/npm ci/)&&j['runs-on'])),item('上传dist构建产物',steps(build?.[1]).some(s=>String(s.uses).startsWith('actions/upload-artifact@')&&/dist/.test(s.with?.path||''))),item('部署发布均依赖构建且仅手动确认后模拟',delivery.length===2&&delivery.every(([,j])=>depends(j,build?.[0])&&guarded(j)&&j['runs-on']&&steps(j).length&&steps(j).every(s=>!s.uses&&typeof s.run==='string'&&s.run.trim().split('\n').every(line=>/^\s*echo(?:\s|$)/.test(line)&&!/[`$;&|<>]/.test(line))))&&!/secrets\./i.test(source))];
+ return [item('三种触发与默认只读权限',all(JSON.stringify(w.on||{}),[/push/,/pull_request/,/workflow_dispatch/])&&w.permissions?.contents==='read'),item('手动确认布尔输入默认关闭',w.on?.workflow_dispatch?.inputs?.confirm?.type==='boolean'&&w.on.workflow_dispatch.inputs.confirm.default===false),item('测试构建真实依赖及Node22环境',test&&build&&depends(build[1],test[0])&&[test[1],build[1]].every(j=>setup(j)&&runs(j,/npm ci/)&&j['runs-on'])),item('上传dist构建产物',steps(build?.[1]).some(s=>String(s.uses).startsWith('actions/upload-artifact@')&&/dist/.test(s.with?.path||''))),item('部署发布均依赖构建且仅有模拟步骤',delivery.length===2&&delivery.every(([,j])=>depends(j,build?.[0])&&j['runs-on']&&steps(j).length&&steps(j).every(s=>!s.uses&&typeof s.run==='string'&&s.run.trim().split('\n').every(line=>/^\s*echo(?:\s|$)/.test(line)&&!/[`$;&|<>]/.test(line))))&&!/secrets\./i.test(source)),review('部署发布的手动确认条件待人工复核',{conditions:delivery.map(([id,j])=>({job:id,condition:j.if??null})),reason:'仅记录 GitHub Actions 条件，不执行或推断表达式语义。'})];
 }
 function diagramChecks(source){
  const labels=new Map(),roles={browser:/浏览器|browser/i,gateway:/API\s*网关|API\s*gateway/i,orders:/订单服务|order\s*service/i,db:/PostgreSQL/i,cache:/Redis/i,queue:/消息队列|message\s*queue/i,notify:/通知服务|notification\s*service/i};
