@@ -506,7 +506,7 @@ async function showBrowserTrace(id) {
 }
 
 // package.json
-var version = "0.0.52";
+var version = "0.0.53";
 
 // local-console/client-edition.mjs
 var editionLabels = { enterprise: "\u653F\u4F01\u7248", public: "\u516C\u4F17\u7248" };
@@ -681,7 +681,7 @@ var permissionCases = rows.map(([title, fixture, expectation, task, unavailable]
 
 // scripts/public-case-catalog.mjs
 var scenes = [
-  ["\u65E5\u5E38\u529E\u516C", "\u65E5\u7A0B\u7BA1\u7406", "\u5E2E\u6211\u89C4\u5212\u672C\u5468\u7684\u5DE5\u4F5C\u65E5\u7A0B\u4E0E\u4F18\u5148\u7EA7\u3002", "workday-calendar"],
+  ["\u65E5\u5E38\u529E\u516C", "\u65E5\u7A0B\u7BA1\u7406", "\u5E2E\u6211\u6574\u7406\u65E5\u7A0B\u5E76\u6392\u5B9A\u4F18\u5148\u7EA7\u3002\u53EF\u4EE5\u76F4\u63A5\u4E0A\u4F20\u65E5\u7A0B\u8868\u3001\u4F1A\u8BAE\u901A\u77E5\u7B49\u6587\u4EF6\uFF08Excel/Word/\u6587\u672C\u5747\u53EF\uFF09\uFF0C\u5C06\u6839\u636E\u6587\u4EF6\u5185\u5BB9\u751F\u6210\u5BF9\u5E94\u65E5\u7A0B\u3002", "workday-calendar"],
   ["\u65E5\u5E38\u529E\u516C", "\u4F1A\u8BAE\u7EAA\u8981", "\u628A\u8FD9\u6BB5\u4F1A\u8BAE\u8BB0\u5F55\u6574\u7406\u6210\u7ED3\u6784\u5316\u7EAA\u8981\u4E0E\u5F85\u529E\u6E05\u5355\u3002", "meeting-and-brief"],
   ["\u65E5\u5E38\u529E\u516C", "\u90AE\u4EF6\u5904\u7406", "\u5E2E\u6211\u8D77\u8349\u4E00\u5C01\u4E13\u4E1A\u7684\u5DE5\u4F5C\u90AE\u4EF6\u3002", "email-official"],
   ["\u65E5\u5E38\u529E\u516C", "\u6587\u7A3F\u5199\u4F5C", "\u5E2E\u6211\u8D77\u8349\u4E00\u4EFD\u516C\u6587\uFF08\u8BF7\u8BF4\u660E\u6587\u79CD\u4E0E\u4E3B\u8981\u5185\u5BB9\uFF09\u3002", "chinese-official-writing"],
@@ -715,6 +715,7 @@ var publicCases = scenes.map(([category, button, prompt, skill], index) => Objec
   prompt,
   skills: skill ? [skill] : [],
   expert: index === 6 ? "mermaid-diagram-expert" : null,
+  expertLabel: index === 6 ? "\u56FE\u8868\u8BBE\u8BA1\u4E0E\u6E32\u67D3\u4E13\u5BB6" : null,
   kind: "public-scene",
   label: "\u516C\u4F17\u7248-" + button.replaceAll("/", ""),
   sourceCaseId: "MW-CLIENT-" + String(index + 1).padStart(3, "0"),
@@ -1647,7 +1648,15 @@ if (traceId) {
     $("#nextPage").disabled = historyPage === pages;
   };
   const $ = (s) => document.querySelector(s);
-  let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false, lastServerCdpPort, editionSwitching = false;
+  let token = "", state, selectedJob, parentDir, initialized = false, historyPage = 1, scriptPage = 1, batchBusy = false, lastServerCdpPort, editionSwitching = false, consoleRestarting = false;
+  const restartConsoleButton = document.createElement("button");
+  restartConsoleButton.id = "restartConsole";
+  restartConsoleButton.type = "button";
+  restartConsoleButton.textContent = "\u21BB";
+  restartConsoleButton.title = "\u91CD\u542F\u6D4B\u8BD5\u63A7\u5236\u53F0";
+  restartConsoleButton.setAttribute("aria-label", "\u91CD\u542F\u6D4B\u8BD5\u63A7\u5236\u53F0");
+  restartConsoleButton.disabled = true;
+  document.querySelector(".header-actions").prepend(restartConsoleButton);
   const pendingScripts = /* @__PURE__ */ new Set(), selectedScripts = /* @__PURE__ */ new Set();
   let activeSuite = localStorage.getItem("mw-script-suite") === "permission" ? "permission" : "functional";
   const visibleScripts = () => scriptsInSuite(state?.scripts || [], activeSuite, state?.config.clientEdition || "enterprise");
@@ -1662,6 +1671,32 @@ if (traceId) {
     if (!r.ok) throw Error(j.error);
     return j;
   }
+  restartConsoleButton.onclick = async () => {
+    const previous = state?.instanceId, root = state?.projectRoot;
+    consoleRestarting = true;
+    restartConsoleButton.disabled = true;
+    try {
+      await api("/api/console/restart", {});
+      notice("\u6D4B\u8BD5\u63A7\u5236\u53F0\u6B63\u5728\u91CD\u542F\uFF0C\u8BF7\u7A0D\u5019\u2026");
+      const deadline = Date.now() + 65e3;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1e3));
+        try {
+          const response = await fetch("/api/state", { cache: "no-store", signal: AbortSignal.timeout(1500) }), next = await response.json();
+          if (response.ok && next.projectRoot === root && next.instanceId && next.instanceId !== previous) {
+            location.reload();
+            return;
+          }
+        } catch {
+        }
+      }
+      notice("\u91CD\u542F\u540E\u672A\u8FDE\u63A5\u5230\u65B0\u63A7\u5236\u53F0\uFF0C\u8BF7\u68C0\u67E518888\u7AEF\u53E3\u53CA\u672C\u5730\u542F\u52A8\u65E5\u5FD7\u3002", true);
+    } catch (error) {
+      notice("\u672A\u80FD\u91CD\u542F\u6D4B\u8BD5\u63A7\u5236\u53F0\uFF1A" + error.message, true);
+      consoleRestarting = false;
+      restartConsoleButton.disabled = false;
+    }
+  };
   const preview = installDetailPreview((id) => findScriptCase(state?.scripts.find((script) => script.id === id), state?.projectRoot), () => state?.capabilities?.detailPreview === 1, {
     readLocations: async (id) => {
       const current = state || await api("/api/state");
@@ -1851,6 +1886,7 @@ if (traceId) {
       if (Number($("#cdpPort").value) === lastServerCdpPort) $("#cdpPort").value = state.config.cdpPort;
       lastServerCdpPort = state.config.cdpPort;
     }
+    restartConsoleButton.disabled = consoleRestarting || state.capabilities?.consoleRestart !== 1 || !!state.active || state.readingModels || state.jobs.some((j) => j.schedulingHold || j.finalizing);
     $("#clientEdition").disabled = !!state.active || state.readingModels || cdpBusy || cdpRefreshing || editionSwitching;
     $("#connection").textContent = state.jobs.some((j) => j.status === "RUNNING") ? "\u811A\u672C\u6267\u884C\u4E2D" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CLIENT") ? "\u7B49\u5F85\u5BA2\u6237\u7AEF\u51C6\u5907" : state.jobs.some((j) => j.status === "QUEUED" && j.phase === "WAITING_CONNECTION") ? "\u7B49\u5F85 MobileWork \u8FDE\u63A5" : state.active ? "\u811A\u672C\u6392\u961F\u4E2D" : "\u672C\u673A\u670D\u52A1\u5DF2\u8FDE\u63A5";
     $("#models").disabled = !!state.active || state.readingModels || editionSwitching;

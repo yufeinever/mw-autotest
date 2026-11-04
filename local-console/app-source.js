@@ -11,7 +11,10 @@ document.querySelector('header h1')?.append(Object.assign(document.createElement
 const params=new URLSearchParams(location.search),traceId=params.get('trace'),batchId=params.get('batch');
 if(traceId){await showBrowserTrace(traceId);}else if(batchId){await showBatch(batchId);}else{
 const $=s=>document.querySelector(s);
-let token='',state,selectedJob,parentDir,initialized=false,historyPage=1,scriptPage=1,batchBusy=false,lastServerCdpPort,editionSwitching=false;
+let token='',state,selectedJob,parentDir,initialized=false,historyPage=1,scriptPage=1,batchBusy=false,lastServerCdpPort,editionSwitching=false,consoleRestarting=false;
+const restartConsoleButton=document.createElement('button');
+restartConsoleButton.id='restartConsole';restartConsoleButton.type='button';restartConsoleButton.textContent='↻';restartConsoleButton.title='重启测试控制台';restartConsoleButton.setAttribute('aria-label','重启测试控制台');restartConsoleButton.disabled=true;
+document.querySelector('.header-actions').prepend(restartConsoleButton);
 const pendingScripts=new Set(),selectedScripts=new Set();
 let activeSuite=localStorage.getItem('mw-script-suite')==='permission'?'permission':'functional';
 const visibleScripts=()=>scriptsInSuite(state?.scripts||[],activeSuite,state?.config.clientEdition||'enterprise');
@@ -21,6 +24,18 @@ labels.STOPPED='已强制停止';
 labels.REVIEW='已观察·待复核';
 function notice(text,error=false){$('#message').textContent=text;$('#message').className=error?'error':'';}
 async function api(url,data,method){const r=await fetch(url,{method:method||(data?'POST':'GET'),headers:{'Content-Type':'application/json','x-console-token':token},body:data?JSON.stringify(data):undefined});const j=await r.json();if(!r.ok)throw Error(j.error);return j;}
+restartConsoleButton.onclick=async()=>{
+ const previous=state?.instanceId,root=state?.projectRoot;consoleRestarting=true;restartConsoleButton.disabled=true;
+ try{
+  await api('/api/console/restart',{});notice('测试控制台正在重启，请稍候…');
+  const deadline=Date.now()+65000;
+  while(Date.now()<deadline){
+   await new Promise(resolve=>setTimeout(resolve,1000));
+   try{const response=await fetch('/api/state',{cache:'no-store',signal:AbortSignal.timeout(1500)}),next=await response.json();if(response.ok&&next.projectRoot===root&&next.instanceId&&next.instanceId!==previous){location.reload();return;}}catch{}
+  }
+  notice('重启后未连接到新控制台，请检查18888端口及本地启动日志。',true);
+ }catch(error){notice('未能重启测试控制台：'+error.message,true);consoleRestarting=false;restartConsoleButton.disabled=false;}
+};
 const preview=installDetailPreview(id=>findScriptCase(state?.scripts.find(script=>script.id===id),state?.projectRoot),()=>state?.capabilities?.detailPreview===1,{
  readLocations:async id=>{const current=state||await api('/api/state');if(current.capabilities?.recordingFolders!==1)throw Error('请在任务空闲时重启控制台，以启用录像文件夹入口');token=current.token;return api('/api/jobs/'+encodeURIComponent(id)+'/recording-locations');},
  readEvidence:async id=>{const job=await api('/api/jobs/'+encodeURIComponent(id));return {name:job.name,recording:job.recording,evidence:job.result?.evidence||[]};},
@@ -108,7 +123,7 @@ async function refresh(){
  state=await api('/api/state');token=state.token;
  if(!initialized){const c=state.config;selectEdition(c.clientEdition||'enterprise');syncEdition();$(`[name=question][value="${c.question}"]`).checked=true;$(`[name=approval][value="${c.approval}"]`).checked=true;$('#customText').value=c.customText;$('#cdpPort').value=c.cdpPort;lastServerCdpPort=c.cdpPort;$('#stepInterval').value=c.stepInterval??0.5;const v=c.recording||{};$('#recordingEnabled').checked=v.enabled??true;$('#recordingResolution').value=v.resolution||'960x540';$('#recordingFps').value=v.fps||30;$('#recordingBitrate').value=v.bitrateKbps||600;$('#recordingMaxSeconds').value=v.maxSeconds||600;syncRecording();if(c.model)modelOption(c.model);$('#model').value=c.model;const p=c.provider||{};$('#providerUrl').value=p.url||'';$('#providerKey').value=p.key||'';$('#providerModel').value=p.model||'';$('#providerMulti').checked=!!p.multimodal;$('#inputTokens').value=p.inputTokens||262144;$('#outputTokens').value=p.outputTokens||65536;syncCustom();initialized=true;}
  else if(state.config.cdpPort!==lastServerCdpPort){if(Number($('#cdpPort').value)===lastServerCdpPort)$('#cdpPort').value=state.config.cdpPort;lastServerCdpPort=state.config.cdpPort;}
- $('#clientEdition').disabled=!!state.active||state.readingModels||cdpBusy||cdpRefreshing||editionSwitching;$('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CLIENT')?'等待客户端准备':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels||editionSwitching;
+ restartConsoleButton.disabled=consoleRestarting||state.capabilities?.consoleRestart!==1||!!state.active||state.readingModels||state.jobs.some(j=>j.schedulingHold||j.finalizing);$('#clientEdition').disabled=!!state.active||state.readingModels||cdpBusy||cdpRefreshing||editionSwitching;$('#connection').textContent=state.jobs.some(j=>j.status==='RUNNING')?'脚本执行中':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CLIENT')?'等待客户端准备':state.jobs.some(j=>j.status==='QUEUED'&&j.phase==='WAITING_CONNECTION')?'等待 MobileWork 连接':state.active?'脚本排队中':'本机服务已连接';$('#models').disabled=!!state.active||state.readingModels||editionSwitching;
  if(state.capabilities?.taskIsolation!==2)batchNotice('任务隔离升级尚未加载：请先关闭旧控制台服务，再运行“启动测试平台.cmd”，仍使用18888端口；仅刷新页面不能升级服务。',true);
  if(state.capabilities?.serialOnly!==1)batchNotice('串行调度升级尚未加载，请在任务空闲后重启控制台，仍使用18888端口。',true);
  renderScripts();

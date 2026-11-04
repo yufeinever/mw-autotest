@@ -50,6 +50,7 @@ import {observatoryDocument} from './observatory-view.mjs';
 import {collectBatches,publicJob} from './batches.mjs';
 import {TaskScheduler} from './task-scheduler.mjs';
 import {recoverJob} from './task-recovery.mjs';
+import {prepareConsoleRestart} from './console-restart.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 export const projectRoot=path.resolve(here,'..');
@@ -63,7 +64,7 @@ export async function defaultConsoleDataDir(base=path.join(projectRoot,'runtime-
  if(!relative||relative.startsWith('..')||path.isAbsolute(relative))throw Error('控制台数据目录必须位于 test-console 内');
  await fs.access(path.join(target,'settings.json'));return target;
 }
-export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile,clientProbe=probeCdp,discoverPort=discoverClientCdpPort,verifyRestartPort=verifyClientRestartPort,composerReleaser=releaseComposer}={}){
+export async function createConsole({port=18888,dataDir,modelReader,traceReader,cooperativeDetector,recovery=recoverJob,sessionStopper=stopSession,lockReleaser=job=>releaseOwnedLock(job,projectRoot),recorderFactory=startRecording,folderOpener=openWindowsFolder,cdpConfigFile,clientProbe=probeCdp,discoverPort=discoverClientCdpPort,verifyRestartPort=verifyClientRestartPort,composerReleaser=releaseComposer,restartCoordinator=prepareConsoleRestart}={}){
  dataDir??=await defaultConsoleDataDir();
  await fs.mkdir(dataDir,{recursive:true});
  const settingsPath=path.join(dataDir,'settings.json');
@@ -73,7 +74,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  state.config=normalizeConfig(state.config);
  const currentBuildInfo=()=>cdpConfigFile||readEnvironment(state.config.clientEdition).buildInfoPath;
  const jobs=[],batches=[];const active=new Set(),batchStarting=new Set(),taskTokens=new Map(),taskRuntimes=new Map();let readingModels=false,editingCdp=false,unlocking=false;
- const token=randomBytes(24).toString('hex');
+ const token=randomBytes(24).toString('hex'),instanceId=randomUUID();let restartingConsole=false,mutations=0;
  const persist=()=>fs.writeFile(settingsPath,JSON.stringify(state,null,2));
  await persist();
  const savedJobs=await fs.readdir(path.join(dataDir,'jobs')).catch(()=>[]);
@@ -219,9 +220,9 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  // Rebuild holds after a restart without resuming or rewriting historical runs.
  for(const job of jobs.filter(j=>j.isolationVersion===2&&!j.forcedUnlock&&(j.schedulingHold||j.approvalConsent||j.recordingResources||j.status==='INTERRUPTED'&&(hasUnresolvedRoots(j)||j.sessionId||j.ownedDraft||j.submissionPending||j.nativeFolder||j.knowledge||j.expertResources||j.toolResources||j.skillResources||j.composerResources)))){scheduler.locations.set(job.id,job.config.cdpPort);scheduler.renderer(job.config.cdpPort).unresolved.add(job.id);job.schedulingHold=true;}
  const recoveryTimer=setInterval(async()=>{
-  if(editingCdp)return;
+  if(editingCdp||restartingConsole)return;
   for(const job of jobs.filter(j=>j.isolationVersion===2&&j.schedulingHold&&!j.stopRequested&&!j.finalizing&&canRecoverCleanup(j))){
-   if(editingCdp)break;
+   if(editingCdp||restartingConsole)break;
    if(await reconcileHandoff(job,{allowAbort:false})&&!job.finalizing&&!job.stopRequested){taskRuntimes.delete(job.id);scheduler.finish(job.id);}
   }
   updateQueueHolds();
@@ -379,6 +380,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
  const batchDetail=id=>collectBatches(batches,jobs).find(b=>b.id===id);
  const server=http.createServer(async(req,res)=>{
   const send=(code,data)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+  let countedMutation=false;
   try{
    const expectedHost=`127.0.0.1:${server.address().port}`;
    if(req.headers.host!==expectedHost)return send(403,{error:'仅接受本机127.0.0.1访问'});
@@ -391,6 +393,8 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method!=='GET'){
     if(controlMatch){if(!taskTokens.has(controlMatch[1])||req.headers['x-task-token']!==taskTokens.get(controlMatch[1]))return send(403,{error:'任务调度凭证无效'});}
     else if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
+    if(restartingConsole)return send(409,{error:'控制台正在重启，请稍候'});
+    mutations++;countedMutation=true;
     let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>(controlMatch?200000:20000))throw Error('请求过大');}
     body=raw?JSON.parse(raw):{};
    }
@@ -657,7 +661,19 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
     }
     return send(200,{managed:jobs.some(j=>j.config.cdpPort===job.config.cdpPort&&(j.sessionUrl===body.url||j.rootSessions?.some(root=>root.url===body.url)))});
    }
-   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptEditions:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1,clientEditions:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='GET'&&url.pathname==='/api/state'){updateQueueHolds();return send(200,{token,instanceId,projectRoot,dataDir,capabilities:{executionBatches:1,taskScheduling:1,taskIsolation:2,serialOnly:1,scriptSuites:1,scriptEditions:1,scriptSource:1,detailPreview:1,executeNext:0,recording:1,recordingFolders:1,clientReadiness:1,adaptiveCdp:1,clientEditions:1,consoleRestart:1},config:state.config,scripts:await Promise.all(state.scripts.map(scriptInfo)),jobs:jobs.map(publicJob),batches:collectBatches(batches,jobs).map(({entries,...batch})=>batch),active:active.size,readingModels});}
+   if(req.method==='POST'&&url.pathname==='/api/console/restart'){
+    if(mutations!==1||active.size||batchStarting.size||readingModels||editingCdp||unlocking||recovering.size||finalizations.size||recordings.size||scheduler.unresolved().size||jobs.some(job=>job.schedulingHold||job.finalizing||['RUNNING','QUEUED'].includes(job.status))||batches.some(batch=>batch.submission==='SUBMITTING'))return send(409,{error:'存在执行、排队、待恢复锁或配置操作，请先完成收尾'});
+    restartingConsole=true;
+    try{
+     await Promise.all([...jobWrites.values()]);await persist();
+     const restart=await restartCoordinator({port:server.address().port,projectRoot,dataDir,instanceId});
+     let shutdownStarted=false;
+     const shutdown=()=>{if(!shutdownStarted){shutdownStarted=true;restart.shutdown(server);}};
+     res.once('finish',shutdown);res.once('close',shutdown);
+     return send(202,{message:'控制台正在重启',instanceId});
+    }catch(error){restartingConsole=false;throw error;}
+   }
    const recordingFolder=url.pathname.match(/^\/api\/jobs\/([\w-]+)\/recording-(locations|folder)$/);
    if(recordingFolder&&((req.method==='GET'&&recordingFolder[2]==='locations')||(req.method==='POST'&&recordingFolder[2]==='folder'))){
     if(req.headers['x-console-token']!==token)return send(403,{error:'请求凭证无效，请刷新页面'});
@@ -1008,6 +1024,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
    if(req.method==='GET'&&assets[url.pathname]){const file=assets[url.pathname];res.setHeader('Content-Type',mime[path.extname(file)]);res.end(await fs.readFile(path.join(here,file)));return;}
    send(404,{error:'未找到入口'});
   }catch(e){send(400,{error:e.message});}
+  finally{if(countedMutation)mutations--;}
  });
  server.on('close',()=>{clearInterval(recoveryTimer);for(const job of jobs.filter(j=>recordings.has(j.id)))void finishRecording(job,'console-closed');});
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});

@@ -232,6 +232,10 @@
 !/测试用例与脚本/权限问询4.1用例设计-v0.0.1.md
 !/测试用例与脚本/权限问询4.1用例设计-v0.0.2.md
 !/local-console/engine-client.mjs
+!/local-console/console-restart.mjs
+!/local-console/restart-supervisor.mjs
+!/local-console/console-restart.test.mjs
+!/local-console/restart-test-fixture.mjs
 !/local-console/native-compat.test.mjs
 !/local-console/script-groups.mjs
 !/scripts/permission-case-catalog.mjs
