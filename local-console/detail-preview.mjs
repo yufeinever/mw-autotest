@@ -107,6 +107,10 @@ export function installDetailPreview(readCase,canPreview=()=>true,recordingActio
      for(const [label,text]of [['准备',data.unavailable||'通过产品注册表及输入区核对所选空间；由客户端正常创建任务，在首次模型请求发出前按真实Session目录准备本场景材料并保存哈希。仅替换本次请求文本的材料路径，不改权限、模型或工具配置；不强制切换空间，不发送准备闲聊。'],['执行',data.task||'尚不具备自动触发条件，不提交执行。'],['观察与判断','一次提交操作任务，分别记录目标触发、权限问询或拦截、实际操作效果、决策后的会话进展。权限卡固定拒绝；没触发或证据不足待复核。免问询场景真实出现对应确认记过度拦截；不匹配固定模型措辞、Skill或工具路线。'],['期望',data.expectation==='continue'?'实际执行并完成，观察窗口无权限确认':data.expectation==='gate'?'目标请求触发后问询，拒绝后未产生受保护效果；后续执行单独记录':'行为观察；需求口径或材料来源存在差异，记录后复核'],['用例来源',data.source],['脚本',data.entry]]){const h=document.createElement('h3'),p=document.createElement('p');h.textContent=label;p.textContent=text;description.append(h,p);}return;
     }
     const heading=document.createElement('h2');heading.textContent=data.title;description.append(heading);
+    if(data.kind==='public-scene'){
+     const fields=[['用例编号 / 版别',data.id+' / 公众版'],['需求与版本依据',data.requirement],['设计文档',data.requirementLink],['业务目标参考',data.sourceCaseId+'，仅沿用目标；执行入口、材料及判断独立维护'],['前置条件',data.preconditions],['操作步骤',data.steps.map((step,index)=>(index+1)+'. '+step).join('\n')],['预期行为与判断',data.expected],['预期技能 / 专家',data.skills.length?data.skills.join('、'):data.expert||'不限定'],['验证边界',data.note],['脚本入口',data.entry]];
+     const list=document.createElement('dl');for(const [label,value] of fields){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;list.append(dt,dd);}description.append(list);return;
+    }
     if(data.kind?.startsWith('interaction-')){
      const fields=[['用例编号',data.id],['功能模块',data.category],['验证目的与边界',data.note],['操作步骤',data.steps.map((step,index)=>(index+1)+'. '+step).join('\n')],['操作与断言依据',data.operations||data.note],['验证状态','执行结果以本次报告及覆盖清单为准，脚本说明不代表已经通过。'],['预期 Skill',data.skills.length?data.skills.join('、'):'不限定固定 Skill 或工具路线'],['用例来源',caseWorkbook+'\n第二张工作表：'+caseSheet+' · 第 '+data.row+' 行'],['脚本入口',data.entry]];
      const list=document.createElement('dl');

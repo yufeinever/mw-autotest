@@ -7,8 +7,8 @@ import {getClientCase} from './client-case-catalog.mjs';
 import {toObservatory} from '../local-console/observatory-data.mjs';
 
 // Always runs before the final result is persisted, including blocked/failed sessions.
-export async function saveRunTrace({page,sessionId,number,dir,checks,log=()=>{},readLog}){
- const definition=getClientCase(number);
+export async function saveRunTrace({page,sessionId,number,definition:caseDefinition,dir,checks,log=()=>{},readLog}){
+ const definition=caseDefinition??getClientCase(number);
  try{
   const data=readLog?await readLog(true):await readSessionLogFromPage(page,{sessionId,includeChildren:true});
   if(data.sessionId!==sessionId)throw Error('Trace返回的会话ID与本次执行不一致');

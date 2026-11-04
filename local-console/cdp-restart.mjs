@@ -4,6 +4,7 @@ import {uniqueClientPage} from './client-page.mjs';
 import {execFile,spawn} from 'node:child_process';
 import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import {enableCdpConfig} from './cdp-config.mjs';
 import {readEnvironment} from './environment.mjs';
 import {probeCdp} from './cdp-readiness.mjs';
@@ -12,8 +13,8 @@ export {probeCdp} from './cdp-readiness.mjs';
 const exec=promisify(execFile);
 const ps=async script=>(await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:15000})).stdout.trim();
 async function processes(executable){
- const escaped=executable.replaceAll("'","''");
- const raw=await ps(`@(Get-CimInstance Win32_Process -Filter "Name='MobileWork.exe'" | Where-Object { $_.ExecutablePath -eq '${escaped}' -and $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId) | ConvertTo-Json -Compress`);
+ const escaped=executable.replaceAll("'","''"),name=path.basename(executable).replaceAll("'","''");
+ const raw=await ps(`@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq '${name}' -and $_.ExecutablePath -eq '${escaped}' -and $_.CommandLine -notmatch '--type=' } | Select-Object ProcessId) | ConvertTo-Json -Compress`);
  return raw?[JSON.parse(raw)].flat().map(p=>p.ProcessId):[];
 }
 async function assertIdle(port,environment){
@@ -75,7 +76,7 @@ export async function restartClient(backupDir,requestedPort=9223,{clientEdition=
    for(let i=0;i<40;i++){if(!(await processes(executable)).includes(id))return;await new Promise(r=>setTimeout(r,500));}
    throw Error('已请求正常退出，但客户端仍在后台运行，请从托盘退出后重试；未强制终止进程');
   },
-  launch:async()=>{port=await selectAvailableCdpPort(port);return new Promise((resolve,reject)=>{const child=spawn(executable,[],{detached:true,stdio:'ignore',windowsHide:false,env:{...process.env,OPENWORK_ELECTRON_REMOTE_DEBUG_PORT:String(port)}});child.once('error',()=>reject(Error('无法启动 MobileWork，请检查安装路径')));child.once('spawn',()=>{child.unref();resolve();});});},
+  launch:async()=>{port=await selectAvailableCdpPort(port);return new Promise((resolve,reject)=>{const child=spawn(executable,[],{detached:true,stdio:'ignore',windowsHide:true,env:{...process.env,OPENWORK_ELECTRON_REMOTE_DEBUG_PORT:String(port)}});child.once('error',()=>reject(Error('无法启动 MobileWork，请检查安装路径')));child.once('spawn',()=>{child.unref();resolve();});});},
   probe:()=>probeCdp(port,{clientEdition})
  });
 }

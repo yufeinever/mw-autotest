@@ -6,7 +6,7 @@ export function normalizeEdition(value='enterprise'){
 }
 export const editionProfiles={
  enterprise:{label:'政企版',bridge:'__OPENWORK_ELECTRON__',directory:'MobileWork',home:'.mobilework',sessionActions:['在会话期间允许','在会话期间运行']},
- public:{label:'公众版',bridge:'__MOBILEWORK_ELECTRON__',directory:'MobileWork-toC',home:'.mobilework_public',sessionActions:['在会话期间允许']},
+ public:{label:'公众版',bridge:'__MOBILEWORK_ELECTRON__',directory:'MobileWork-Public',executable:'MobileWork-Public.exe',legacyInstalls:[{directory:'MobileWork-toC',executable:'MobileWork.exe'}],home:'.mobilework_public',sessionActions:['在会话期间允许']},
 };
 export async function inspectClientEdition(page){
  const available=await page.evaluate(()=>({

@@ -53,7 +53,7 @@ test('客户端版别切换、配置隔离与匹配交互的完整流程',async(
   assert.equal(saved.editionConfigs.enterprise.approval,'reject');assert.equal(saved.editionConfigs.public.approval,'session');
   const config={clientExecutable:'C:/legacy/MobileWork.exe',clientHome:'C:/legacy-home'};
   const publicEnv=resolveEnvironment({edition:'public',homeDir:'C:/test-user',env:{},config,exists:()=>false});
-  assert.match(publicEnv.clientExecutable,/MobileWork-toC/);assert.match(publicEnv.clientHome,/\.mobilework_public$/);
+  assert.match(publicEnv.clientExecutable,/MobileWork-Public/);assert.match(publicEnv.clientHome,/\.mobilework_public$/);
   const fixture=await browser.newPage();
   for(const edition of ['enterprise','public']){
    await fixture.setContent('<button aria-label="模型" aria-expanded="false"><svg><path d="M3.624"/></svg>自动</button><div id="menu"></div>');

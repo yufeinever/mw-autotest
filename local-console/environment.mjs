@@ -11,7 +11,9 @@ export function resolveEnvironment({root=environmentRoot,homeDir=os.homedir(),en
  config={...(edition==='enterprise'?config:{}),...config.editions?.[edition]};
  const absolute=value=>path.resolve(root,value);
  const local=env.LOCALAPPDATA||path.join(homeDir,'AppData','Local');
- const candidates=[path.join(local,'Programs',profile.directory,'MobileWork.exe'),...[env.ProgramFiles,env['ProgramFiles(x86)']].filter(Boolean).map(dir=>path.join(dir,profile.directory,'MobileWork.exe'))];
+ const installs=[{directory:profile.directory,executable:profile.executable||'MobileWork.exe'},...(profile.legacyInstalls||[])];
+ const bases=[path.join(local,'Programs'),...[env.ProgramFiles,env['ProgramFiles(x86)']].filter(Boolean)];
+ const candidates=installs.flatMap(install=>bases.map(base=>path.join(base,install.directory,install.executable)));
  const clientExecutable=absolute(env.MW_CLIENT_EXECUTABLE||config.clientExecutable||candidates.find(exists)||candidates[0]);
  const clientHome=absolute(env.MW_CLIENT_HOME||config.clientHome||path.join(homeDir,profile.home));
  return {root,edition,clientExecutable,buildInfoPath:path.join(path.dirname(clientExecutable),'resources','build-info.json'),clientHome,

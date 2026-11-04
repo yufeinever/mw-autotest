@@ -1,6 +1,7 @@
 import {execFile} from 'node:child_process';
 import {createServer} from 'node:net';
 import {promisify} from 'node:util';
+import path from 'node:path';
 import {readEnvironment} from './environment.mjs';
 import {probeCdp} from './cdp-readiness.mjs';
 
@@ -10,8 +11,9 @@ const exec=promisify(execFile);
 // and actually owned by its unique main process.
 export async function discoverClientCdpPort({clientEdition='enterprise'}={}){
  if(process.platform!=='win32')return null;
- const executable=readEnvironment(clientEdition).clientExecutable.replaceAll("'","''");
- const script=`$items=@(Get-CimInstance Win32_Process -Filter "Name='MobileWork.exe'" | Where-Object { $_.ExecutablePath -eq '${executable}' });
+ const clientExecutable=readEnvironment(clientEdition).clientExecutable;
+ const executable=clientExecutable.replaceAll("'","''"),name=path.basename(clientExecutable).replaceAll("'","''");
+ const script=`$items=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq '${name}' -and $_.ExecutablePath -eq '${executable}' });
  $main=@($items | Where-Object { $_.CommandLine -notmatch '--type=' });
  $ports=@();
  if($main.Count -eq 1){

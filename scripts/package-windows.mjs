@@ -32,6 +32,7 @@ export async function selectedFiles(){
  selected.push(...clientCases.map(c=>c.entry));
  selected.push(...permissionCases.map(c=>c.entry));
  selected.push('scripts/public-case-catalog.mjs',...publicCases.map(c=>c.entry));
+ selected.push('scripts/public-case-inputs.mjs','scripts/public-case-checks.mjs','scripts/public-case-runner.mjs','测试用例与脚本/公众版01-10用例说明.md');
  selected.push(...['permission-case-catalog.mjs','permission-case-runner.mjs','permission-fixtures.mjs','permission-observation.mjs','permission-workspace.mjs','permission-suite.test.mjs'].map(s=>'scripts/'+s));
  selected.push('scripts/mobilework-initialize.mjs','scripts/mobilework-initialize.test.mjs');
  for(const name of await fs.readdir(path.join(root,'scripts/fixtures/client-upload-files')))selected.push('scripts/fixtures/client-upload-files/'+name);

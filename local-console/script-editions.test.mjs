@@ -9,6 +9,7 @@ import {withClientCases} from './case-registry.mjs';
 import {scriptEdition,scriptsInSuite} from './script-groups.mjs';
 import {findScriptCase} from './detail-preview.mjs';
 import {normalizeConfig} from './policy.mjs';
+import {publicCases} from '../scripts/public-case-catalog.mjs';
 
 test('旧脚本迁移保留ID及顺序，公众版不复用政企业务定义',()=>{
  const legacy={id:'legacy',name:'原名',path:path.join(projectRoot,'scripts/run-client-case001.mjs')};
@@ -16,7 +17,8 @@ test('旧脚本迁移保留ID及顺序，公众版不复用政企业务定义',(
  const scripts=withClientCases([legacy,custom],projectRoot);
  assert.equal(scripts[0].id,'legacy');assert.equal(scripts[0].name,'原名');assert.equal(scriptEdition(scripts[0]),'enterprise');
  assert.equal(scriptsInSuite(scripts,'functional','enterprise').length,203);
- assert.deepEqual(scriptsInSuite(scripts,'functional','public').map(s=>s.id),['public-custom']);
+ assert.deepEqual(scriptsInSuite(scripts,'functional','public').map(s=>s.id).slice(0,1),['public-custom']);
+ assert.equal(scriptsInSuite(scripts,'functional','public').length,publicCases.length+1);
  assert.ok(findScriptCase(scripts[0],projectRoot));
  assert.equal(findScriptCase({...scripts[0],clientEdition:'public'},projectRoot),null);
  assert.deepEqual(withClientCases(scripts,projectRoot),scripts,'重复启动不重新生成ID或覆盖归属');
@@ -51,10 +53,14 @@ test('实际控制台页面切版、独立新增、跨版API拦截及历史保�
   };
   await switchTo('公众版');
   assert.equal(await page.locator('#scriptEditionBadge').textContent(),'公众版');
-  assert.match(await page.locator('#scripts').textContent(),/公众版暂无独立功能用例脚本/);
+  assert.match(await page.locator('#scriptPageInfo').textContent(),new RegExp('共 '+publicCases.length+' 条'));
+  assert.doesNotMatch(await page.locator('#scripts').textContent(),/政企测试入口/);
   assert.match(await page.locator('#selectionCount').textContent(),/已选 0 条/);
+  await page.locator('#permissionTab').click();
+  assert.match(await page.locator('#scripts').textContent(),/公众版暂无独立权限管控脚本/);
   assert.equal(await page.locator('#runAll').isDisabled(),true);
   assert.equal(await page.locator('#runSelected').isDisabled(),true);
+  await page.locator('#functionalTab').click();
   let state=await (await fetch(app.url+'/api/state')).json();
   const post=async(url,body)=>{const r=await fetch(app.url+url,{method:'POST',headers:{'content-type':'application/json','x-console-token':state.token},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
   const before=probes;
@@ -65,11 +71,12 @@ test('实际控制台页面切版、独立新增、跨版API拦截及历史保�
   await page.locator('#add').click();await page.locator('#scriptName').fill('公众版独立登记验证');await page.locator('#scriptPath').fill(publicPath);
   await page.locator('#addForm button[type=submit]').click();
   await page.getByText('脚本已添加到公众版 · 功能用例。',{exact:true}).waitFor();
-  assert.match(await page.locator('#scriptPageInfo').textContent(),/共 1 条/);
+  assert.match(await page.locator('#scriptPageInfo').textContent(),new RegExp('共 '+(publicCases.length+1)+' 条'));
   state=await (await fetch(app.url+'/api/state')).json();const added=state.scripts.find(s=>s.path===publicPath);
   assert.equal(added.clientEdition,'public');
-  const batch=await post('/api/batches',{scriptIds:[added.id],mode:'all',config:state.config});assert.equal(batch.status,201,'全部执行只校验当前版列表');
-  const detail=await (await fetch(app.url+'/api/batches/'+batch.body.id)).json();assert.equal(detail.config.clientEdition,'public');assert.equal(detail.scripts.length,1);
+  const publicIds=state.scripts.filter(s=>s.clientEdition==='public'&&s.suite==='functional'&&!s.unavailable).map(s=>s.id);
+  const batch=await post('/api/batches',{scriptIds:publicIds,mode:'all',config:state.config});assert.equal(batch.status,201,'全部执行只校验当前版列表');
+  const detail=await (await fetch(app.url+'/api/batches/'+batch.body.id)).json();assert.equal(detail.config.clientEdition,'public');assert.equal(detail.scripts.length,publicCases.length+1);
   await post('/api/batches/'+batch.body.id+'/complete',{});
   const evidence=path.join(projectRoot,'runs/script-editions-regression');await fs.mkdir(evidence,{recursive:true});
   await page.locator('#scriptSection').screenshot({path:path.join(evidence,'public.png')});

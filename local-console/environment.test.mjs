@@ -17,6 +17,15 @@ test('新用户、不同磁盘、相对路径和环境变量可迁移',()=>{
  assert.equal(config.browserExecutable,path.resolve(root,'runtime/browser.exe'));assert.equal(config.discoveryPath,path.resolve(root,'profile/electron/openwork-ui-control.json'));
  const override=resolveEnvironment({root,homeDir,env:{MW_CLIENT_EXECUTABLE:'F:\\MobileWork.exe'},config:{clientExecutable:'unused'}});
  assert.equal(override.clientExecutable,'F:\\MobileWork.exe');
+ const publicPath=path.join(homeDir,'AppData','Local','Programs','MobileWork-Public','MobileWork-Public.exe');
+ const legacyPath=path.join(homeDir,'AppData','Local','Programs','MobileWork-toC','MobileWork.exe');
+ const publicOptions={root,homeDir,env:{},edition:'public'};
+ assert.equal(resolveEnvironment({...publicOptions,exists:()=>false}).clientExecutable,publicPath);
+ assert.equal(resolveEnvironment({...publicOptions,exists:p=>[legacyPath,publicPath].includes(p)}).clientExecutable,publicPath);
+ assert.equal(resolveEnvironment({...publicOptions,exists:p=>p===legacyPath}).clientExecutable,legacyPath);
+ const machinePath=path.join('F:\\Programs','MobileWork-Public','MobileWork-Public.exe');
+ assert.equal(resolveEnvironment({...publicOptions,env:{ProgramFiles:'F:\\Programs'},exists:p=>[machinePath,legacyPath].includes(p)}).clientExecutable,machinePath);
+ assert.equal(resolveEnvironment({...publicOptions,config:{editions:{public:{clientExecutable:'custom/public.exe'}}},exists:()=>true}).clientExecutable,path.resolve(root,'custom/public.exe'));
 });
 test('启动只复用同一目录的服务',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-launch-test-'));

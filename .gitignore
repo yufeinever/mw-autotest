@@ -45,6 +45,12 @@
 !/local-console/case-registry.mjs
 !/local-console/script-editions.test.mjs
 !/scripts/public-case-catalog.mjs
+!/scripts/public-case-inputs.mjs
+!/scripts/public-case-checks.mjs
+!/scripts/public-case-runner.mjs
+!/scripts/run-public-case00[1-9].mjs
+!/scripts/run-public-case010.mjs
+!/测试用例与脚本/公众版01-10用例说明.md
 !/local-console/cdp-config.mjs
 !/local-console/cdp-config.test.mjs
 !/local-console/cdp-port.mjs
