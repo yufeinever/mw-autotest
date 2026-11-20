@@ -91,7 +91,12 @@ export async function chooseWorkspace(page,id){
  const option=button(dialog,name);
  const matches=await option.evaluateAll((nodes,id)=>nodes.flatMap((node,index)=>node[Object.keys(node).find(key=>key.startsWith('__reactFiber$'))]?.key===id?[index]:[]),id);
  if(matches.length!==1)throw blocked('工作空间列表中未找到目标 ID 的唯一入口：'+id);
- await option.nth(matches[0]).click();
+ const picker=await dialog.elementHandle();
+ if(!picker)throw blocked('选择前工作空间弹框已关闭');
+ try{
+  await option.nth(matches[0]).click();
+  await picker.waitForElementState('hidden',{timeout:5000});
+ }finally{await picker.dispose();}
  await page.waitForURL(url=>url.toString().endsWith('/workspace/'+id+'/session'),{waitUntil:'commit'});
  await button(page.locator('main').last(),name).waitFor();
  const state=await workspacePickerState(page);
@@ -158,13 +163,20 @@ export async function deleteWorkspace(page,id){
 }
 
 export const workspaceRow=(page,id)=>page.getByTestId('workspace-section').locator('[id="'+id+'"]');
-export const workspaceExpand=row=>row.locator('[data-workspace-row-header] > button[aria-expanded]');
+// The expand button may be inside the header's actions group alongside a menu.
+const expandSelector='[data-workspace-row-header] button[aria-expanded]:not([aria-haspopup])';
+export const workspaceExpand=row=>row.locator(expandSelector);
 export async function readWorkspaceSidebar(page){
- return page.getByTestId('workspace-section').evaluate(section=>({
+ return page.getByTestId('workspace-section').evaluate((section,selector)=>({
   heading:section.querySelector('#workspace-heading')?.textContent,
   sectionExpanded:section.querySelector('[data-testid="workspace-section-header"] button[aria-expanded]:not([aria-haspopup])')?.getAttribute('aria-expanded')==='true',
-  rows:[...section.querySelectorAll('[id^="ws_"]')].map(row=>({id:row.id,name:row.querySelector('[data-slot="sidebar-menu-button"] span')?.textContent?.trim(),expanded:row.querySelector('[data-workspace-row-header] > button[aria-expanded]')?.getAttribute('aria-expanded')==='true',tasks:[...row.querySelectorAll('[data-slot="sidebar-menu-sub-item"]')].map(item=>({text:item.textContent.trim(),html:item.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g,'<svg/>')}))}))
- }));
+  rows:[...section.querySelectorAll('[id^="ws_"]')].map(row=>{
+   const toggles=row.querySelectorAll(selector);
+   const value=toggles.length===1?toggles[0].getAttribute('aria-expanded'):null;
+   if(!['true','false'].includes(value))throw Error('无法确认工作区展开状态：'+row.id);
+   return {id:row.id,name:row.querySelector('[data-slot="sidebar-menu-button"] span')?.textContent?.trim(),expanded:value==='true',tasks:[...row.querySelectorAll('[data-slot="sidebar-menu-sub-item"]')].map(item=>({text:item.textContent.trim(),html:item.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g,'<svg/>')}))};
+  })
+ }),expandSelector);
 }
 
 // The current client renders default-workspace sessions in Recent Tasks. Read
@@ -190,7 +202,7 @@ export async function prepareWorkspaceResources(page,{target=null,existingTarget
  const {items}=await workspaces(page),sidebar=await readWorkspaceSidebar(page);
  const storage=await page.evaluate(()=>Object.fromEntries(['openwork.react.workspaceOrder','openwork.react.activeWorkspace','openwork.react.newTaskDraftWorkspace','openwork.react.newTaskHomepageWorkspace'].map(key=>[key,localStorage.getItem(key)])));
  const currentId=page.url().match(/\/workspace\/([^/]+)\/session(?:\/|$)/)?.[1];
- return {beforeIds:items.map(item=>item.id),previousId:(existingTargetId&&items.some(item=>item.id===currentId)?currentId:storage['openwork.react.activeWorkspace'])||items.find(item=>item.isDefault)?.id,storage,sidebar:sidebar.rows.map(({id,expanded})=>({id,expanded})),sectionExpanded:sidebar.sectionExpanded,target,...(existingTargetId?{existingTargetId}:{}),...(beforeSessionIds?{beforeSessionIds}:{})};
+ return {beforeIds:items.map(item=>item.id),previousId:(existingTargetId&&items.some(item=>item.id===currentId)?currentId:storage['openwork.react.activeWorkspace'])||items.find(item=>item.isDefault)?.id,storage,sidebarVersion:2,sidebar:sidebar.rows.map(({id,expanded})=>({id,expanded})),sectionExpanded:sidebar.sectionExpanded,target,...(existingTargetId?{existingTargetId}:{}),...(beforeSessionIds?{beforeSessionIds}:{})};
 }
 
 // Creation and cleanup can navigate before the worker checkpoints its URL.
@@ -286,7 +298,14 @@ export async function releaseWorkspaceResources(page,owned,config){
  if(await section.getAttribute('aria-expanded')!=='true')await section.click();
  for(const baseline of owned.sidebar){
   const row=workspaceRow(page,baseline.id);await row.waitFor();
-  const toggle=workspaceExpand(row);if((await toggle.getAttribute('aria-expanded')==='true')!==baseline.expanded)await toggle.click();
+  const toggle=workspaceExpand(row);
+  if(await toggle.count()!==1)throw blocked('恢复工作区侧栏时无法唯一识别展开按钮：'+baseline.id);
+  const expected=String(baseline.expanded);
+  if(await toggle.getAttribute('aria-expanded')===expected)continue;
+  // Older clients recorded false even when the old direct-child selector matched nothing.
+  if(!owned.sidebarVersion&&!baseline.expanded&&!await row.locator('[data-workspace-row-header] > button[aria-expanded]:not([aria-haspopup])').count())throw blocked('旧记录无法确认此工作区此前是否折叠，已保留现场：'+baseline.id);
+  await toggle.click();
+  await toggle.and(row.locator('[aria-expanded="'+expected+'"]')).waitFor({state:'attached',timeout:3000});
  }
  if(!owned.sectionExpanded)await section.click();
 }

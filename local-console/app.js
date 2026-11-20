@@ -506,7 +506,7 @@ async function showBrowserTrace(id) {
 }
 
 // package.json
-var version = "0.0.55";
+var version = "0.0.56";
 
 // local-console/client-edition.mjs
 var editionLabels = { enterprise: "\u653F\u4F01\u7248", public: "\u516C\u4F17\u7248" };
@@ -1495,7 +1495,9 @@ if (traceId) {
     $("#suiteHint").textContent = activeSuite === "permission" ? "\u5148\u51C6\u5907\u9694\u79BB\u6750\u6599\uFF0C\u518D\u89C2\u5BDF\u95EE\u8BE2\u3001\u62E6\u622A\u4E0E\u540E\u7EED\u6267\u884C\u3002\u6743\u9650\u5361\u56FA\u5B9A\u62D2\u7EDD\u5E76\u7EE7\u7EED\u89C2\u5BDF\uFF0C\u4E0D\u4F7F\u7528\u4E0A\u65B9\u5168\u5C40\u81EA\u52A8\u6388\u6743\u3002\u5F85\u786E\u8BA4\u6216\u9700\u4E13\u7528\u80FD\u529B\u7684\u573A\u666F\u4E0D\u53EF\u6267\u884C\u3002" : "\u529F\u80FD\u7528\u4F8B\uFF1A\u9A8C\u8BC1\u4E1A\u52A1\u56DE\u590D\u3001\u5B9E\u9645\u4EA7\u7269\u548C Skill \u8C03\u7528\u3002";
     const holders = state.jobs.filter((j) => j.schedulingHold);
     const running = state.jobs.filter((j) => j.status === "RUNNING");
-    lockState.textContent = running.length ? "\u9501\u5B9A MW \xB7 " + running.map((j) => j.name).join("\u3001") + " \u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u52FF\u624B\u52A8\u64CD\u4F5C MobileWork\u3002" : holders.length ? "\u8C03\u5EA6\u5DF2\u6682\u505C \xB7 " + holders.map((j) => j.name + "\uFF1A" + (j.handoff?.reason || "\u7B49\u5F85\u6062\u590D")).join("\uFF1B") : "\u8C03\u5EA6\u6B63\u5E38 \xB7 \u65E0\u9501\u5B9A";
+    const holdDetails = holders.map((j) => j.name + "\uFF1A" + (j.handoff?.reason || j.cleanupErrors?.at(-1) || j.cleanupStage || "\u6B63\u5728\u6838\u5BF9\u5BA2\u6237\u7AEF\u9875\u9762"));
+    lockState.textContent = running.length ? "\u9501\u5B9A MW \xB7 " + running.map((j) => j.name).join("\u3001") + " \u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u52FF\u624B\u52A8\u64CD\u4F5C MobileWork\u3002" : holders.length ? "\u8C03\u5EA6\u5DF2\u6682\u505C \xB7 " + holdDetails.map((detail) => detail.split("\n")[0]).join("\uFF1B") : "\u8C03\u5EA6\u6B63\u5E38 \xB7 \u65E0\u9501\u5B9A";
+    lockState.title = running.length ? "" : holdDetails.join("\n");
     lockState.className = running.length ? "mw-lock-banner" : holders.length ? "lock-warning" : "hint";
     unlockButton.disabled = !holders.length || stopAllBusy || batchBusy || submissions.size > 0 || state.jobs.some((j) => j.status === "RUNNING" || j.stopRequested);
     const size = Number($("#scriptPageSize").value), total = scripts.length, pages = Math.max(1, Math.ceil(total / size));

@@ -70,7 +70,8 @@ export async function guardDialogs(page,{cancelReload=false,stepInterval=0.5}={}
   throw blocked('场景配置要求重新加载引擎；未终止已有会话。请待客户端空闲并确认配置生效后重试');
  }
  const dialogs=page.getByRole('dialog').filter({visible:true});
- if(await dialogs.count())throw blocked('出现未支持的弹窗：'+(await dialogs.first().innerText()).slice(0,240));
+ const [dialogText]=await dialogs.evaluateAll(nodes=>nodes.slice(0,1).map(node=>node.innerText.slice(0,240)));
+ if(dialogText!==undefined)throw blocked('出现未支持的弹窗：'+(dialogText||'无标题'));
 }
 export async function ensureIdleComposer(page){
  await guardDialogs(page);

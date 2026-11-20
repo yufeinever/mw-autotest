@@ -5,6 +5,26 @@ import os from 'node:os';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createConsole} from './server.mjs';
+import {chromium} from 'playwright-core';
+import {readWorkspaceSidebar,workspaceRow,workspaceExpand} from '../scripts/mobilework-workspaces.mjs';
+
+test('工作区侧栏按空间读取新旧展开按钮，忽略相邻的更多菜单',async t=>{
+ const browser=await chromium.launch({channel:'chrome',headless:true});
+ t.after(()=>browser.close());
+ const page=await browser.newPage();
+ await page.setContent(`<section data-testid="workspace-section">
+  <div id="ws_old"><div data-workspace-row-header><button aria-expanded="false">展开</button></div></div>
+  <div id="ws_new"><div data-workspace-row-header><div data-workspace-actions>
+   <button aria-haspopup="menu" aria-expanded="false">更多</button>
+   <button aria-expanded="true" onclick="this.setAttribute('aria-expanded','false')">收起</button>
+  </div></div></div></section>`);
+ const states=async()=>(await readWorkspaceSidebar(page)).rows.map(({id,expanded})=>[id,expanded]);
+ assert.deepEqual(await states(),[['ws_old',false],['ws_new',true]]);
+ await workspaceExpand(workspaceRow(page,'ws_new')).click();
+ assert.deepEqual(await states(),[['ws_old',false],['ws_new',false]]);
+ await workspaceExpand(workspaceRow(page,'ws_new')).evaluate(el=>el.remove());
+ await assert.rejects(states,/无法确认工作区展开状态/);
+});
 
 test('阶段交接保留不可替换空间基线，未完成会话和未恢复模块仍禁止交接',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'mw-workspace-protocol-'));

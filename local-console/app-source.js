@@ -164,7 +164,9 @@ function renderScripts(){
  $('#suiteHint').textContent=activeSuite==='permission'?'先准备隔离材料，再观察问询、拦截与后续执行。权限卡固定拒绝并继续观察，不使用上方全局自动授权。待确认或需专用能力的场景不可执行。':'功能用例：验证业务回复、实际产物和 Skill 调用。';
  const holders=state.jobs.filter(j=>j.schedulingHold);
  const running=state.jobs.filter(j=>j.status==='RUNNING');
- lockState.textContent=running.length?'锁定 MW · '+running.map(j=>j.name).join('、')+' 正在执行，请勿手动操作 MobileWork。':holders.length?'调度已暂停 · '+holders.map(j=>j.name+'：'+(j.handoff?.reason||'等待恢复')).join('；'):'调度正常 · 无锁定';
+ const holdDetails=holders.map(j=>j.name+'：'+(j.handoff?.reason||j.cleanupErrors?.at(-1)||j.cleanupStage||'正在核对客户端页面'));
+ lockState.textContent=running.length?'锁定 MW · '+running.map(j=>j.name).join('、')+' 正在执行，请勿手动操作 MobileWork。':holders.length?'调度已暂停 · '+holdDetails.map(detail=>detail.split('\n')[0]).join('；'):'调度正常 · 无锁定';
+ lockState.title=running.length?'':holdDetails.join('\n');
  lockState.className=running.length?'mw-lock-banner':holders.length?'lock-warning':'hint';
  unlockButton.disabled=!holders.length||stopAllBusy||batchBusy||submissions.size>0||state.jobs.some(j=>j.status==='RUNNING'||j.stopRequested);
  const size=Number($('#scriptPageSize').value),total=scripts.length,pages=Math.max(1,Math.ceil(total/size));scriptPage=Math.max(1,Math.min(scriptPage,pages));
