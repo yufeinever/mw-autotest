@@ -105,6 +105,19 @@ test('没有已绑定引擎且页面属于其他会话时，不停止其他会�
  await assert.rejects(()=>settleSession({url:()=>'/session/ses_other',evaluate:()=>{evaluated=true;}},{sessionId:'ses_own'},null,{allowAbort:true}),/未操作其他会话/);
  assert.equal(evaluated,false);
 });
+test('页面已回到初始页时，复用已登记的本会话引擎完成收尾',async t=>{
+ const connection=await fakeEngine(t,(route,req,res)=>{
+  if(route==='/session/ses_own')return res.end(JSON.stringify({id:'ses_own',directory:'test-dir'}));
+  if(route==='/session/ses_own/message')return res.end(JSON.stringify([{info:{role:'assistant',time:{completed:1},finish:'stop'}}]));
+  if(route==='/session/status')return res.end('{}');
+  if(route==='/permission'||route==='/question')return res.end('[]');
+  res.statusCode=404;res.end('{}');
+ });
+ const page={url:()=>'/workspace/home/session'};
+ const job={sessionId:'ses_own',modelCompleted:false,sessionSettled:false};
+ assert.equal(await settleComposerSession(page,job,{connection}),true);
+ assert.equal(job.sessionSettled,true);
+});
 test('已识别补丁序列化400：核对归属后停止，用独立状态确认空闲',async t=>{
  let aborted=false,polls=0;
  const connection=await fakeEngine(t,(route,req,res)=>{

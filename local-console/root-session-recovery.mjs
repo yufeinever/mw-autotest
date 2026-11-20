@@ -115,11 +115,11 @@ export async function settleRootSessions(job,{runtimes=new Map(),allowAbort=fals
    if(root.cleanupComplete)continue;
    try{
     if(root.resources){
-     await rootConnection(page,job,root,runtimes);
+     const connection=await rootConnection(page,job,root,runtimes);
      if(root.sessionMissing&&page.url()===root.url.slice(0,-('/'+root.id).length)){const view=rootJobView(job,root);if(await adoptMissingSessionHome(page,view))commitRootView(root,view);}
      await navigateOwned(page,job,root.cleanupUrl||root.url);
      const view=rootJobView(job,root);
-     await releaseComposer(view,{allowAbort:false,checkpoint:async()=>{commitRootView(root,view);await checkpoint();}});
+     await releaseComposer(view,{allowAbort:false,connection,checkpoint:async()=>{commitRootView(root,view);await checkpoint();}});
      commitRootView(root,view);
     }
     root.cleanupComplete=true;await checkpoint();

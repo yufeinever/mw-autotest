@@ -306,7 +306,7 @@ export async function createConsole({port=18888,dataDir,modelReader,traceReader,
      const expertsReady=await step('恢复本轮专家资源与历史',()=>releaseExpert(job,{checkpoint:()=>writeJob(job)}));
      await step('恢复本轮工具配置',()=>releaseTool(job));
      await step('移除本轮新增技能',()=>releaseSkill(job));
-     if(expertsReady)await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),checkpoint:()=>writeJob(job)}));
+     if(expertsReady)await step('恢复本轮附件、排队消息与权限',()=>releaseComposer(job,{allowAbort:job.stopRequested||['FAIL','BLOCKED','REVIEW'].includes(outcome),connection:taskRuntimes.get(job.id),checkpoint:()=>writeJob(job)}));
     }
     }
     await step('保存录像并断开录制连接',()=>finishRecording(job,job.stopRequested?'stopped':'completed'));

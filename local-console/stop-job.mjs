@@ -113,7 +113,7 @@ export async function settleComposerSession(page,job,{allowAbort=false,checkpoin
  try{return await settleSession(page,current,connection,{allowAbort,checkpoint:save});}
  finally{await save();}
 }
-export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>{}}={}){
+export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>{},connection}={}){
  if(job.recordingResources)throw Error('本轮SOP录制尚未完成收尾，保留输入区及空间资源');
  if(job.expertResources)throw Error('本轮专家安装、召唤或历史尚未收尾，保留模块入口及输入区资源');
  if(!job.composerResources)return;
@@ -176,7 +176,7 @@ export async function releaseComposer(job,{allowAbort=false,checkpoint=async()=>
   if(page.url()!==job.composerResources.url)throw Error('本轮输入区页面归属已变化，未清理');
   // The worker has exited. Settle its own session before restoring controls.
   if(job.sessionId){
-   const settled=await settleComposerSession(page,job,{allowAbort,checkpoint});
+   const settled=await settleComposerSession(page,job,{allowAbort,checkpoint,connection});
    if(!settled)throw Error('本轮会话仍未结束，保留输入区资源并等待收尾');
   }
   // An acknowledged abort can leave its stale permission card in place of

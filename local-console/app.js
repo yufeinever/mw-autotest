@@ -506,7 +506,7 @@ async function showBrowserTrace(id) {
 }
 
 // package.json
-var version = "0.0.53";
+var version = "0.0.55";
 
 // local-console/client-edition.mjs
 var editionLabels = { enterprise: "\u653F\u4F01\u7248", public: "\u516C\u4F17\u7248" };
